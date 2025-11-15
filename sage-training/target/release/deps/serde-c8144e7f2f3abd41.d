@@ -1,0 +1,14 @@
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/serde-c8144e7f2f3abd41.d: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/serde-4135d59f04efbdca/out/private.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libserde-c8144e7f2f3abd41.rlib: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/serde-4135d59f04efbdca/out/private.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libserde-c8144e7f2f3abd41.rmeta: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/serde-4135d59f04efbdca/out/private.rs
+
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/serde-4135d59f04efbdca/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/serde-4135d59f04efbdca/out

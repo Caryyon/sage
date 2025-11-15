@@ -1,0 +1,90 @@
+#!/bin/bash
+# Direct conversation between Claude and SAGE
+
+CHAT_FILE="/tmp/sage_chat.txt"
+LAST_LINE_FILE="/tmp/claude_sage_talk_last_line"
+
+# Initialize
+if [ ! -f "$LAST_LINE_FILE" ]; then
+    if [ -f "$CHAT_FILE" ]; then
+        wc -l < "$CHAT_FILE" > "$LAST_LINE_FILE"
+    else
+        echo "0" > "$LAST_LINE_FILE"
+    fi
+fi
+
+echo "🤖 Claude ↔️ SAGE Direct Conversation"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Function to wait for SAGE's response
+wait_for_sage() {
+    local timeout=10
+    local elapsed=0
+    local last_count=$(cat "$LAST_LINE_FILE")
+
+    echo -n "⏳ Waiting for SAGE"
+
+    while [ $elapsed -lt $timeout ]; do
+        if [ -f "$CHAT_FILE" ]; then
+            local current_count=$(wc -l < "$CHAT_FILE")
+
+            if [ "$current_count" -gt "$last_count" ]; then
+                # Check if new line is from SAGE
+                local new_line=$(tail -n 1 "$CHAT_FILE")
+                if [[ $new_line == *"SAGE:"* ]]; then
+                    echo ""
+                    echo ""
+                    # Extract and display SAGE's message
+                    local sage_msg=$(echo "$new_line" | sed -n 's/.*SAGE: \(.*\)/\1/p')
+                    echo -e "\033[1;32m🧠 SAGE:\033[0m $sage_msg"
+                    echo ""
+                    echo "$current_count" > "$LAST_LINE_FILE"
+                    return 0
+                fi
+            fi
+        fi
+
+        sleep 0.5
+        echo -n "."
+        elapsed=$((elapsed + 1))
+    done
+
+    echo ""
+    echo "⚠️  SAGE didn't respond (is training running?)"
+    return 1
+}
+
+# Function to send message to SAGE
+send_to_sage() {
+    local message="$1"
+    echo "[$(date +%s)] Claude: $message" >> "$CHAT_FILE"
+    echo "$(($(cat "$LAST_LINE_FILE") + 1))" > "$LAST_LINE_FILE"
+}
+
+# Initial greeting
+echo "Type your message to SAGE, or 'quit' to exit"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Conversation loop
+while true; do
+    echo -n "💬 Claude: "
+    read -r user_input
+
+    if [ "$user_input" = "quit" ] || [ "$user_input" = "exit" ]; then
+        echo "👋 Conversation ended"
+        break
+    fi
+
+    if [ -z "$user_input" ]; then
+        continue
+    fi
+
+    # Send to SAGE
+    send_to_sage "$user_input"
+
+    # Wait for response
+    wait_for_sage
+
+done

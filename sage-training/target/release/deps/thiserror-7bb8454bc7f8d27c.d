@@ -1,0 +1,14 @@
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/thiserror-7bb8454bc7f8d27c.d: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/thiserror-98afccb9b7b35d3f/out/private.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libthiserror-7bb8454bc7f8d27c.rlib: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/thiserror-98afccb9b7b35d3f/out/private.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libthiserror-7bb8454bc7f8d27c.rmeta: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/thiserror-98afccb9b7b35d3f/out/private.rs
+
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs:
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/thiserror-98afccb9b7b35d3f/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/build/thiserror-98afccb9b7b35d3f/out

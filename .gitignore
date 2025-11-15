@@ -1,0 +1,45 @@
+# Build artifacts
+/target
+Cargo.lock
+
+# SAGE state files (contain learned data)
+sage_preferences.json
+sage_associations.json
+sage_curiosity.json
+sage_positive_knowledge.json
+
+# A/B testing results
+*_ab_test*.log
+*_ab_test*.md
+test_ab_*.log
+test_ab_*.md
+
+# IRC/Discord logs
+/tmp/*.log
+*.log
+
+# State snapshots
+/tmp/sage_state.json
+/tmp/sage_inbox.json
+/tmp/sage_outbox.json
+/tmp/sage_irc_messages.json
+
+# Training results
+nca_results.txt
+nca_multipattern_results.txt
+sage_results.txt
+
+# Environment variables (NEVER commit tokens!)
+.env
+.env.local
+
+# Editor files
+Session.vim
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Test outputs
+test_text_encoding

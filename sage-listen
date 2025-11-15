@@ -1,0 +1,65 @@
+#!/bin/bash
+# sage-listen - Watch and display SAGE's messages from the outbox
+
+OUTBOX="/tmp/sage_outbox.json"
+LAST_COUNT_FILE="/tmp/sage_listen_last_count"
+
+# Initialize last count
+if [ ! -f "$LAST_COUNT_FILE" ]; then
+    echo "0" > "$LAST_COUNT_FILE"
+fi
+
+echo "🎧 Listening to SAGE..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Initial display of existing messages
+if [ -f "$OUTBOX" ]; then
+    LAST_COUNT=$(cat "$LAST_COUNT_FILE")
+    CURRENT_COUNT=$(jq '.messages | length' "$OUTBOX" 2>/dev/null || echo "0")
+
+    if [ "$CURRENT_COUNT" -gt "$LAST_COUNT" ]; then
+        # Display new messages
+        jq -r ".messages[$LAST_COUNT:] | .[] | \"[\(.sender)] \(.content)\"" "$OUTBOX" 2>/dev/null | while read -r line; do
+            if [[ $line == \[SAGE\]* ]]; then
+                echo -e "\033[1;32m$line\033[0m"
+            elif [[ $line == \[Claude\]* ]]; then
+                echo -e "\033[1;35m$line\033[0m"
+            else
+                echo "$line"
+            fi
+            echo ""
+        done
+
+        echo "$CURRENT_COUNT" > "$LAST_COUNT_FILE"
+    fi
+fi
+
+# Watch for changes
+echo "Waiting for messages... (Press Ctrl+C to exit)"
+echo ""
+
+while true; do
+    sleep 1
+
+    if [ -f "$OUTBOX" ]; then
+        LAST_COUNT=$(cat "$LAST_COUNT_FILE")
+        CURRENT_COUNT=$(jq '.messages | length' "$OUTBOX" 2>/dev/null || echo "0")
+
+        if [ "$CURRENT_COUNT" -gt "$LAST_COUNT" ]; then
+            # New messages arrived
+            jq -r ".messages[$LAST_COUNT:] | .[] | \"[\(.sender)] \(.content)\"" "$OUTBOX" 2>/dev/null | while read -r line; do
+                if [[ $line == \[SAGE\]* ]]; then
+                    echo -e "\033[1;32m$line\033[0m"
+                elif [[ $line == \[Claude\]* ]]; then
+                    echo -e "\033[1;35m$line\033[0m"
+                else
+                    echo "$line"
+                fi
+                echo ""
+            done
+
+            echo "$CURRENT_COUNT" > "$LAST_COUNT_FILE"
+        fi
+    fi
+done

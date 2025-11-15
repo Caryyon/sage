@@ -1,0 +1,11 @@
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/approx-75f11ced04092e8b.d: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/abs_diff_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/relative_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/ulps_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/macros.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libapprox-75f11ced04092e8b.rlib: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/abs_diff_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/relative_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/ulps_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/macros.rs
+
+/Users/cwolff/Code/RUST/neural-networks-101/sage-training/target/release/deps/libapprox-75f11ced04092e8b.rmeta: /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/lib.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/abs_diff_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/relative_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/ulps_eq.rs /Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/macros.rs
+
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/lib.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/abs_diff_eq.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/relative_eq.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/ulps_eq.rs:
+/Users/cwolff/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/approx-0.3.2/src/macros.rs:

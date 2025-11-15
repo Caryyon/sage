@@ -1,0 +1,33 @@
+#!/bin/bash
+# sage-speak - Send a message to SAGE via the inbox
+
+INBOX="/tmp/sage_inbox.json"
+
+if [ $# -eq 0 ]; then
+    echo "Usage: ./sage-speak <message>"
+    echo ""
+    echo "Example: ./sage-speak 'Hi SAGE, how are you doing?'"
+    exit 1
+fi
+
+MESSAGE="$*"
+TIMESTAMP=$(date +%s)
+
+# Create message JSON
+cat > "$INBOX" <<EOF
+{
+  "messages": [
+    {
+      "sender": "Claude",
+      "content": "$MESSAGE",
+      "timestamp": $TIMESTAMP
+    }
+  ]
+}
+EOF
+
+echo "📤 Message sent to SAGE:"
+echo ""
+echo -e "\033[1;35m[Claude] $MESSAGE\033[0m"
+echo ""
+echo "SAGE will respond in the outbox. Use ./sage-listen to see the response."

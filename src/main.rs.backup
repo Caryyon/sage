@@ -1,0 +1,1914 @@
+use rand::Rng;
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    symbols,
+    text::{Line, Span},
+    widgets::{Block, Borders, canvas::{Canvas, Rectangle}, Chart, Dataset, GraphType, Paragraph, Gauge},
+    Terminal,
+};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use std::io::{self, Write as IoWrite};
+use std::time::Duration;
+
+const GRID_SIZE: usize = 32;
+const NUM_BASE_CHANNELS: usize = 16;  // 4 RGBA + 12 hidden
+const NUM_PATTERN_CHANNELS: usize = 4;  // One-hot encoding for 4 patterns
+const NUM_ENV_CHANNELS: usize = 2;  // Food (attract) and Toxin (repel)
+const NUM_CHANNELS: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + NUM_ENV_CHANNELS;  // 22 total
+
+// Channel indices
+const FOOD_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS;  // Channel 20
+const TOXIN_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + 1;  // Channel 21
+
+// Grid represents the cellular automata world
+struct Grid {
+    cells: Vec<Vec<Vec<f64>>>,
+    width: usize,
+    height: usize,
+    death_counters: Vec<Vec<u32>>,  // Track how long cells have been below threshold
+    dead_cells: Vec<Vec<bool>>,     // Permanently dead cells
+    species: Vec<Vec<u8>>,          // Which species owns this cell (0=none, 1=A, 2=B)
+}
+
+impl Grid {
+    fn new(width: usize, height: usize) -> Self {
+        let cells = vec![vec![vec![0.0; NUM_CHANNELS]; width]; height];
+        let death_counters = vec![vec![0; width]; height];
+        let dead_cells = vec![vec![false; width]; height];
+        let species = vec![vec![0; width]; height];
+        Grid { cells, width, height, death_counters, dead_cells, species }
+    }
+
+    fn seed(&mut self) {
+        let center_y = self.height / 2;
+        let center_x = self.width / 2;
+        for channel in 0..4 {
+            self.cells[center_y][center_x][channel] = 1.0;
+        }
+    }
+
+    fn get_cell(&self, y: i32, x: i32) -> &[f64] {
+        let wrapped_y = ((y % self.height as i32) + self.height as i32) as usize % self.height;
+        let wrapped_x = ((x % self.width as i32) + self.width as i32) as usize % self.width;
+        &self.cells[wrapped_y][wrapped_x]
+    }
+
+    fn is_alive(&self, y: usize, x: usize) -> bool {
+        self.cells[y][x][3] > 0.1
+    }
+
+    // Apply damage to the grid
+    fn apply_damage(&mut self, damage_percent: f64) {
+        let mut rng = rand::thread_rng();
+        let total_cells = self.width * self.height;
+        let cells_to_damage = (total_cells as f64 * damage_percent) as usize;
+
+        for _ in 0..cells_to_damage {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..self.height);
+
+            // Kill the cell
+            for channel in 0..NUM_CHANNELS {
+                self.cells[y][x][channel] = 0.0;
+            }
+        }
+    }
+
+    // Clone the grid
+    fn clone_grid(&self) -> Self {
+        Grid {
+            cells: self.cells.clone(),
+            width: self.width,
+            height: self.height,
+            death_counters: self.death_counters.clone(),
+            dead_cells: self.dead_cells.clone(),
+            species: self.species.clone(),
+        }
+    }
+
+    // Update death tracking - cells below threshold too long become permanently dead
+    fn update_death_tracking(&mut self, death_threshold_steps: u32) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.dead_cells[y][x] {
+                    // Already dead, keep it dead
+                    for channel in 0..NUM_CHANNELS {
+                        self.cells[y][x][channel] = 0.0;
+                    }
+                    continue;
+                }
+
+                let alpha = self.cells[y][x][3];
+
+                if alpha < 0.1 {
+                    // Cell is below alive threshold
+                    self.death_counters[y][x] += 1;
+
+                    if self.death_counters[y][x] >= death_threshold_steps {
+                        // Cell has been below threshold too long - permanent death
+                        self.dead_cells[y][x] = true;
+                        for channel in 0..NUM_CHANNELS {
+                            self.cells[y][x][channel] = 0.0;
+                        }
+                    }
+                } else {
+                    // Cell is alive, reset counter
+                    self.death_counters[y][x] = 0;
+                }
+            }
+        }
+    }
+
+    // Get count of permanently dead cells
+    fn count_dead(&self) -> usize {
+        let mut count = 0;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.dead_cells[y][x] {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    // Count alive cells
+    fn count_alive(&self) -> usize {
+        let mut count = 0;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.is_alive(y, x) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    // Set pattern conditioning (one-hot encoding in last 4 channels)
+    fn set_pattern_condition(&mut self, pattern_id: usize) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                // Clear all pattern channels
+                for i in 0..NUM_PATTERN_CHANNELS {
+                    self.cells[y][x][NUM_BASE_CHANNELS + i] = 0.0;
+                }
+                // Set the active pattern channel
+                if pattern_id < NUM_PATTERN_CHANNELS {
+                    self.cells[y][x][NUM_BASE_CHANNELS + pattern_id] = 1.0;
+                }
+            }
+        }
+    }
+
+    // Set interpolated pattern conditioning (blended values)
+    fn set_interpolated_condition(&mut self, weights: &[f64; 4]) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                // Set each pattern channel to its weight
+                for i in 0..NUM_PATTERN_CHANNELS {
+                    self.cells[y][x][NUM_BASE_CHANNELS + i] = weights[i];
+                }
+            }
+        }
+    }
+
+    // Place food at a location (attracts growth)
+    fn place_food(&mut self, x: usize, y: usize, radius: f64, strength: f64) {
+        let center_x = x as f64;
+        let center_y = y as f64;
+
+        for py in 0..self.height {
+            for px in 0..self.width {
+                let dx = px as f64 - center_x;
+                let dy = py as f64 - center_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                if dist <= radius {
+                    let falloff = 1.0 - (dist / radius);
+                    self.cells[py][px][FOOD_CHANNEL] = (strength * falloff).min(1.0);
+                }
+            }
+        }
+    }
+
+    // Place toxin at a location (repels/kills growth)
+    fn place_toxin(&mut self, x: usize, y: usize, radius: f64, strength: f64) {
+        let center_x = x as f64;
+        let center_y = y as f64;
+
+        for py in 0..self.height {
+            for px in 0..self.width {
+                let dx = px as f64 - center_x;
+                let dy = py as f64 - center_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                if dist <= radius {
+                    let falloff = 1.0 - (dist / radius);
+                    self.cells[py][px][TOXIN_CHANNEL] = (strength * falloff).min(1.0);
+                }
+            }
+        }
+    }
+
+    // Clear environmental channels
+    fn clear_environment(&mut self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                self.cells[y][x][FOOD_CHANNEL] = 0.0;
+                self.cells[y][x][TOXIN_CHANNEL] = 0.0;
+            }
+        }
+    }
+}
+
+fn perceive(grid: &Grid, y: usize, x: usize) -> Vec<f64> {
+    let mut perception = Vec::new();
+    let sobel_x = [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]];
+    let sobel_y = [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]];
+
+    for channel in 0..NUM_CHANNELS {
+        let mut dx = 0.0;
+        let mut dy = 0.0;
+        let mut center_val = 0.0;
+
+        for dy_offset in -1..=1 {
+            for dx_offset in -1..=1 {
+                let ny = (y as i32 + dy_offset) as i32;
+                let nx = (x as i32 + dx_offset) as i32;
+                let cell = grid.get_cell(ny, nx);
+                let val = cell[channel];
+
+                let ky = (dy_offset + 1) as usize;
+                let kx = (dx_offset + 1) as usize;
+
+                dx += val * sobel_x[ky][kx];
+                dy += val * sobel_y[ky][kx];
+
+                if dy_offset == 0 && dx_offset == 0 {
+                    center_val = val;
+                }
+            }
+        }
+
+        perception.push(center_val);
+        perception.push(dx);
+        perception.push(dy);
+    }
+
+    perception
+}
+
+struct UpdateNetwork {
+    weights1: Vec<Vec<f64>>,
+    bias1: Vec<f64>,
+    weights2: Vec<Vec<f64>>,
+    bias2: Vec<f64>,
+    hidden_size: usize,
+}
+
+impl UpdateNetwork {
+    fn new(input_size: usize, hidden_size: usize, output_size: usize) -> Self {
+        let mut rng = rand::thread_rng();
+
+        let weights1: Vec<Vec<f64>> = (0..hidden_size)
+            .map(|_| (0..input_size).map(|_| rng.gen_range(-0.1..0.1)).collect())
+            .collect();
+        let bias1: Vec<f64> = (0..hidden_size).map(|_| 0.0).collect();
+
+        let weights2: Vec<Vec<f64>> = (0..output_size)
+            .map(|_| (0..hidden_size).map(|_| rng.gen_range(-0.1..0.1)).collect())
+            .collect();
+        let bias2: Vec<f64> = (0..output_size).map(|_| 0.0).collect();
+
+        UpdateNetwork {
+            weights1,
+            bias1,
+            weights2,
+            bias2,
+            hidden_size,
+        }
+    }
+
+    fn forward(&self, input: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        let mut hidden: Vec<f64> = Vec::new();
+        for i in 0..self.hidden_size {
+            let mut sum = self.bias1[i];
+            for (j, &inp) in input.iter().enumerate() {
+                sum += inp * self.weights1[i][j];
+            }
+            hidden.push(sum.max(0.0));
+        }
+
+        let mut output: Vec<f64> = Vec::new();
+        for i in 0..NUM_CHANNELS {
+            let mut sum = self.bias2[i];
+            for (j, &h) in hidden.iter().enumerate() {
+                sum += h * self.weights2[i][j];
+            }
+            output.push(sum);
+        }
+
+        (hidden, output)
+    }
+
+    fn update_weights(&mut self, gradients: &NetworkGradients, learning_rate: f64) {
+        for i in 0..self.weights2.len() {
+            for j in 0..self.weights2[i].len() {
+                self.weights2[i][j] -= learning_rate * gradients.grad_w2[i][j];
+            }
+            self.bias2[i] -= learning_rate * gradients.grad_b2[i];
+        }
+
+        for i in 0..self.weights1.len() {
+            for j in 0..self.weights1[i].len() {
+                self.weights1[i][j] -= learning_rate * gradients.grad_w1[i][j];
+            }
+            self.bias1[i] -= learning_rate * gradients.grad_b1[i];
+        }
+    }
+}
+
+struct NetworkGradients {
+    grad_w1: Vec<Vec<f64>>,
+    grad_b1: Vec<f64>,
+    grad_w2: Vec<Vec<f64>>,
+    grad_b2: Vec<f64>,
+}
+
+impl NetworkGradients {
+    fn new(net: &UpdateNetwork) -> Self {
+        NetworkGradients {
+            grad_w1: vec![vec![0.0; net.weights1[0].len()]; net.weights1.len()],
+            grad_b1: vec![0.0; net.bias1.len()],
+            grad_w2: vec![vec![0.0; net.weights2[0].len()]; net.weights2.len()],
+            grad_b2: vec![0.0; net.bias2.len()],
+        }
+    }
+}
+
+struct NCA {
+    grid: Grid,
+    update_net: UpdateNetwork,
+}
+
+impl NCA {
+    fn new() -> Self {
+        let grid = Grid::new(GRID_SIZE, GRID_SIZE);
+        let perception_features = NUM_CHANNELS * 3;
+        let update_net = UpdateNetwork::new(perception_features, 96, NUM_CHANNELS);
+
+        NCA { grid, update_net }
+    }
+
+    fn reset_with_seed(&mut self) {
+        self.grid = Grid::new(GRID_SIZE, GRID_SIZE);
+        self.grid.seed();
+    }
+
+    fn step(&mut self) {
+        let mut new_cells = self.grid.cells.clone();
+
+        for y in 0..self.grid.height {
+            for x in 0..self.grid.width {
+                let perception = perceive(&self.grid, y, x);
+                let (_, delta) = self.update_net.forward(&perception);
+
+                for channel in 0..NUM_CHANNELS {
+                    new_cells[y][x][channel] = (self.grid.cells[y][x][channel] + delta[channel])
+                        .clamp(0.0, 1.0);
+                }
+
+                if !self.grid.is_alive(y, x) && new_cells[y][x][3] < 0.1 {
+                    for channel in 0..NUM_CHANNELS {
+                        new_cells[y][x][channel] = 0.0;
+                    }
+                }
+            }
+        }
+
+        self.grid.cells = new_cells;
+    }
+
+    fn train_step(&mut self, target: &Grid, learning_rate: f64) -> f64 {
+        let mut total_gradients = NetworkGradients::new(&self.update_net);
+        let mut total_loss = 0.0;
+
+        for y in 0..self.grid.height {
+            for x in 0..self.grid.width {
+                let perception = perceive(&self.grid, y, x);
+                let (hidden, delta) = self.update_net.forward(&perception);
+
+                for channel in 0..NUM_CHANNELS {
+                    let current_val = self.grid.cells[y][x][channel];
+                    let new_val = (current_val + delta[channel]).clamp(0.0, 1.0);
+                    let target_val = target.cells[y][x][channel];
+
+                    let error = new_val - target_val;
+                    total_loss += error * error;
+
+                    let weight = if channel < 4 { 1.0 } else { 0.1 };
+                    let grad_delta = 2.0 * error * weight;
+
+                    for j in 0..hidden.len() {
+                        total_gradients.grad_w2[channel][j] += grad_delta * hidden[j];
+                    }
+                    total_gradients.grad_b2[channel] += grad_delta;
+
+                    for j in 0..hidden.len() {
+                        let grad_hidden = grad_delta * self.update_net.weights2[channel][j];
+
+                        if hidden[j] > 0.0 {
+                            for k in 0..perception.len() {
+                                total_gradients.grad_w1[j][k] += grad_hidden * perception[k];
+                            }
+                            total_gradients.grad_b1[j] += grad_hidden;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.update_net.update_weights(&total_gradients, learning_rate);
+
+        total_loss / (self.grid.width * self.grid.height) as f64
+    }
+}
+
+fn create_circle_target(size: usize, radius: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let center = size as f64 / 2.0;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dy = y as f64 - center;
+            let dx = x as f64 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            if dist <= radius {
+                grid.cells[y][x][0] = 0.0;
+                grid.cells[y][x][1] = 0.8;
+                grid.cells[y][x][2] = 0.0;
+                grid.cells[y][x][3] = 1.0;
+            }
+        }
+    }
+
+    grid
+}
+
+fn create_triangle_target(size: usize, height: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let center_x = size as f64 / 2.0;
+    let base_y = size as f64 / 2.0 + height / 2.0;
+    let top_y = size as f64 / 2.0 - height / 2.0;
+
+    for y in 0..size {
+        for x in 0..size {
+            let y_pos = y as f64;
+            let x_pos = x as f64;
+
+            // Triangle defined by: y increases from top to base
+            // Width increases linearly with y
+            if y_pos >= top_y && y_pos <= base_y {
+                let progress = (y_pos - top_y) / height;
+                let half_width = progress * height / 2.0;
+
+                if (x_pos - center_x).abs() <= half_width {
+                    grid.cells[y][x][0] = 0.8;
+                    grid.cells[y][x][1] = 0.0;
+                    grid.cells[y][x][2] = 0.8;
+                    grid.cells[y][x][3] = 1.0;
+                }
+            }
+        }
+    }
+
+    grid
+}
+
+fn create_square_target(size: usize, side_length: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let center = size as f64 / 2.0;
+    let half_side = side_length / 2.0;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dy = (y as f64 - center).abs();
+            let dx = (x as f64 - center).abs();
+
+            if dx <= half_side && dy <= half_side {
+                grid.cells[y][x][0] = 0.8;
+                grid.cells[y][x][1] = 0.8;
+                grid.cells[y][x][2] = 0.0;
+                grid.cells[y][x][3] = 1.0;
+            }
+        }
+    }
+
+    grid
+}
+
+fn create_cross_target(size: usize, thickness: f64, length: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let center = size as f64 / 2.0;
+    let half_thickness = thickness / 2.0;
+    let half_length = length / 2.0;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dy = (y as f64 - center).abs();
+            let dx = (x as f64 - center).abs();
+
+            // Horizontal bar
+            let in_horizontal = dy <= half_thickness && dx <= half_length;
+            // Vertical bar
+            let in_vertical = dx <= half_thickness && dy <= half_length;
+
+            if in_horizontal || in_vertical {
+                grid.cells[y][x][0] = 0.0;
+                grid.cells[y][x][1] = 0.8;
+                grid.cells[y][x][2] = 0.8;
+                grid.cells[y][x][3] = 1.0;
+            }
+        }
+    }
+
+    grid
+}
+
+// ========== TERRAIN GENERATION FUNCTIONS ==========
+
+// Create mountain terrain with a central peak
+fn create_mountain_terrain(size: usize, peak_height: f64, num_peaks: usize) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let mut rng = rand::thread_rng();
+
+    // Generate multiple peaks
+    for _ in 0..num_peaks {
+        let peak_x = rng.gen_range(size / 4..3 * size / 4) as f64;
+        let peak_y = rng.gen_range(size / 4..3 * size / 4) as f64;
+        let radius = rng.gen_range(8.0..16.0);
+
+        for y in 0..size {
+            for x in 0..size {
+                let dx = x as f64 - peak_x;
+                let dy = y as f64 - peak_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                // Radial falloff from peak
+                if dist < radius {
+                    let height = peak_height * (1.0 - (dist / radius).powi(2));
+                    grid.cells[y][x][0] = (grid.cells[y][x][0] + height).min(1.0);
+                }
+            }
+        }
+    }
+
+    // Set alpha channel to 1.0 for all terrain
+    for y in 0..size {
+        for x in 0..size {
+            let height = grid.cells[y][x][0];
+            grid.cells[y][x][3] = 1.0;
+
+            // Color based on elevation (will be used for visualization)
+            if height > 0.7 {
+                // High mountains - white/snow
+                grid.cells[y][x][1] = height * 0.9;
+                grid.cells[y][x][2] = height * 0.9;
+            } else if height > 0.4 {
+                // Mid elevation - brown/rock
+                grid.cells[y][x][1] = height * 0.6;
+                grid.cells[y][x][2] = height * 0.3;
+            } else {
+                // Low elevation - green
+                grid.cells[y][x][1] = height * 0.8;
+                grid.cells[y][x][2] = height * 0.2;
+            }
+        }
+    }
+
+    grid
+}
+
+// Create rolling hills with sine wave patterns
+fn create_hills_terrain(size: usize, amplitude: f64, frequency: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+
+    for y in 0..size {
+        for x in 0..size {
+            let nx = x as f64 / size as f64;
+            let ny = y as f64 / size as f64;
+
+            // Combine multiple sine waves for natural-looking hills
+            let height = amplitude * (
+                (nx * frequency * std::f64::consts::PI * 2.0).sin() * 0.5 +
+                (ny * frequency * std::f64::consts::PI * 2.0).sin() * 0.5 +
+                ((nx + ny) * frequency * std::f64::consts::PI * 1.5).sin() * 0.3
+            ).abs().min(1.0);
+
+            grid.cells[y][x][0] = height;
+            grid.cells[y][x][3] = 1.0;
+
+            // Green for hills
+            grid.cells[y][x][1] = 0.5 + height * 0.5;
+            grid.cells[y][x][2] = 0.2 + height * 0.2;
+        }
+    }
+
+    grid
+}
+
+// Create flat plains with gentle variation
+fn create_plains_terrain(size: usize, variation: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let mut rng = rand::thread_rng();
+
+    // Base elevation with small random variation
+    let base_height = 0.3;
+
+    for y in 0..size {
+        for x in 0..size {
+            let noise = rng.gen_range(-variation..variation);
+            let height = (base_height + noise).clamp(0.0, 1.0);
+
+            grid.cells[y][x][0] = height;
+            grid.cells[y][x][3] = 1.0;
+
+            // Yellowish-green for plains
+            grid.cells[y][x][1] = 0.7;
+            grid.cells[y][x][2] = 0.4;
+        }
+    }
+
+    // Smooth the terrain
+    let smoothed = grid.cells.clone();
+    for y in 1..size-1 {
+        for x in 1..size-1 {
+            let mut sum = 0.0;
+            let mut count = 0;
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    sum += smoothed[(y as i32 + dy) as usize][(x as i32 + dx) as usize][0];
+                    count += 1;
+                }
+            }
+            grid.cells[y][x][0] = sum / count as f64;
+        }
+    }
+
+    grid
+}
+
+// Create valley terrain (inverted mountains)
+fn create_valley_terrain(size: usize, depth: f64) -> Grid {
+    let mut grid = Grid::new(size, size);
+    let center_x = size as f64 / 2.0;
+    let center_y = size as f64 / 2.0;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f64 - center_x;
+            let dy = y as f64 - center_y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let max_dist = (size as f64 / 2.0) * 1.414; // Diagonal distance
+
+            // Higher at edges, lower in center
+            let height = (dist / max_dist).min(1.0) * (1.0 - depth) + depth;
+
+            grid.cells[y][x][0] = height;
+            grid.cells[y][x][3] = 1.0;
+
+            // Color based on depth
+            if height < 0.3 {
+                // Deep valley - darker green/blue
+                grid.cells[y][x][1] = height * 0.5;
+                grid.cells[y][x][2] = 0.6;
+            } else {
+                // Valley sides - green
+                grid.cells[y][x][1] = height * 0.7;
+                grid.cells[y][x][2] = height * 0.3;
+            }
+        }
+    }
+
+    grid
+}
+
+// Get terrain color based on elevation (for visualization)
+fn get_terrain_color(height: f64) -> Color {
+    if height < 0.1 {
+        Color::Rgb(20, 50, 120)  // Deep water - dark blue
+    } else if height < 0.25 {
+        Color::Rgb(50, 100, 180)  // Shallow water - blue
+    } else if height < 0.35 {
+        Color::Rgb(210, 180, 140)  // Beach/sand - tan
+    } else if height < 0.5 {
+        Color::Rgb(90, 140, 70)  // Low plains - green
+    } else if height < 0.65 {
+        Color::Rgb(120, 160, 90)  // Hills - light green
+    } else if height < 0.8 {
+        Color::Rgb(130, 100, 70)  // Mountains - brown
+    } else if height < 0.9 {
+        Color::Rgb(160, 140, 120)  // High mountains - gray-brown
+    } else {
+        Color::Rgb(240, 240, 250)  // Peaks/snow - white
+    }
+}
+
+fn grid_to_ascii(grid: &Grid) -> String {
+    let mut result = String::new();
+    for y in 0..grid.height {
+        for x in 0..grid.width {
+            let alpha = grid.cells[y][x][3];
+            let ch = if alpha > 0.8 { '█' }
+                    else if alpha > 0.5 { '▓' }
+                    else if alpha > 0.2 { '▒' }
+                    else if alpha > 0.1 { '░' }
+                    else { ' ' };
+            result.push(ch);
+        }
+        result.push('\n');
+    }
+    result
+}
+
+fn main() -> Result<(), io::Error> {
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let mut nca = NCA::new();
+
+    // Create terrain target patterns with conditioning
+    let pattern_names = vec!["Mountains", "Hills", "Plains", "Valley"];
+    let mut targets = vec![
+        create_mountain_terrain(GRID_SIZE, 0.9, 3),
+        create_hills_terrain(GRID_SIZE, 0.6, 3.0),
+        create_plains_terrain(GRID_SIZE, 0.05),
+        create_valley_terrain(GRID_SIZE, 0.2),
+    ];
+
+    // Set pattern conditioning on each target
+    for (i, target) in targets.iter_mut().enumerate() {
+        target.set_pattern_condition(i);
+    }
+
+    let learning_rate = 0.0002;  // Increased for faster convergence
+    let num_epochs = 400;  // More epochs for better multi-pattern learning
+    let ca_steps_per_epoch = 10;  // Reduced for speed (pattern still emerges)
+
+    let mut loss_history: Vec<(f64, f64)> = Vec::new();
+    let mut per_pattern_loss: Vec<Vec<f64>> = vec![Vec::new(); 4];
+
+    // Store learned grids for display
+    let mut learned_grids: Vec<Grid> = vec![
+        Grid::new(GRID_SIZE, GRID_SIZE),
+        Grid::new(GRID_SIZE, GRID_SIZE),
+        Grid::new(GRID_SIZE, GRID_SIZE),
+        Grid::new(GRID_SIZE, GRID_SIZE),
+    ];
+
+    for epoch in 0..num_epochs {
+        // Cycle through patterns
+        let pattern_id = epoch % 4;
+        let target = &targets[pattern_id];
+
+        nca.reset_with_seed();
+        // Set pattern conditioning on the NCA grid
+        nca.grid.set_pattern_condition(pattern_id);
+
+        // Run CA steps
+        for _ in 0..ca_steps_per_epoch {
+            nca.step();
+
+            // Check for quit
+            if event::poll(Duration::from_millis(0))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.code == KeyCode::Char('q') {
+                        disable_raw_mode()?;
+                        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // Train
+        let loss = nca.train_step(&target, learning_rate);
+        loss_history.push((epoch as f64, loss));
+        per_pattern_loss[pattern_id].push(loss);
+
+        // Store the learned grid for this pattern
+        learned_grids[pattern_id] = nca.grid.clone_grid();
+
+        // Draw UI - Show all 4 patterns in grid
+        terminal.draw(|f| {
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(20),
+                    Constraint::Length(8),
+                    Constraint::Length(3),
+                ])
+                .split(f.size());
+
+            // Title
+            let title = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled("Neural Cellular Automata", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::raw(" - Terrain Generation (Mountains, Hills, Plains, Valley)"),
+                ]),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+            f.render_widget(title, main_chunks[0]);
+
+            // 2x2 Grid for all 4 patterns
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(main_chunks[1]);
+
+            let top_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rows[0]);
+
+            let bottom_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rows[1]);
+
+            let grid_areas = vec![top_cols[0], top_cols[1], bottom_cols[0], bottom_cols[1]];
+
+            // Draw each terrain type's current state
+            for (i, area) in grid_areas.iter().enumerate() {
+                let is_training = i == pattern_id;
+                let border_color = if is_training { Color::Cyan } else { Color::DarkGray };
+
+                let title_style = if is_training {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+
+                let status = if is_training { " [TRAINING]" } else { "" };
+                let avg_loss = if !per_pattern_loss[i].is_empty() {
+                    per_pattern_loss[i].iter().sum::<f64>() / per_pattern_loss[i].len() as f64
+                } else {
+                    0.0
+                };
+
+                // For training pattern, show current grid; for others, show last learned state
+                let display_grid = if is_training {
+                    &nca.grid
+                } else {
+                    &learned_grids[i]
+                };
+
+                let grid_widget = Canvas::default()
+                    .block(Block::default()
+                        .title(format!("{}{} (loss: {:.4})", pattern_names[i], status, avg_loss))
+                        .title_style(title_style)
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(border_color)))
+                    .x_bounds([0.0, GRID_SIZE as f64])
+                    .y_bounds([0.0, GRID_SIZE as f64])
+                    .paint(|ctx| {
+                        for y in 0..display_grid.height {
+                            for x in 0..display_grid.width {
+                                let height = display_grid.cells[y][x][0];
+                                let alpha = display_grid.cells[y][x][3];
+                                if alpha > 0.5 {
+                                    let cell_color = get_terrain_color(height);
+                                    ctx.draw(&Rectangle {
+                                        x: x as f64,
+                                        y: (GRID_SIZE - y - 1) as f64,
+                                        width: 1.0,
+                                        height: 1.0,
+                                        color: cell_color,
+                                    });
+                                }
+                            }
+                        }
+                    });
+                f.render_widget(grid_widget, *area);
+            }
+
+            // Loss graph with all patterns
+            let datasets: Vec<Dataset> = vec![
+                Dataset::default()
+                    .name("Overall")
+                    .marker(symbols::Marker::Braille)
+                    .style(Style::default().fg(Color::White))
+                    .graph_type(GraphType::Line)
+                    .data(&loss_history),
+            ];
+
+            let max_loss = loss_history.iter().map(|(_, l)| *l).fold(0.0f64, f64::max);
+            let chart = Chart::new(datasets)
+                .block(Block::default()
+                    .title(format!("Training Progress | Current: {} | Epoch {}/{}",
+                        pattern_names[pattern_id], epoch + 1, num_epochs))
+                    .borders(Borders::ALL))
+                .x_axis(ratatui::widgets::Axis::default()
+                    .title("Epoch")
+                    .bounds([0.0, num_epochs as f64]))
+                .y_axis(ratatui::widgets::Axis::default()
+                    .title("Loss")
+                    .bounds([0.0, max_loss * 1.1]));
+            f.render_widget(chart, main_chunks[2]);
+
+            // Progress
+            let progress = Gauge::default()
+                .block(Block::default().title("Overall Progress").borders(Borders::ALL))
+                .gauge_style(Style::default().fg(Color::Cyan))
+                .percent(((epoch + 1) * 100 / num_epochs) as u16)
+                .label(format!("Epoch {}/{} - Training: {}", epoch + 1, num_epochs, pattern_names[pattern_id]));
+            f.render_widget(progress, main_chunks[3]);
+        })?;
+    }
+
+    // Generate final learned patterns
+    let mut final_learned_grids: Vec<Grid> = Vec::new();
+    for i in 0..4 {
+        nca.reset_with_seed();
+        nca.grid.set_pattern_condition(i);
+        for _ in 0..ca_steps_per_epoch {
+            nca.step();
+        }
+        final_learned_grids.push(nca.grid.clone_grid());
+    }
+
+    // Generate interpolated terrain (never seen during training!)
+    let interpolation_tests = vec![
+        ([0.5, 0.5, 0.0, 0.0], "Mountains ↔ Hills"),
+        ([0.5, 0.0, 0.5, 0.0], "Mountains ↔ Plains"),
+        ([0.0, 0.5, 0.5, 0.0], "Hills ↔ Plains"),
+        ([0.0, 0.0, 0.5, 0.5], "Plains ↔ Valley"),
+        ([0.33, 0.33, 0.34, 0.0], "Mountains + Hills + Plains"),
+        ([0.25, 0.25, 0.25, 0.25], "All 4 Blended"),
+    ];
+
+    let mut interpolated_grids: Vec<(Grid, String)> = Vec::new();
+    for (weights, name) in interpolation_tests {
+        nca.reset_with_seed();
+        nca.grid.set_interpolated_condition(&weights);
+        for _ in 0..ca_steps_per_epoch {
+            nca.step();
+        }
+        interpolated_grids.push((nca.grid.clone_grid(), name.to_string()));
+    }
+
+    // Display final results in TUI
+    enum DisplayMode {
+        LearnedPatterns,
+        Interpolations,
+        Morphing,
+        Environmental,
+        Persistence,
+        MultiAgent,
+    }
+
+    let mut display_mode = DisplayMode::LearnedPatterns;
+
+    // Morphing state
+    let mut morphing_source = 0;
+    let mut morphing_target = 1;
+    let mut morphing_progress = 0.0;
+    let mut morphing_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+
+    // Environmental state
+    let mut env_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+    let mut env_initialized = false;
+
+    // Persistence state
+    let mut persist_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+    let mut persist_initialized = false;
+    let mut persist_steps = 0;
+    let death_threshold_steps = 20;  // Cell must be below 0.1 for 20 steps to die
+
+    // Multi-agent state
+    let mut multiagent_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+    let mut multiagent_initialized = false;
+    let mut multiagent_steps = 0;
+
+    loop {
+        // Update morphing animation
+        if matches!(display_mode, DisplayMode::Morphing) {
+            morphing_progress += 0.02;
+            if morphing_progress >= 1.0 {
+                morphing_progress = 1.0;
+            }
+
+            // Calculate interpolated weights
+            let t = morphing_progress;
+            let mut weights = [0.0; 4];
+            weights[morphing_source] = 1.0 - t;
+            weights[morphing_target] = t;
+
+            // Generate morphing pattern
+            nca.reset_with_seed();
+            nca.grid.set_interpolated_condition(&weights);
+            for _ in 0..ca_steps_per_epoch {
+                nca.step();
+            }
+            morphing_grid = nca.grid.clone_grid();
+        }
+
+        // Initialize environmental mode
+        if matches!(display_mode, DisplayMode::Environmental) && !env_initialized {
+            env_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+            env_grid.seed();
+            env_grid.set_pattern_condition(0);  // Circle pattern
+
+            // Place some food and toxins
+            env_grid.place_food(8, 8, 4.0, 1.0);
+            env_grid.place_food(24, 24, 4.0, 1.0);
+            env_grid.place_toxin(8, 24, 4.0, 1.0);
+            env_grid.place_toxin(24, 8, 4.0, 1.0);
+
+            env_initialized = true;
+        }
+
+        // Initialize and run persistence simulation
+        if matches!(display_mode, DisplayMode::Persistence) {
+            if !persist_initialized {
+                // Start with a grown pattern
+                nca.reset_with_seed();
+                nca.grid.set_pattern_condition(0);  // Circle
+                for _ in 0..ca_steps_per_epoch {
+                    nca.step();
+                }
+                persist_grid = nca.grid.clone_grid();
+                persist_steps = 0;
+                persist_initialized = true;
+            } else {
+                // Continue running the NCA and track death
+                nca.grid = persist_grid.clone_grid();
+                nca.step();
+                nca.grid.update_death_tracking(death_threshold_steps);
+                persist_grid = nca.grid.clone_grid();
+                persist_steps += 1;
+            }
+        }
+
+        // Initialize and run multi-agent simulation
+        if matches!(display_mode, DisplayMode::MultiAgent) {
+            if !multiagent_initialized {
+                // Initialize two species in opposite corners
+                multiagent_grid = Grid::new(GRID_SIZE, GRID_SIZE);
+
+                // Seed species A (top-left corner)
+                let seed_a_y = 8;
+                let seed_a_x = 8;
+                for channel in 0..4 {
+                    multiagent_grid.cells[seed_a_y][seed_a_x][channel] = 1.0;
+                }
+                multiagent_grid.species[seed_a_y][seed_a_x] = 1;
+                // Set Circle pattern conditioning for this cell
+                for i in 0..NUM_PATTERN_CHANNELS {
+                    multiagent_grid.cells[seed_a_y][seed_a_x][NUM_BASE_CHANNELS + i] = if i == 0 { 1.0 } else { 0.0 };
+                }
+
+                // Seed species B (bottom-right corner)
+                let seed_b_y = 24;
+                let seed_b_x = 24;
+                for channel in 0..4 {
+                    multiagent_grid.cells[seed_b_y][seed_b_x][channel] = 1.0;
+                }
+                multiagent_grid.species[seed_b_y][seed_b_x] = 2;
+                // Set Triangle pattern conditioning for this cell
+                for i in 0..NUM_PATTERN_CHANNELS {
+                    multiagent_grid.cells[seed_b_y][seed_b_x][NUM_BASE_CHANNELS + i] = if i == 1 { 1.0 } else { 0.0 };
+                }
+
+                multiagent_steps = 0;
+                multiagent_initialized = true;
+            } else {
+                // Run NCA step and handle territorial conflicts
+                nca.grid = multiagent_grid.clone_grid();
+
+                // First, update pattern conditioning on the grid based on current species ownership
+                for y in 0..nca.grid.height {
+                    for x in 0..nca.grid.width {
+                        let current_species = nca.grid.species[y][x];
+                        let pattern_id = if current_species == 1 { 0 } else if current_species == 2 { 1 } else { 0 };
+
+                        for i in 0..NUM_PATTERN_CHANNELS {
+                            nca.grid.cells[y][x][NUM_BASE_CHANNELS + i] = if i == pattern_id { 1.0 } else { 0.0 };
+                        }
+                    }
+                }
+
+                // Now run the NCA update
+                let mut new_cells = nca.grid.cells.clone();
+                let mut new_species = nca.grid.species.clone();
+
+                for y in 0..nca.grid.height {
+                    for x in 0..nca.grid.width {
+                        let perception = perceive(&nca.grid, y, x);
+                        let (_, delta) = nca.update_net.forward(&perception);
+
+                        for channel in 0..NUM_CHANNELS {
+                            new_cells[y][x][channel] = (nca.grid.cells[y][x][channel] + delta[channel]).clamp(0.0, 1.0);
+                        }
+
+                        if !nca.grid.is_alive(y, x) && new_cells[y][x][3] < 0.1 {
+                            for channel in 0..NUM_CHANNELS {
+                                new_cells[y][x][channel] = 0.0;
+                            }
+                            new_species[y][x] = 0;  // Cell dies, loses territory
+                        }
+                    }
+                }
+
+                // Handle territorial conflicts: check neighbors and claim territory
+                for y in 0..nca.grid.height {
+                    for x in 0..nca.grid.width {
+                        let cell_alpha = new_cells[y][x][3];
+
+                        if cell_alpha > 0.5 && new_species[y][x] == 0 {
+                            // This cell is alive but has no species - check neighbors
+                            let mut neighbor_species_votes = [0; 3];  // counts for species 0, 1, 2
+
+                            for dy in -1..=1 {
+                                for dx in -1..=1 {
+                                    if dy == 0 && dx == 0 { continue; }
+                                    let ny = (y as i32 + dy).rem_euclid(nca.grid.height as i32) as usize;
+                                    let nx = (x as i32 + dx).rem_euclid(nca.grid.width as i32) as usize;
+                                    let neighbor_species = new_species[ny][nx];
+                                    let neighbor_alpha = new_cells[ny][nx][3];
+
+                                    if neighbor_alpha > 0.5 && neighbor_species > 0 {
+                                        neighbor_species_votes[neighbor_species as usize] += 1;
+                                    }
+                                }
+                            }
+
+                            // Assign to dominant neighbor species
+                            if neighbor_species_votes[1] > neighbor_species_votes[2] {
+                                new_species[y][x] = 1;
+                            } else if neighbor_species_votes[2] > neighbor_species_votes[1] {
+                                new_species[y][x] = 2;
+                            } else if neighbor_species_votes[1] > 0 {
+                                // Tie - pick randomly or first one
+                                new_species[y][x] = 1;
+                            }
+                        }
+                    }
+                }
+
+                multiagent_grid.cells = new_cells;
+                multiagent_grid.species = new_species;
+                multiagent_steps += 1;
+            }
+        }
+
+        terminal.draw(|f| {
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(5),
+                    Constraint::Min(20),
+                    Constraint::Length(10),
+                ])
+                .split(f.size());
+
+            // Title and summary
+            let loss_reduction = (1.0 - loss_history.last().map(|(_, l)| l).unwrap_or(&1.0) /
+                loss_history.first().map(|(_, l)| l).unwrap_or(&1.0)) * 100.0;
+
+            // Count species territories
+            let species_a_count = if matches!(display_mode, DisplayMode::MultiAgent) {
+                multiagent_grid.species.iter().flatten().filter(|&&s| s == 1).count()
+            } else { 0 };
+            let species_b_count = if matches!(display_mode, DisplayMode::MultiAgent) {
+                multiagent_grid.species.iter().flatten().filter(|&&s| s == 2).count()
+            } else { 0 };
+
+            let (title_text, subtitle, title_color) = match display_mode {
+                DisplayMode::LearnedPatterns => (
+                    "🏔️ TRAINING COMPLETE - TERRAIN GENERATION RESULTS",
+                    format!("Epochs: {} | Terrain Types: 4 | Loss: {:.4} → {:.4} ({:.1}% ↓) | SPACE: next mode | Q: quit",
+                        num_epochs,
+                        loss_history.first().map(|(_, l)| l).unwrap_or(&0.0),
+                        loss_history.last().map(|(_, l)| l).unwrap_or(&0.0),
+                        loss_reduction),
+                    Color::Green
+                ),
+                DisplayMode::Interpolations => (
+                    "🗺️ TERRAIN BLENDING - HYBRID LANDSCAPES!",
+                    "Blending different terrain types never seen during training | SPACE: next mode | Q: quit".to_string(),
+                    Color::Cyan
+                ),
+                DisplayMode::Morphing => (
+                    "🌄 TERRAIN MORPHING - LIVE ANIMATION",
+                    format!("{} → {} ({:.0}%) | Keys 1-4: select terrain type | SPACE: next mode | Q: quit",
+                        pattern_names[morphing_source],
+                        pattern_names[morphing_target],
+                        morphing_progress * 100.0),
+                    Color::Yellow
+                ),
+                DisplayMode::Environmental => (
+                    "🌍 ENVIRONMENTAL RESPONSE - FOOD & TOXINS",
+                    "Green = Food (attract) | Red = Toxin (repel) | F: place food | T: place toxin | SPACE: next | Q: quit".to_string(),
+                    Color::Yellow
+                ),
+                DisplayMode::Persistence => (
+                    "💀 PERSISTENCE & DEATH - SURVIVAL TEST",
+                    format!("Steps: {} | Alive: {} | Dead: {} | Can the pattern self-regulate? | SPACE: next | Q: quit",
+                        persist_steps,
+                        persist_grid.count_alive(),
+                        persist_grid.count_dead()),
+                    Color::Red
+                ),
+                DisplayMode::MultiAgent => (
+                    "⚔️ MULTI-AGENT TERRITORIAL COMPETITION",
+                    format!("Steps: {} | Blue Team: {} cells | Red Team: {} cells | Watch them compete! | SPACE: next | Q: quit",
+                        multiagent_steps,
+                        species_a_count,
+                        species_b_count),
+                    Color::Blue
+                ),
+            };
+
+            let summary = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled(title_text,
+                        Style::default().fg(title_color).add_modifier(Modifier::BOLD)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::raw(subtitle),
+                ]),
+            ])
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(title_color)));
+            f.render_widget(summary, main_chunks[0]);
+
+            match display_mode {
+                DisplayMode::Morphing => {
+                    // Show large morphing animation
+                    let canvas = Canvas::default()
+                        .block(Block::default()
+                            .title(format!("Terrain Morphing: {} → {} ({:.0}%)",
+                                pattern_names[morphing_source],
+                                pattern_names[morphing_target],
+                                morphing_progress * 100.0))
+                            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Yellow)))
+                        .x_bounds([0.0, GRID_SIZE as f64])
+                        .y_bounds([0.0, GRID_SIZE as f64])
+                        .paint(|ctx| {
+                            for y in 0..morphing_grid.height {
+                                for x in 0..morphing_grid.width {
+                                    let height = morphing_grid.cells[y][x][0];
+                                    let alpha = morphing_grid.cells[y][x][3];
+                                    if alpha > 0.5 {
+                                        let cell_color = get_terrain_color(height);
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: cell_color,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    f.render_widget(canvas, main_chunks[1]);
+                }
+                DisplayMode::Environmental => {
+                    // Show grid with food and toxins overlaid
+                    let canvas = Canvas::default()
+                        .block(Block::default()
+                            .title("Environmental Interaction (Demo)")
+                            .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Yellow)))
+                        .x_bounds([0.0, GRID_SIZE as f64])
+                        .y_bounds([0.0, GRID_SIZE as f64])
+                        .paint(|ctx| {
+                            // Draw NCA cells
+                            for y in 0..env_grid.height {
+                                for x in 0..env_grid.width {
+                                    let alpha = env_grid.cells[y][x][3];
+                                    if alpha > 0.1 {
+                                        let cell_color = if alpha > 0.8 { Color::White }
+                                            else if alpha > 0.5 { Color::Gray }
+                                            else { Color::DarkGray };
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: cell_color,
+                                        });
+                                    }
+
+                                    // Overlay food (green)
+                                    let food = env_grid.cells[y][x][FOOD_CHANNEL];
+                                    if food > 0.1 {
+                                        let food_color = if food > 0.7 { Color::Green }
+                                            else { Color::LightGreen };
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: food_color,
+                                        });
+                                    }
+
+                                    // Overlay toxin (red)
+                                    let toxin = env_grid.cells[y][x][TOXIN_CHANNEL];
+                                    if toxin > 0.1 {
+                                        let toxin_color = if toxin > 0.7 { Color::Red }
+                                            else { Color::LightRed };
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: toxin_color,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    f.render_widget(canvas, main_chunks[1]);
+                }
+                DisplayMode::Persistence => {
+                    // Show pattern with death visualization
+                    let canvas = Canvas::default()
+                        .block(Block::default()
+                            .title(format!("Survival Simulation - Step {} ({} alive, {} dead)",
+                                persist_steps,
+                                persist_grid.count_alive(),
+                                persist_grid.count_dead()))
+                            .title_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Red)))
+                        .x_bounds([0.0, GRID_SIZE as f64])
+                        .y_bounds([0.0, GRID_SIZE as f64])
+                        .paint(|ctx| {
+                            for y in 0..persist_grid.height {
+                                for x in 0..persist_grid.width {
+                                    let alpha = persist_grid.cells[y][x][3];
+                                    let is_dead = persist_grid.dead_cells[y][x];
+                                    let death_counter = persist_grid.death_counters[y][x];
+
+                                    if is_dead {
+                                        // Permanently dead cells = dark red
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: Color::Red,
+                                        });
+                                    } else if alpha > 0.1 {
+                                        // Alive cells - color based on health
+                                        let cell_color = if alpha > 0.8 { Color::Green }
+                                            else if alpha > 0.5 { Color::Yellow }
+                                            else { Color::LightRed };  // Struggling
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: cell_color,
+                                        });
+                                    } else if death_counter > 0 {
+                                        // Dying cells (below threshold but not dead yet)
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: Color::DarkGray,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    f.render_widget(canvas, main_chunks[1]);
+                }
+                DisplayMode::MultiAgent => {
+                    // Show multi-agent territorial competition
+                    let canvas = Canvas::default()
+                        .block(Block::default()
+                            .title(format!("Territorial Competition - Step {} (Blue: {}, Red: {})",
+                                multiagent_steps,
+                                species_a_count,
+                                species_b_count))
+                            .title_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Blue)))
+                        .x_bounds([0.0, GRID_SIZE as f64])
+                        .y_bounds([0.0, GRID_SIZE as f64])
+                        .paint(|ctx| {
+                            for y in 0..multiagent_grid.height {
+                                for x in 0..multiagent_grid.width {
+                                    let alpha = multiagent_grid.cells[y][x][3];
+                                    let species = multiagent_grid.species[y][x];
+
+                                    if alpha > 0.1 {
+                                        let cell_color = match species {
+                                            1 => {
+                                                // Species A - Blue team
+                                                if alpha > 0.8 { Color::Blue }
+                                                else if alpha > 0.5 { Color::LightBlue }
+                                                else { Color::Cyan }
+                                            }
+                                            2 => {
+                                                // Species B - Red team
+                                                if alpha > 0.8 { Color::Red }
+                                                else if alpha > 0.5 { Color::LightRed }
+                                                else { Color::Magenta }
+                                            }
+                                            _ => {
+                                                // Neutral cells
+                                                Color::DarkGray
+                                            }
+                                        };
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: cell_color,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    f.render_widget(canvas, main_chunks[1]);
+                }
+                DisplayMode::Interpolations => {
+                    // Show interpolated patterns (3x2 grid)
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                    ])
+                    .split(main_chunks[1]);
+
+                let row1_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[0]);
+
+                let row2_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[1]);
+
+                let row3_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[2]);
+
+                let areas = vec![
+                    row1_cols[0], row1_cols[1],
+                    row2_cols[0], row2_cols[1],
+                    row3_cols[0], row3_cols[1],
+                ];
+
+                for (i, area) in areas.iter().enumerate() {
+                    if i >= interpolated_grids.len() {
+                        break;
+                    }
+
+                    let (grid, name) = &interpolated_grids[i];
+
+                    let canvas = Canvas::default()
+                        .block(Block::default()
+                            .title(name.clone())
+                            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Cyan)))
+                        .x_bounds([0.0, GRID_SIZE as f64])
+                        .y_bounds([0.0, GRID_SIZE as f64])
+                        .paint(|ctx| {
+                            for y in 0..grid.height {
+                                for x in 0..grid.width {
+                                    let height = grid.cells[y][x][0];
+                                    let alpha = grid.cells[y][x][3];
+                                    if alpha > 0.5 {
+                                        let cell_color = get_terrain_color(height);
+                                        ctx.draw(&Rectangle {
+                                            x: x as f64,
+                                            y: (GRID_SIZE - y - 1) as f64,
+                                            width: 1.0,
+                                            height: 1.0,
+                                            color: cell_color,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    f.render_widget(canvas, *area);
+                }
+                }
+                DisplayMode::LearnedPatterns => {
+                    // Show learned patterns (2x2 grid with Target vs Learned)
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(main_chunks[1]);
+
+                let top_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[0]);
+
+                let bottom_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(rows[1]);
+
+                let areas = vec![top_cols[0], top_cols[1], bottom_cols[0], bottom_cols[1]];
+
+                for (i, area) in areas.iter().enumerate() {
+                // Split each area into Target (left) and Learned (right)
+                let pattern_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(*area);
+
+                let avg_loss = if !per_pattern_loss[i].is_empty() {
+                    per_pattern_loss[i].iter().sum::<f64>() / per_pattern_loss[i].len() as f64
+                } else {
+                    0.0
+                };
+
+                // Target terrain
+                let target_canvas = Canvas::default()
+                    .block(Block::default()
+                        .title(format!("{} Target", pattern_names[i]))
+                        .title_style(Style::default().fg(Color::Cyan))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::DarkGray)))
+                    .x_bounds([0.0, GRID_SIZE as f64])
+                    .y_bounds([0.0, GRID_SIZE as f64])
+                    .paint(|ctx| {
+                        for y in 0..targets[i].height {
+                            for x in 0..targets[i].width {
+                                let height = targets[i].cells[y][x][0];
+                                let alpha = targets[i].cells[y][x][3];
+                                if alpha > 0.5 {
+                                    let cell_color = get_terrain_color(height);
+                                    ctx.draw(&Rectangle {
+                                        x: x as f64,
+                                        y: (GRID_SIZE - y - 1) as f64,
+                                        width: 1.0,
+                                        height: 1.0,
+                                        color: cell_color,
+                                    });
+                                }
+                            }
+                        }
+                    });
+                f.render_widget(target_canvas, pattern_cols[0]);
+
+                // Learned terrain
+                let learned_canvas = Canvas::default()
+                    .block(Block::default()
+                        .title(format!("Learned (loss: {:.3})", avg_loss))
+                        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan)))
+                    .x_bounds([0.0, GRID_SIZE as f64])
+                    .y_bounds([0.0, GRID_SIZE as f64])
+                    .paint(|ctx| {
+                        for y in 0..final_learned_grids[i].height {
+                            for x in 0..final_learned_grids[i].width {
+                                let height = final_learned_grids[i].cells[y][x][0];
+                                let alpha = final_learned_grids[i].cells[y][x][3];
+                                if alpha > 0.5 {
+                                    let cell_color = get_terrain_color(height);
+                                    ctx.draw(&Rectangle {
+                                        x: x as f64,
+                                        y: (GRID_SIZE - y - 1) as f64,
+                                        width: 1.0,
+                                        height: 1.0,
+                                        color: cell_color,
+                                    });
+                                }
+                            }
+                        }
+                    });
+                f.render_widget(learned_canvas, pattern_cols[1]);
+                }
+                }
+            }
+
+            // Bottom panel - Key insights
+            let insights = match display_mode {
+                DisplayMode::MultiAgent => {
+                    Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("⚔️ Multi-Agent Territorial Competition", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("What's Happening: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::styled("Blue Team", Style::default().fg(Color::Blue)),
+                            Span::raw(" (Circle pattern) vs "),
+                            Span::styled("Red Team", Style::default().fg(Color::Red)),
+                            Span::raw(" (Triangle pattern) compete for territory"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Rules: ", Style::default().fg(Color::Yellow)),
+                            Span::raw("• Each species grows using its own pattern"),
+                        ]),
+                        Line::from(vec![
+                            Span::raw("        • Cells claim territory from neighbors"),
+                        ]),
+                        Line::from(vec![
+                            Span::raw("        • Dead cells lose territory"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("💡 AGI Relevance: ", Style::default().fg(Color::Cyan)),
+                            Span::raw("Emergent competition • Resource allocation • Distributed conflict resolution"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" next mode | "),
+                            Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" quit"),
+                        ]),
+                    ])
+                }
+                DisplayMode::Morphing => {
+                    Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("🎬 Live Morphing Animation", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Controls: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::styled("1", Style::default().fg(Color::Green)),
+                            Span::raw("=Circle | "),
+                            Span::styled("2", Style::default().fg(Color::Magenta)),
+                            Span::raw("=Triangle | "),
+                            Span::styled("3", Style::default().fg(Color::Yellow)),
+                            Span::raw("=Square | "),
+                            Span::styled("4", Style::default().fg(Color::Cyan)),
+                            Span::raw("=Cross"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::raw("Press number key to morph to that pattern • Pattern smoothly transitions in real-time"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("💡 This tests: ", Style::default().fg(Color::Yellow)),
+                            Span::raw("Can the NCA smoothly change behaviors mid-flight?"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" next mode | "),
+                            Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" quit"),
+                        ]),
+                    ])
+                }
+                DisplayMode::Environmental => {
+                    Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("🌍 Environmental Interaction Demo", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("What you see: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::styled("Green areas", Style::default().fg(Color::Green)),
+                            Span::raw(" = Food (nutrients) | "),
+                            Span::styled("Red areas", Style::default().fg(Color::Red)),
+                            Span::raw(" = Toxins (damage)"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::raw("Note: This trained NCA doesn't respond to environment yet - that requires training!"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("💡 Next step: ", Style::default().fg(Color::Yellow)),
+                            Span::raw("Train an NCA to grow toward food and avoid toxins (goal-directed behavior)"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" next mode | "),
+                            Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" quit"),
+                        ]),
+                    ])
+                }
+                DisplayMode::Persistence => {
+                    Paragraph::new(vec![
+                        Line::from(vec![
+                            Span::styled("💀 Persistence & Death Test", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Color Key: ", Style::default().add_modifier(Modifier::BOLD)),
+                            Span::styled("Green", Style::default().fg(Color::Green)),
+                            Span::raw(" = Healthy | "),
+                            Span::styled("Yellow", Style::default().fg(Color::Yellow)),
+                            Span::raw(" = Weak | "),
+                            Span::styled("Red", Style::default().fg(Color::Red)),
+                            Span::raw(" = Dead"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("The Test: ", Style::default().fg(Color::Yellow)),
+                            Span::raw("Cells below alpha < 0.1 for 20 steps die permanently. Can the pattern self-maintain?"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("✅ Success = ", Style::default().fg(Color::Green)),
+                            Span::raw("Pattern actively regulates itself, stays alive"),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("❌ Failure = ", Style::default().fg(Color::Red)),
+                            Span::raw("Pattern degrades and dies (just memorized, no homeostasis)"),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" next mode | "),
+                            Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                            Span::raw(" quit"),
+                        ]),
+                    ])
+                }
+                DisplayMode::Interpolations => {
+                Paragraph::new(vec![
+                    Line::from(vec![
+                        Span::styled("🗺️ Hybrid Landscapes: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::raw("These terrain combinations were NEVER seen during training!"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("🔬 Testing: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                        Span::raw("Can the NCA blend terrain types to create realistic transitional landscapes?"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("Examples: ", Style::default().add_modifier(Modifier::BOLD)),
+                        Span::raw("Mountain-hill transition • Coastal plains • Highland valleys • Mixed terrain"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("💡 Real-world use: ", Style::default().fg(Color::Yellow)),
+                        Span::raw("Procedural map generation • Game world creation • Geological simulation"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                        Span::raw(" next mode | "),
+                        Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                        Span::raw(" quit"),
+                    ]),
+                ])
+                }
+                DisplayMode::LearnedPatterns => {
+                Paragraph::new(vec![
+                    Line::from(vec![
+                        Span::styled("🏔️ Key Achievement: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::raw("Single NCA learned 4 different terrain types via conditioning channels"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("🗺️ Terrain Types: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                        Span::raw("Mountains (peaks) • Hills (rolling) • Plains (flat) • Valley (depression)"),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("Per-Terrain Loss: ", Style::default().add_modifier(Modifier::BOLD)),
+                        Span::raw("Mountains "),
+                        Span::raw(format!("{:.3} | ", per_pattern_loss[0].last().unwrap_or(&0.0))),
+                        Span::raw("Hills "),
+                        Span::raw(format!("{:.3} | ", per_pattern_loss[1].last().unwrap_or(&0.0))),
+                        Span::raw("Plains "),
+                        Span::raw(format!("{:.3} | ", per_pattern_loss[2].last().unwrap_or(&0.0))),
+                        Span::raw("Valley "),
+                        Span::raw(format!("{:.3}", per_pattern_loss[3].last().unwrap_or(&0.0))),
+                    ]),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("SPACE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                        Span::raw(" next mode | "),
+                        Span::styled("Q", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                        Span::raw(" quit"),
+                    ]),
+                ])
+                }
+            };
+            f.render_widget(insights.alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), main_chunks[2]);
+        })?;
+
+        // Handle user input
+        if event::poll(Duration::from_millis(50))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char(' ') => {
+                        // Cycle through modes
+                        display_mode = match display_mode {
+                            DisplayMode::LearnedPatterns => DisplayMode::Interpolations,
+                            DisplayMode::Interpolations => DisplayMode::Morphing,
+                            DisplayMode::Morphing => DisplayMode::Environmental,
+                            DisplayMode::Environmental => DisplayMode::Persistence,
+                            DisplayMode::Persistence => DisplayMode::MultiAgent,
+                            DisplayMode::MultiAgent => DisplayMode::LearnedPatterns,
+                        };
+                        // Reset initialized flags when leaving modes
+                        if !matches!(display_mode, DisplayMode::Environmental) {
+                            env_initialized = false;
+                        }
+                        if !matches!(display_mode, DisplayMode::Persistence) {
+                            persist_initialized = false;
+                        }
+                        if !matches!(display_mode, DisplayMode::MultiAgent) {
+                            multiagent_initialized = false;
+                        }
+                    }
+                    KeyCode::Char('1') => {
+                        if matches!(display_mode, DisplayMode::Morphing) && morphing_target != 0 {
+                            morphing_source = morphing_target;
+                            morphing_target = 0;
+                            morphing_progress = 0.0;
+                        }
+                    }
+                    KeyCode::Char('2') => {
+                        if matches!(display_mode, DisplayMode::Morphing) && morphing_target != 1 {
+                            morphing_source = morphing_target;
+                            morphing_target = 1;
+                            morphing_progress = 0.0;
+                        }
+                    }
+                    KeyCode::Char('3') => {
+                        if matches!(display_mode, DisplayMode::Morphing) && morphing_target != 2 {
+                            morphing_source = morphing_target;
+                            morphing_target = 2;
+                            morphing_progress = 0.0;
+                        }
+                    }
+                    KeyCode::Char('4') => {
+                        if matches!(display_mode, DisplayMode::Morphing) && morphing_target != 3 {
+                            morphing_source = morphing_target;
+                            morphing_target = 3;
+                            morphing_progress = 0.0;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Cleanup terminal
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    // Save results to file
+    let mut file = std::fs::File::create("nca_multipattern_results.txt")?;
+    writeln!(file, "NEURAL CELLULAR AUTOMATA - MULTI-PATTERN RESULTS\n")?;
+    writeln!(file, "Training Summary:")?;
+    writeln!(file, "  Total Epochs: {}", num_epochs)?;
+    writeln!(file, "  Patterns: {}\n", pattern_names.join(", "))?;
+
+    for (i, pattern_name) in pattern_names.iter().enumerate() {
+        writeln!(file, "\n{} Pattern:", pattern_name)?;
+        writeln!(file, "Learned:\n{}", grid_to_ascii(&final_learned_grids[i]))?;
+        writeln!(file, "Target:\n{}", grid_to_ascii(&targets[i]))?;
+    }
+
+    println!("\n✨ Training complete! Results saved to: nca_multipattern_results.txt");
+
+    Ok(())
+}
