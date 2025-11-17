@@ -161,6 +161,64 @@ impl AssociationEngine {
         Ok(())
     }
 
+    /// Get strongest concepts (most associations)
+    pub fn get_strongest_concepts(&self, limit: usize) -> Vec<String> {
+        let mut concept_counts: HashMap<String, usize> = HashMap::new();
+
+        for assoc in &self.associations {
+            *concept_counts.entry(assoc.concept_a.clone()).or_insert(0) += 1;
+            *concept_counts.entry(assoc.concept_b.clone()).or_insert(0) += 1;
+        }
+
+        let mut concepts: Vec<(String, usize)> = concept_counts.into_iter().collect();
+        concepts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        concepts.into_iter().take(limit).map(|(concept, _)| concept).collect()
+    }
+
+    /// Get weakest concepts (fewest associations)
+    pub fn get_weakest_concepts(&self, limit: usize) -> Vec<String> {
+        let mut concept_counts: HashMap<String, usize> = HashMap::new();
+
+        for assoc in &self.associations {
+            *concept_counts.entry(assoc.concept_a.clone()).or_insert(0) += 1;
+            *concept_counts.entry(assoc.concept_b.clone()).or_insert(0) += 1;
+        }
+
+        let mut concepts: Vec<(String, usize)> = concept_counts.into_iter().collect();
+        concepts.sort_by(|a, b| a.1.cmp(&b.1));
+
+        concepts.into_iter().take(limit).map(|(concept, _)| concept).collect()
+    }
+
+    /// Get related concept names (not full associations)
+    pub fn get_related_concepts(&self, concept: &str, limit: usize) -> Vec<String> {
+        let associations = self.find_related_concepts(concept, limit);
+        associations.into_iter().map(|assoc| {
+            if assoc.concept_a == concept {
+                assoc.concept_b
+            } else {
+                assoc.concept_a
+            }
+        }).collect()
+    }
+
+    /// Record a direct association between two concepts
+    pub fn record_association(&mut self, concept_a: String, concept_b: String, similarity: f64) {
+        self.associations.push(ConceptAssociation {
+            concept_a,
+            concept_b,
+            similarity_score: similarity,
+            connection_type: if similarity > 0.8 {
+                ConnectionType::Similar
+            } else if similarity > 0.5 {
+                ConnectionType::Related
+            } else {
+                ConnectionType::Analogous
+            },
+        });
+    }
+
     /// Cluster concepts by similarity
     pub fn get_concept_clusters(&self, min_cluster_size: usize) -> Vec<Vec<String>> {
         let mut clusters: Vec<Vec<String>> = Vec::new();

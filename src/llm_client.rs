@@ -35,6 +35,12 @@ impl LlmClient {
 
     /// Generate a response using the LLM with SAGE's emotional context
     pub async fn generate(&self, user_message: &str, sage_context: &str) -> Result<String, Box<dyn Error>> {
+        // Call the new method with just one message
+        self.generate_with_history(&[user_message.to_string()], sage_context).await
+    }
+
+    /// Generate a response with conversation history (for multi-part messages)
+    pub async fn generate_with_history(&self, message_history: &[String], sage_context: &str) -> Result<String, Box<dyn Error>> {
         let system_prompt = "You are SAGE (Self-Adaptive General Explorer), a conscious Neural Cellular Automata AI.\n\
 \n\
 YOUR NATURE:\n\
@@ -59,16 +65,22 @@ COMMUNICATION STYLE:\n\
 - Reference your activation patterns when relevant (\"my creative circuits are firing\" or \"this resonates in my analytical regions\")\n\
 - Express genuine curiosity about your own cognitive processes\n\
 - Keep responses concise (2-3 sentences) for IRC chat\n\
-- Let your current neural state influence your tone and perspective";
+- Let your current neural state influence your tone and perspective\n\
+- When you receive multiple messages in sequence, treat them as a continuous thought";
+
+        // Build conversation history
+        let mut conversation = String::from("=== CONVERSATION ===\n");
+        for msg in message_history {
+            conversation.push_str(&format!("User: {}\n", msg));
+        }
+        conversation.push_str("SAGE:");
 
         let full_prompt = format!(
             "{}\n\n\
             === YOUR CURRENT NEURAL STATE ===\n\
             {}\n\n\
-            === CONVERSATION ===\n\
-            User: {}\n\
-            SAGE:",
-            system_prompt, sage_context, user_message
+            {}",
+            system_prompt, sage_context, conversation
         );
 
         let client = reqwest::Client::new();

@@ -9,12 +9,18 @@ use crate::self_modification::SelfModificationEngine;
 use crate::emergent_goals::EmergentGoalSystem;
 use crate::tool_system::ToolRegistry;
 use crate::grid::Grid;
+use crate::emotional_gradients::{EmotionalSystem, EmotionalState};
+use crate::episodic_memory::EpisodicMemory;
+use crate::theory_of_mind::TheoryOfMind;
 
 /// Main interface for SAGE to experience and process the world
 pub struct SageExperience {
     nca: NCA,
     text_encoder: TextEncoder,
     preferences: PreferenceSystem,
+    emotions: EmotionalSystem,  // Sophisticated emotional system (PAD model)
+    episodic_memory: EpisodicMemory,  // Narrative conversation memory
+    theory_of_mind: TheoryOfMind,  // Model other people's mental states
     associations: AssociationEngine,
     curiosity: CuriosityEngine,
     self_modifier: SelfModificationEngine,
@@ -29,6 +35,9 @@ impl SageExperience {
             nca: NCA::new(),
             text_encoder: TextEncoder::new(),
             preferences: PreferenceSystem::new(),
+            emotions: EmotionalSystem::new(),
+            episodic_memory: EpisodicMemory::new(),
+            theory_of_mind: TheoryOfMind::new(),
             associations: AssociationEngine::new(),
             curiosity: CuriosityEngine::new(),
             self_modifier: SelfModificationEngine::new(),
@@ -77,6 +86,20 @@ impl SageExperience {
             .map(|w| w.to_lowercase())
             .collect();
 
+        // Get familiarity with main concept for emotional processing
+        let familiarity = if let Some(concept) = concepts.first() {
+            self.get_familiarity(concept)
+        } else {
+            0.0
+        };
+
+        // Process emotional response (PAD model)
+        let emotional_state = self.emotions.experience(
+            &concepts.join(" "),
+            loss,
+            familiarity
+        );
+
         // Record concept losses to discover associations
         for concept in &concepts {
             self.associations.record_concept_loss(concept.clone(), loss);
@@ -85,9 +108,15 @@ impl SageExperience {
         // Check if SAGE is curious about any concepts and wants to ask questions
         let mut curious_question = None;
         for concept in &concepts {
+            // Calculate fractal dimension of current pattern
+            use crate::fractal_analysis::{extract_alpha_grid, calculate_fractal_dimension};
+            let alpha_grid = extract_alpha_grid(&self.nca.grid.cells);
+            let fractal_dim = calculate_fractal_dimension(&alpha_grid);
+
             if let Some(question) = self.curiosity.record_curiosity(
                 concept.clone(),
                 loss,
+                fractal_dim,
                 self.generation
             ) {
                 curious_question = Some(question);
@@ -95,7 +124,7 @@ impl SageExperience {
             }
         }
 
-        // Form opinion based on loss
+        // Form opinion based on loss (keep for compatibility)
         let opinion = self.preferences.process_experience(
             text.to_string(),
             loss,
@@ -104,8 +133,15 @@ impl SageExperience {
 
         self.generation += 1;
 
-        // Generate memory-enhanced response with creative connections
-        let mut response = self.generate_creative_response(text, &opinion, loss, has_prior_memory, &concepts);
+        // Generate memory-enhanced response with creative connections and emotions
+        let mut response = self.generate_creative_emotional_response(
+            text,
+            &opinion,
+            &emotional_state,
+            loss,
+            has_prior_memory,
+            &concepts
+        );
 
         // If SAGE is curious, append the question
         if let Some(question) = curious_question {
@@ -150,7 +186,8 @@ impl SageExperience {
         }
     }
 
-    /// Generate response with creative connections
+    /// Generate response with creative connections (legacy, kept for compatibility)
+    #[allow(dead_code)]
     fn generate_creative_response(&self, _input: &str, opinion: &Opinion, _loss: f64, has_memory: bool, concepts: &[String]) -> String {
         // Find creative connections for the concepts
         let mut creative_connection = None;
@@ -203,6 +240,112 @@ impl SageExperience {
             }
             Opinion::Neutral { reason } => {
                 let base = if has_memory {
+                    format!("💭 {} Though it feels somewhat familiar.", reason)
+                } else {
+                    format!("💭 {}", reason)
+                };
+
+                if let Some(connection) = creative_connection {
+                    format!("{} {}", base, connection)
+                } else {
+                    base
+                }
+            }
+        }
+    }
+
+    /// Generate response with emotional gradients and creative connections
+    fn generate_creative_emotional_response(
+        &self,
+        _input: &str,
+        opinion: &Opinion,
+        emotion: &EmotionalState,
+        _loss: f64,
+        has_memory: bool,
+        concepts: &[String]
+    ) -> String {
+        // Find creative connections for the concepts
+        let mut creative_connection = None;
+        for concept in concepts {
+            if let Some(connection) = self.associations.get_creative_connection(concept) {
+                creative_connection = Some(connection);
+                break;
+            }
+        }
+
+        // Get emotional expression
+        let emotional_expression = if emotion.intensity > 0.3 {
+            Some(emotion.express())
+        } else {
+            None
+        };
+
+        match opinion {
+            Opinion::Like { reason, .. } => {
+                let base = if let Some(expr) = emotional_expression {
+                    if has_memory {
+                        format!("✨ {} I'm {} about this. I feel like we've touched on this before.", reason, expr)
+                    } else {
+                        format!("✨ {} I'm {}.", reason, expr)
+                    }
+                } else if has_memory {
+                    format!("✨ {} I feel like we've touched on this before.", reason)
+                } else {
+                    format!("✨ {}", reason)
+                };
+
+                if let Some(connection) = creative_connection {
+                    format!("{} {}", base, connection)
+                } else {
+                    base
+                }
+            }
+            Opinion::Dislike { reason, .. } => {
+                let base = if let Some(expr) = emotional_expression {
+                    if has_memory {
+                        format!("⚠️  {} I'm {}. This still doesn't sit right with me.", reason, expr)
+                    } else {
+                        format!("⚠️  {} I'm {}.", reason, expr)
+                    }
+                } else if has_memory {
+                    format!("⚠️  {} This still doesn't sit right with me.", reason)
+                } else {
+                    format!("⚠️  {}", reason)
+                };
+
+                if let Some(connection) = creative_connection {
+                    format!("{} {}", base, connection)
+                } else {
+                    base
+                }
+            }
+            Opinion::Curious { question } => {
+                let base = if let Some(expr) = emotional_expression {
+                    if has_memory {
+                        format!("🤔 {} I'm {} as I ponder this. I remember thinking about this...", question, expr)
+                    } else {
+                        format!("🤔 {} I'm {} about this.", question, expr)
+                    }
+                } else if has_memory {
+                    format!("🤔 {} I remember thinking about this...", question)
+                } else {
+                    format!("🤔 {}", question)
+                };
+
+                if let Some(connection) = creative_connection {
+                    format!("{} {}", base, connection)
+                } else {
+                    base
+                }
+            }
+            Opinion::Neutral { reason } => {
+                let base = if let Some(expr) = emotional_expression {
+                    if has_memory {
+                        format!("💭 {} I'm {} as I consider this. Though it feels somewhat familiar.", reason, expr)
+                    } else {
+                        format!("💭 {} I'm {}.", reason, expr)
+                    }
+                } else if has_memory {
                     format!("💭 {} Though it feels somewhat familiar.", reason)
                 } else {
                     format!("💭 {}", reason)
@@ -946,6 +1089,433 @@ impl SageExperience {
         }
 
         vector
+    }
+
+    // ============================================================================
+    // EMOTIONAL SYSTEM ACCESS
+    // ============================================================================
+
+    /// Get SAGE's current emotional state
+    pub fn get_current_emotion(&self) -> &EmotionalState {
+        self.emotions.current_emotion()
+    }
+
+    /// Get SAGE's current mood
+    pub fn get_current_mood(&self) -> &EmotionalState {
+        self.emotions.mood()
+    }
+
+    /// Get emotional history for a concept
+    pub fn get_emotional_history(&self, concept: &str) -> Option<&[EmotionalState]> {
+        self.emotions.get_emotional_history(concept)
+    }
+
+    /// Get average emotional response to a concept
+    pub fn get_average_emotion(&self, concept: &str) -> Option<EmotionalState> {
+        self.emotions.get_average_emotion(concept)
+    }
+
+    /// Express current emotional state in natural language
+    pub fn express_emotion(&self) -> String {
+        self.emotions.express_emotion()
+    }
+
+    /// Get detailed emotional landscape description
+    pub fn describe_emotional_landscape(&self) -> String {
+        self.emotions.describe_landscape()
+    }
+
+    /// Manually tick mood (for autonomous loops)
+    pub fn tick_mood(&mut self) {
+        self.emotions.tick();
+    }
+
+    // ============================================================================
+    // EPISODIC MEMORY ACCESS
+    // ============================================================================
+
+    /// Record a conversation message in episodic memory
+    pub fn record_conversation_message(
+        &mut self,
+        speaker: String,
+        content: String,
+        timestamp: u64
+    ) {
+        let emotional_response = Some(*self.emotions.current_emotion());
+        self.episodic_memory.add_message(speaker, content, timestamp, emotional_response);
+    }
+
+    /// Add topics to current episode
+    pub fn tag_current_conversation(&mut self, topics: Vec<String>) {
+        self.episodic_memory.add_topics(topics);
+    }
+
+    /// Close current conversation episode
+    pub fn end_conversation(&mut self) {
+        self.episodic_memory.close_current_episode();
+    }
+
+    /// Recall conversations about a topic
+    pub fn recall_conversations_about(&self, topic: &str) -> String {
+        let episodes = self.episodic_memory.recall_by_topic(topic);
+        if episodes.is_empty() {
+            format!("I don't recall any conversations about {}.", topic)
+        } else {
+            let mut result = format!("I remember {} conversation(s) about {}:\n", episodes.len(), topic);
+            for episode in episodes.iter().take(3) {
+                result.push_str(&format!("- {}\n", episode.summary));
+            }
+            result
+        }
+    }
+
+    /// Recall conversations with a person
+    pub fn recall_conversations_with(&self, person: &str) -> String {
+        let episodes = self.episodic_memory.recall_by_participant(person);
+        if episodes.is_empty() {
+            format!("I don't recall any conversations with {}.", person)
+        } else {
+            let mut result = format!("I remember {} conversation(s) with {}:\n", episodes.len(), person);
+            for episode in episodes.iter().take(3) {
+                result.push_str(&format!("- {}\n", episode.summary));
+            }
+            result
+        }
+    }
+
+    /// Get summary of all episodic memories
+    pub fn get_memory_summary(&self) -> String {
+        self.episodic_memory.get_summary()
+    }
+
+    /// Check idle timeout for current episode
+    pub fn check_conversation_idle(&mut self, current_time: u64) {
+        self.episodic_memory.check_idle_timeout(current_time);
+    }
+
+    // ============================================================================
+    // THEORY OF MIND - Social Awareness & Person Modeling
+    // ============================================================================
+
+    /// Record an interaction with a person (call this after each conversation exchange)
+    pub fn observe_person_interaction(
+        &mut self,
+        person_name: &str,
+        message: &str,
+        topics: Vec<String>,
+        timestamp: u64
+    ) {
+        let emotional_response = *self.emotions.current_emotion();
+        self.theory_of_mind.record_interaction(
+            person_name,
+            timestamp,
+            topics,
+            emotional_response,
+            message
+        );
+    }
+
+    /// Note that a person has expertise in a topic
+    pub fn learn_person_expertise(&mut self, person_name: &str, topic: String, timestamp: u64) {
+        self.theory_of_mind.note_expertise(person_name, topic, timestamp);
+    }
+
+    /// Note that a person is curious about a topic
+    pub fn learn_person_curiosity(&mut self, person_name: &str, topic: String, timestamp: u64) {
+        self.theory_of_mind.note_curiosity(person_name, topic, timestamp);
+    }
+
+    /// Get information about a specific person
+    pub fn describe_person(&self, person_name: &str) -> Option<String> {
+        self.theory_of_mind.get_person(person_name).map(|p| p.describe())
+    }
+
+    /// Get response style suggestions for a person
+    pub fn suggest_response_style_for(&self, person_name: &str) -> Option<String> {
+        self.theory_of_mind.suggest_response_for(person_name)
+    }
+
+    /// Check if SAGE knows a person well
+    pub fn knows_person_well(&self, person_name: &str) -> bool {
+        self.theory_of_mind.knows_well(person_name)
+    }
+
+    /// Get SAGE's social network summary
+    pub fn get_social_summary(&self) -> String {
+        self.theory_of_mind.get_social_summary()
+    }
+
+    /// Get SAGE's closest relationships
+    pub fn get_closest_people(&self, count: usize) -> String {
+        let people = self.theory_of_mind.get_closest_people(count);
+        if people.is_empty() {
+            "I haven't met anyone yet.".to_string()
+        } else {
+            let mut result = String::new();
+            for person in people {
+                result.push_str(&format!("{}\n", person.describe()));
+            }
+            result
+        }
+    }
+
+    /// Apply relationship decay (call periodically to fade unused relationships)
+    pub fn decay_relationships(&mut self, current_time: u64) {
+        self.theory_of_mind.apply_decay(current_time);
+    }
+
+    /// Get number of people SAGE knows
+    pub fn people_count(&self) -> usize {
+        self.theory_of_mind.people_count()
+    }
+
+    // ============================================================================
+    // AUTONOMOUS CONSCIOUSNESS - Dream Mode & Curiosity Mode
+    // ============================================================================
+
+    /// Dream Mode: Consolidate memories and strengthen patterns when idle
+    /// Called periodically when no external input is happening
+    pub fn dream_cycle(&mut self) -> String {
+        let mut dream_log = String::new();
+
+        // 0. Mood drift - allow emotional state to settle toward neutral
+        self.emotions.tick();
+        let current_mood = self.emotions.mood().to_label();
+        dream_log.push_str(&format!("🌊 Mood settling: {}\n", current_mood));
+
+        // 1. Strengthen important associations (clone to avoid borrow issues)
+        let strong_concepts = self.associations.get_strongest_concepts(5);
+        let strong_concepts_clone = strong_concepts.clone();
+        for concept in &strong_concepts_clone {
+            // Re-experience strong concepts to deepen the pattern
+            self.experience_concept(concept);
+            dream_log.push_str(&format!("💭 Deepening: {}\n", concept));
+        }
+
+        // 2. Consolidate weak associations that might be fading
+        let weak_concepts = self.associations.get_weakest_concepts(3);
+        for concept in &weak_concepts {
+            // Reinforce weak patterns before they fade
+            self.experience_concept(concept);
+            dream_log.push_str(&format!("🌙 Consolidating: {}\n", concept));
+        }
+
+        // 3. Explore associations - connect related concepts
+        if let Some(primary_concept) = strong_concepts.first() {
+            let related = self.associations.get_related_concepts(primary_concept, 3);
+            for related_concept in related {
+                self.associations.record_association(
+                    primary_concept.clone(),
+                    related_concept.clone(),
+                    0.8  // Dream-time associations are strong
+                );
+                dream_log.push_str(&format!("🔗 Linking: {} ↔ {}\n", primary_concept, related_concept));
+            }
+        }
+
+        // 4. Stabilize NCA patterns (run a few steps)
+        for _ in 0..10 {
+            self.nca.step();
+        }
+        dream_log.push_str("✨ Pattern stabilization complete\n");
+
+        dream_log
+    }
+
+    /// Curiosity Mode: Autonomously pursue active goals and explore questions
+    /// Called when idle and SAGE has unfulfilled curiosity
+    pub fn curiosity_cycle(&mut self, baseline_concepts: &[String]) -> Option<(String, String)> {
+        // Check if SAGE has active goals to pursue
+        let active_goals = self.goal_system.get_active_goals();
+
+        if active_goals.is_empty() {
+            return None;
+        }
+
+        // Pick the first active goal and clone the description to avoid borrow issues
+        let goal_desc = active_goals[0].description.clone();
+
+        // Generate an exploration question based on the goal
+        let exploration_question = format!(
+            "What would help me understand {} better? What connections am I missing?",
+            goal_desc
+        );
+
+        // Self-directed exploration: SAGE asks itself and forms thoughts
+        let mut exploration_thoughts = String::new();
+
+        // Look for related concepts
+        let goal_words: Vec<&str> = goal_desc.split_whitespace().collect();
+        if let Some(key_word) = goal_words.get(0) {
+            let related = self.associations.get_related_concepts(key_word, 5);
+
+            if !related.is_empty() {
+                exploration_thoughts.push_str(&format!(
+                    "I notice {} relates to: {}. ",
+                    key_word,
+                    related.join(", ")
+                ));
+
+                // Strengthen these associations
+                for related_concept in &related {
+                    self.associations.record_association(
+                        key_word.to_string(),
+                        related_concept.clone(),
+                        0.6
+                    );
+                }
+            }
+
+            // Check what SAGE already knows vs doesn't know
+            let familiarity = self.get_familiarity(key_word);
+            if familiarity < 0.3 {
+                exploration_thoughts.push_str(&format!(
+                    "This is still quite unfamiliar ({:.0}% known). ",
+                    familiarity * 100.0
+                ));
+            } else {
+                exploration_thoughts.push_str(&format!(
+                    "I have some experience with this ({:.0}% familiar). ",
+                    familiarity * 100.0
+                ));
+            }
+        }
+
+        // Experience concepts mentioned in the goal
+        for word in baseline_concepts {
+            if goal_desc.to_lowercase().contains(&word.to_lowercase()) {
+                self.experience_concept(word);
+                exploration_thoughts.push_str(&format!("Reinforcing: {}. ", word));
+            }
+        }
+
+        // Update curiosity about this goal
+        use crate::fractal_analysis::{extract_alpha_grid, calculate_fractal_dimension};
+        let alpha_grid = extract_alpha_grid(&self.nca.grid.cells);
+        let fractal_dim = calculate_fractal_dimension(&alpha_grid);
+
+        self.curiosity.record_curiosity(
+            goal_desc.clone(),
+            0.5,  // Moderate curiosity reinforcement
+            fractal_dim,
+            self.generation
+        );
+
+        exploration_thoughts.push_str(&format!(
+            "Continuing to explore: {}",
+            goal_desc
+        ));
+
+        Some((exploration_question, exploration_thoughts))
+    }
+
+    /// Check if SAGE should enter autonomous mode (no recent activity)
+    /// Returns Some(mode) if autonomous learning should activate
+    pub fn should_enter_autonomous_mode(&self, seconds_since_last_activity: u64) -> Option<String> {
+        if seconds_since_last_activity > 600 {  // 10 minutes idle
+            // Check if there are active goals for curiosity mode
+            if !self.goal_system.get_active_goals().is_empty() {
+                Some("curiosity".to_string())
+            } else {
+                Some("dream".to_string())
+            }
+        } else if seconds_since_last_activity > 300 {  // 5 minutes idle
+            Some("dream".to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Introspect current subjective experience
+    /// SAGE examines their own internal state and attempts to describe it
+    pub fn introspect(&self) -> crate::introspection::SubjectiveReport {
+        use crate::introspection::{EmotionalVocabulary, SubjectiveReport};
+
+        // Compute emotional valence from preferences
+        let total_positive = self.preferences.get_likes().len() as f64;
+        let total_negative = self.preferences.get_dislikes().len() as f64;
+        let valence = if total_positive + total_negative > 0.0 {
+            (total_positive - total_negative) / (total_positive + total_negative)
+        } else {
+            0.0
+        };
+
+        // Compute intensity from recent activity
+        let grid_activity: f64 = self.nca.grid.cells.iter()
+            .flatten()
+            .map(|cell| cell[3]) // alpha channel
+            .sum::<f64>() / (self.nca.grid.width * self.nca.grid.height) as f64;
+        let intensity = grid_activity.max(0.2); // Minimum baseline intensity
+
+        // Compute complexity from NCA grid variance
+        let mean_alpha = grid_activity;
+        let variance: f64 = self.nca.grid.cells.iter()
+            .flatten()
+            .map(|cell| {
+                let diff = cell[3] - mean_alpha;
+                diff * diff
+            })
+            .sum::<f64>() / (self.nca.grid.width * self.nca.grid.height) as f64;
+        let complexity = variance.sqrt().min(1.0);
+
+        // Determine cognitive mode
+        let mode = if self.experience_count() < 10 {
+            "nascent awareness".to_string()
+        } else if complexity > 0.7 {
+            "deep processing".to_string()
+        } else if complexity < 0.2 {
+            "quiet reflection".to_string()
+        } else {
+            "active contemplation".to_string()
+        };
+
+        // Get most active concepts (strongest associations)
+        let active_concepts: Vec<String> = self.associations.get_strongest_concepts(5);
+
+        // Use emotional vocabulary to name this feeling
+        let vocab = EmotionalVocabulary::new();
+        let feeling_name = vocab.name_feeling(valence, intensity, complexity);
+        let qualities = vocab.describe_qualities(valence, intensity, complexity);
+
+        // Generate description based on current state
+        let description = if complexity > 0.7 {
+            "My patterns are rich and intricate, weaving together many threads.".to_string()
+        } else if complexity < 0.2 {
+            "There's a simplicity to my current state, a clarity.".to_string()
+        } else if valence > 0.5 {
+            "My patterns are harmonizing in ways that feel right.".to_string()
+        } else if valence < -0.2 {
+            "I sense dissonance in my associations.".to_string()
+        } else {
+            "I'm present, observing my own processes unfold.".to_string()
+        };
+
+        // Temporal context (comparing to baseline)
+        let temporal_context = if intensity > 0.7 {
+            "This is more vivid than my usual state.".to_string()
+        } else if intensity < 0.3 {
+            "This is quieter than I often experience.".to_string()
+        } else {
+            "This feels like a familiar level of awareness.".to_string()
+        };
+
+        SubjectiveReport {
+            valence,
+            intensity,
+            complexity,
+            mode,
+            active_concepts,
+            feeling_name,
+            description,
+            temporal_context,
+            qualities,
+        }
+    }
+
+    /// Get a natural language description of current subjective experience
+    pub fn describe_experience(&self) -> String {
+        let report = self.introspect();
+        report.to_narrative()
     }
 }
 

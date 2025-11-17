@@ -27,3 +27,6 @@ chrono = "0.4"  # Timestamp formatting
 reqwest = { version = "0.11", features = ["json", "blocking"] }  # HTTP client for LLM API
 ureq = "2.9"  # Simple HTTP client for tool system
 urlencoding = "2.1"  # URL encoding for web searches
+nokhwa = { version = "0.10", features = ["input-native"] }  # Camera capture
+image = "0.25"  # Image processing and resizing (matches nokhwa)
+clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing

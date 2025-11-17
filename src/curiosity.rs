@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub struct CuriosityEntry {
     pub concept: String,
     pub nca_loss: f64,
+    pub fractal_dimension: f64,  // Pattern complexity (1.0-2.0)
     pub question_asked: String,
     pub question_count: usize,
     pub last_asked: u64,  // generation timestamp
@@ -55,7 +56,7 @@ impl CuriosityEngine {
     }
 
     /// Record curiosity about a concept
-    pub fn record_curiosity(&mut self, concept: String, nca_loss: f64, generation: u64) -> Option<String> {
+    pub fn record_curiosity(&mut self, concept: String, nca_loss: f64, fractal_dim: f64, generation: u64) -> Option<String> {
         // Check if we're in the curiosity zone
         if !self.is_curious(nca_loss) {
             return None;
@@ -86,6 +87,7 @@ impl CuriosityEngine {
             CuriosityEntry {
                 concept: concept.clone(),
                 nca_loss,
+                fractal_dimension: fractal_dim,
                 question_asked: question.clone(),
                 question_count,
                 last_asked: generation,
@@ -299,6 +301,39 @@ impl CuriosityEngine {
         // Normalize to 0-1 range
         (avg_loss - self.curiosity_min) / (self.curiosity_max - self.curiosity_min)
     }
+
+    /// Get most fractal-complex patterns - most interesting for exploration
+    pub fn get_most_complex_patterns(&self, limit: usize) -> Vec<(String, f64)> {
+        let mut entries: Vec<_> = self.curious_concepts.values().collect();
+        // Sort by fractal dimension (descending) - highest complexity first
+        entries.sort_by(|a, b| b.fractal_dimension.partial_cmp(&a.fractal_dimension).unwrap());
+
+        entries.iter()
+            .take(limit)
+            .map(|e| (e.concept.clone(), e.fractal_dimension))
+            .collect()
+    }
+
+    /// Get fractal complexity score for a concept
+    pub fn get_complexity_score(&self, concept: &str) -> Option<f64> {
+        self.curious_concepts.get(concept).map(|e| e.fractal_dimension)
+    }
+
+    /// Classify patterns by fractal complexity
+    pub fn classify_pattern_complexity(&self) -> String {
+        if self.curious_concepts.is_empty() {
+            return "No patterns to analyze yet.".to_string();
+        }
+
+        let avg_dim: f64 = self.curious_concepts.values()
+            .map(|e| e.fractal_dimension)
+            .sum::<f64>() / self.curious_concepts.len() as f64;
+
+        use crate::fractal_analysis::classify_complexity;
+        let classification = classify_complexity(avg_dim);
+
+        format!("Pattern complexity: {} (fractal dimension: {:.2})", classification, avg_dim)
+    }
 }
 
 impl Default for CuriosityEngine {
@@ -325,7 +360,7 @@ mod tests {
     fn test_question_generation() {
         let mut engine = CuriosityEngine::new();
 
-        let question = engine.record_curiosity("quantum".to_string(), 0.20, 1);
+        let question = engine.record_curiosity("quantum".to_string(), 0.20, 1.5, 1);
         assert!(question.is_some());
 
         println!("SAGE asks: {}", question.unwrap());
@@ -336,15 +371,15 @@ mod tests {
         let mut engine = CuriosityEngine::new();
 
         // First question
-        let q1 = engine.record_curiosity("quantum".to_string(), 0.20, 1);
+        let q1 = engine.record_curiosity("quantum".to_string(), 0.20, 1.5, 1);
         assert!(q1.is_some());
 
         // Too soon - no question
-        let q2 = engine.record_curiosity("quantum".to_string(), 0.20, 5);
+        let q2 = engine.record_curiosity("quantum".to_string(), 0.20, 1.5, 5);
         assert!(q2.is_none());
 
         // After cooldown - new question
-        let q3 = engine.record_curiosity("quantum".to_string(), 0.20, 25);
+        let q3 = engine.record_curiosity("quantum".to_string(), 0.20, 1.5, 25);
         assert!(q3.is_some());
     }
 }

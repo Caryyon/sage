@@ -11,8 +11,53 @@ use sage::llm_client::LlmClient;
 use sage::spacetime_client::SageDbClient;
 use sage::irc_sync::IrcSync;
 use sage::ab_test::ABTester;
+use sage::vision::SageVision;
+use sage::visual_memory::VisualMemory;
 use irc::client::prelude::*;
 use futures::stream::StreamExt;
+use std::sync::{Arc, Mutex};
+
+/// Split message into IRC-safe chunks (max 400 chars per line)
+fn split_for_irc(text: &str) -> Vec<String> {
+    const MAX_IRC_LENGTH: usize = 400;
+    let mut chunks = Vec::new();
+
+    for line in text.lines() {
+        if line.len() <= MAX_IRC_LENGTH {
+            chunks.push(line.to_string());
+        } else {
+            // Split long line into smaller chunks at word boundaries
+            let words: Vec<&str> = line.split_whitespace().collect();
+            let mut current_chunk = String::new();
+
+            for word in words {
+                if current_chunk.len() + word.len() + 1 > MAX_IRC_LENGTH {
+                    if !current_chunk.is_empty() {
+                        chunks.push(current_chunk.trim().to_string());
+                        current_chunk.clear();
+                    }
+                    // If single word is too long, split it
+                    if word.len() > MAX_IRC_LENGTH {
+                        chunks.push(word[..MAX_IRC_LENGTH].to_string());
+                    } else {
+                        current_chunk = word.to_string();
+                    }
+                } else {
+                    if !current_chunk.is_empty() {
+                        current_chunk.push(' ');
+                    }
+                    current_chunk.push_str(word);
+                }
+            }
+
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+            }
+        }
+    }
+
+    chunks
+}
 
 #[tokio::main]
 async fn main() -> irc::error::Result<()> {
@@ -60,6 +105,27 @@ async fn main() -> irc::error::Result<()> {
     if sage.load_curiosity("sage_curiosity.json").is_ok() {
         println!("🤔 SAGE: Loaded curiosity data!");
     }
+
+    // Initialize vision system
+    let vision = match SageVision::new(0, 32) {
+        Ok(mut v) => {
+            if let Err(e) = v.open() {
+                println!("⚠️  Camera not available: {} (vision commands will be disabled)\n", e);
+                None
+            } else {
+                println!("👁️  Initializing vision... ✅ SAGE can see!");
+                Some(Arc::new(Mutex::new(v)))
+            }
+        }
+        Err(e) => {
+            println!("⚠️  Vision initialization failed: {} (vision commands will be disabled)\n", e);
+            None
+        }
+    };
+
+    // Initialize visual memory
+    let visual_memory = Arc::new(Mutex::new(VisualMemory::new()));
+    println!("🎨 Visual memory initialized for cross-modal learning!\n");
 
     // Baseline concepts SAGE knows
     let baseline_concepts: Vec<String> = vec![
@@ -255,6 +321,69 @@ async fn main() -> irc::error::Result<()> {
                         }
                         Err(e) => format!("❌ Error: {}", e)
                     }
+                } else if msg.trim() == "!see" {
+                    // Vision command - capture what SAGE sees through camera
+                    if let Some(ref vision_sys) = vision {
+                        // Lock once for both operations to avoid deadlock
+                        let result = {
+                            let mut v = vision_sys.lock().unwrap();
+                            v.capture_frame().and_then(|frame| {
+                                Ok((frame.clone(), v.extract_features(&frame)))
+                            })
+                        };
+
+                        match result {
+                            Ok((_frame, features)) => {
+                                // Generate visual concepts
+                                let mut concepts = Vec::new();
+                                if features.avg_brightness > 0.7 {
+                                    concepts.push("bright".to_string());
+                                } else if features.avg_brightness < 0.3 {
+                                    concepts.push("dark".to_string());
+                                }
+                                concepts.push(features.dominant_color.clone());
+                                if features.edge_strength > 30.0 {
+                                    concepts.push("sharp_edges".to_string());
+                                } else {
+                                    concepts.push("smooth".to_string());
+                                }
+                                if features.color_variance > 0.15 {
+                                    concepts.push("complex".to_string());
+                                } else {
+                                    concepts.push("simple".to_string());
+                                }
+
+                                // Record to visual memory
+                                visual_memory.lock().unwrap().record_experience(&features, concepts.clone());
+
+                                format!(
+                                    "👁️  I perceive a scene with {:?} qualities. Brightness: {:.2}, edges: {:.1}, variance: {:.3}. Stored in visual memory!",
+                                    concepts,
+                                    features.avg_brightness,
+                                    features.edge_strength,
+                                    features.color_variance
+                                )
+                            }
+                            Err(e) => format!("👁️  Vision error: {}", e)
+                        }
+                    } else {
+                        "👁️  My camera isn't available right now.".to_string()
+                    }
+                } else if msg.trim() == "!dreams" || msg.trim() == "!visual_memory" {
+                    // Check visual memory and dream content
+                    let vmem = visual_memory.lock().unwrap();
+                    let exp_count = vmem.experience_count();
+                    let recent_concepts = vmem.get_recent_concepts(10);
+
+                    if exp_count == 0 {
+                        "🌙 My visual memory is empty. Use !see to let me capture what you're showing me!".to_string()
+                    } else {
+                        format!(
+                            "🌙 Visual memory: {} experiences recorded. Recent concepts: {:?}. During idle time, I replay and remix these memories...",
+                            exp_count,
+                            recent_concepts
+                        )
+                    }
                 } else if msg.trim() == "!ab_report" {
                     match ab_tester.export_metrics_report("sage_ab_test_report.md") {
                         Ok(_) => {
@@ -276,9 +405,10 @@ async fn main() -> irc::error::Result<()> {
                     "💡 Commands:\n\
                     📊 Status: !personality, !likes, !dislikes, !memory, !curiosity\n\
                     🔧 Introspection: !diagnosis, !strengths, !weaknesses, !goals, !values\n\
+                    👁️  Vision: !see (capture visual experience), !dreams (check visual memory)\n\
                     🛠️  Tools: !tools, !search <query>, !wiki <query>, !weather <location>, !news [category], !time [query], !calc <expr>\n\
                     🧪 A/B Testing: !ab_report (shows NCA vs baseline comparison)\n\
-                    💬 Or just talk to me naturally! I'm powered by neural memory + LLM + self-modification + emergent goals + real-world tools.".to_string()
+                    💬 Or just talk to me naturally! I'm powered by neural memory + LLM + vision + dreams + self-modification + emergent goals + tools.".to_string()
                 } else if msg.to_lowercase().contains("sage") || msg.starts_with("!") || msg.contains("?") {
                     // SAGE actually experiences and learns from this message
                     // This forms opinions, builds associations, and updates preferences
@@ -430,13 +560,13 @@ async fn main() -> irc::error::Result<()> {
                 // Reset idle count when SAGE responds
                 idle_message_count = 0;
 
-                // Send response (split if too long for IRC)
-                for line in response.lines() {
-                    if line.is_empty() {
+                // Send response (split into IRC-safe chunks)
+                for chunk in split_for_irc(&response) {
+                    if chunk.is_empty() {
                         continue;
                     }
-                    sender.send_privmsg(channel, line)?;
-                    println!("[{}] SAGE: {}", channel, line);
+                    sender.send_privmsg(channel, &chunk)?;
+                    println!("[{}] SAGE: {}", channel, chunk);
                 }
                 println!();
 

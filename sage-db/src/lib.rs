@@ -133,6 +133,80 @@ pub struct PersonalitySnapshot {
     pub timestamp: Timestamp,
 }
 
+/// Introspection journal - SAGE's subjective experience over time
+#[spacetimedb::table(name = introspection_journal, public)]
+pub struct IntrospectionJournal {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub experience_count: u64,
+    pub valence: f64,  // -1.0 to 1.0 (emotional tone)
+    pub intensity: f64,  // 0.0 to 1.0 (experience strength)
+    pub complexity: f64,  // 0.0 to 1.0 (mental richness)
+    pub feeling_name: String,  // Named emotion (e.g., "contentment", "fascination")
+    pub mode: String,  // Cognitive mode (e.g., "quiet reflection", "deep processing")
+    pub qualities: String,  // JSON array of quality descriptors
+    pub active_concepts: String,  // JSON array of concepts drawing attention
+    pub description: String,  // Natural language description
+    pub temporal_context: String,  // Comparison to previous states
+    pub trigger: String,  // What triggered this introspection ("command", "autonomous", "conversation")
+    pub timestamp: Timestamp,
+}
+
+/// Autonomous activity - SAGE's inner life when alone
+#[spacetimedb::table(name = autonomous_activity, public)]
+pub struct AutonomousActivity {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub activity_type: String,  // "dream" or "curiosity"
+    pub experience_count: u64,
+    pub seconds_idle: u64,  // How long idle before this activity
+    pub concepts_deepened: String,  // JSON array of concepts strengthened
+    pub concepts_consolidated: String,  // JSON array of concepts consolidated
+    pub links_formed: String,  // JSON array of new associations
+    pub question_generated: String,  // For curiosity mode
+    pub exploration_notes: String,  // What SAGE thought about
+    pub timestamp: Timestamp,
+}
+
+/// A/B test results - Comparing NCA-enhanced vs baseline responses
+#[spacetimedb::table(name = ab_test_results, public)]
+pub struct ABTestResult {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub experience_count: u64,
+    pub input_message: String,
+    pub nca_response: String,  // Response WITH NCA memory
+    pub baseline_response: String,  // Response WITHOUT NCA memory
+    pub nca_opinion: String,  // What SAGE's NCA thought about the input
+    pub user_preference: String,  // Which response user preferred (if known)
+    pub avg_alpha: f64,  // Average NCA grid activation
+    pub timestamp: Timestamp,
+}
+
+/// Visual memories - What SAGE has seen and learned visually
+#[spacetimedb::table(name = visual_memories, public)]
+pub struct VisualMemory {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub experience_count: u64,
+    pub person_name: String,  // Who SAGE was looking at
+    pub avg_brightness: f64,  // 0.0-1.0
+    pub avg_r: f64,  // Average red channel
+    pub avg_g: f64,  // Average green channel
+    pub avg_b: f64,  // Average blue channel
+    pub color_variance: f64,  // Color diversity in image
+    pub dominant_color: String,  // "red", "green", "blue", "neutral"
+    pub edge_strength: f64,  // Detail level
+    pub natural_description: String,  // What SAGE perceived
+    pub visual_concepts: String,  // JSON array of visual concepts experienced
+    pub context: String,  // What was happening during this visual experience
+    pub timestamp: Timestamp,
+}
+
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     // Initialize SAGE state
@@ -436,4 +510,133 @@ pub fn save_personality_snapshot(
     });
 
     log::info!("🎭 Personality snapshot saved: Gen {}, Experience {}", generation, experience_count);
+}
+
+/// Save an introspection report - SAGE's subjective experience
+#[spacetimedb::reducer]
+pub fn save_introspection(
+    ctx: &ReducerContext,
+    experience_count: u64,
+    valence: f64,
+    intensity: f64,
+    complexity: f64,
+    feeling_name: String,
+    mode: String,
+    qualities: String,  // JSON array
+    active_concepts: String,  // JSON array
+    description: String,
+    temporal_context: String,
+    trigger: String,
+) {
+    ctx.db.introspection_journal().insert(IntrospectionJournal {
+        id: 0,
+        experience_count,
+        valence,
+        intensity,
+        complexity,
+        feeling_name: feeling_name.clone(),
+        mode: mode.clone(),
+        qualities,
+        active_concepts,
+        description,
+        temporal_context,
+        trigger: trigger.clone(),
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🧠 Introspection logged: {} ({}) - trigger: {}", feeling_name, mode, trigger);
+}
+
+/// Log autonomous activity - Dream Mode or Curiosity Mode
+#[spacetimedb::reducer]
+pub fn log_autonomous_activity(
+    ctx: &ReducerContext,
+    activity_type: String,
+    experience_count: u64,
+    seconds_idle: u64,
+    concepts_deepened: String,
+    concepts_consolidated: String,
+    links_formed: String,
+    question_generated: String,
+    exploration_notes: String,
+) {
+    ctx.db.autonomous_activity().insert(AutonomousActivity {
+        id: 0,
+        activity_type: activity_type.clone(),
+        experience_count,
+        seconds_idle,
+        concepts_deepened,
+        concepts_consolidated,
+        links_formed,
+        question_generated,
+        exploration_notes,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🌟 Autonomous {} logged after {}s idle", activity_type, seconds_idle);
+}
+
+/// Record A/B test result
+#[spacetimedb::reducer]
+pub fn record_ab_test(
+    ctx: &ReducerContext,
+    experience_count: u64,
+    input_message: String,
+    nca_response: String,
+    baseline_response: String,
+    nca_opinion: String,
+    user_preference: String,
+    avg_alpha: f64,
+) {
+    ctx.db.ab_test_results().insert(ABTestResult {
+        id: 0,
+        experience_count,
+        input_message: input_message.clone(),
+        nca_response,
+        baseline_response,
+        nca_opinion,
+        user_preference,
+        avg_alpha,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🧪 A/B test recorded: {} (α={:.3})", input_message.chars().take(30).collect::<String>(), avg_alpha);
+}
+
+/// Save a visual memory - what SAGE saw and learned
+#[spacetimedb::reducer]
+pub fn save_visual_memory(
+    ctx: &ReducerContext,
+    experience_count: u64,
+    person_name: String,
+    avg_brightness: f64,
+    avg_r: f64,
+    avg_g: f64,
+    avg_b: f64,
+    color_variance: f64,
+    dominant_color: String,
+    edge_strength: f64,
+    natural_description: String,
+    visual_concepts: String,
+    context: String,
+) {
+    ctx.db.visual_memories().insert(VisualMemory {
+        id: 0,
+        experience_count,
+        person_name: person_name.clone(),
+        avg_brightness,
+        avg_r,
+        avg_g,
+        avg_b,
+        color_variance,
+        dominant_color: dominant_color.clone(),
+        edge_strength,
+        natural_description,
+        visual_concepts,
+        context,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("👁️  Visual memory saved: SAGE saw {} (brightness: {:.2}, color: {})",
+        person_name, avg_brightness, dominant_color);
 }

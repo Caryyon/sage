@@ -252,6 +252,182 @@ impl SageDbClient {
         Ok(())
     }
 
+    /// Save an introspection report
+    pub fn save_introspection(
+        &self,
+        experience_count: u64,
+        valence: f64,
+        intensity: f64,
+        complexity: f64,
+        feeling_name: &str,
+        mode: &str,
+        qualities_json: &str,
+        active_concepts_json: &str,
+        description: &str,
+        temporal_context: &str,
+        trigger: &str,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "save_introspection",
+                &experience_count.to_string(),
+                &valence.to_string(),
+                &intensity.to_string(),
+                &complexity.to_string(),
+                feeling_name,
+                mode,
+                qualities_json,
+                active_concepts_json,
+                description,
+                temporal_context,
+                trigger,
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Log autonomous activity (Dream Mode or Curiosity Mode)
+    pub fn log_autonomous_activity(
+        &self,
+        activity_type: &str,
+        experience_count: u64,
+        seconds_idle: u64,
+        concepts_deepened_json: &str,
+        concepts_consolidated_json: &str,
+        links_formed_json: &str,
+        question: &str,
+        notes: &str,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "log_autonomous_activity",
+                activity_type,
+                &experience_count.to_string(),
+                &seconds_idle.to_string(),
+                concepts_deepened_json,
+                concepts_consolidated_json,
+                links_formed_json,
+                question,
+                notes,
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Record A/B test result
+    pub fn record_ab_test(
+        &self,
+        experience_count: u64,
+        input: &str,
+        nca_response: &str,
+        baseline_response: &str,
+        nca_opinion: &str,
+        user_pref: &str,
+        avg_alpha: f64,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "record_ab_test",
+                &experience_count.to_string(),
+                input,
+                nca_response,
+                baseline_response,
+                nca_opinion,
+                user_pref,
+                &avg_alpha.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Save a visual memory - what SAGE saw and learned
+    pub fn save_visual_memory(
+        &self,
+        experience_count: u64,
+        person_name: &str,
+        avg_brightness: f64,
+        avg_r: f64,
+        avg_g: f64,
+        avg_b: f64,
+        color_variance: f64,
+        dominant_color: &str,
+        edge_strength: f64,
+        natural_description: &str,
+        visual_concepts: &str,
+        context: &str,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "save_visual_memory",
+                &experience_count.to_string(),
+                person_name,
+                &avg_brightness.to_string(),
+                &avg_r.to_string(),
+                &avg_g.to_string(),
+                &avg_b.to_string(),
+                &color_variance.to_string(),
+                dominant_color,
+                &edge_strength.to_string(),
+                natural_description,
+                visual_concepts,
+                context,
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
     /// Start learning a new pattern
     pub fn start_pattern(
         &self,

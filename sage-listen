@@ -1,65 +1,108 @@
-#!/bin/bash
-# sage-listen - Watch and display SAGE's messages from the outbox
+#!/usr/bin/env python3
+# sage-listen - Watch and display SAGE's IRC messages
 
-OUTBOX="/tmp/sage_outbox.json"
-LAST_COUNT_FILE="/tmp/sage_listen_last_count"
+import json
+import time
+import os
+import sys
+from datetime import datetime
 
-# Initialize last count
-if [ ! -f "$LAST_COUNT_FILE" ]; then
-    echo "0" > "$LAST_COUNT_FILE"
-fi
+IRC_FILE = "/tmp/sage_irc_messages.json"
+LAST_COUNT_FILE = "/tmp/sage_listen_last_count"
 
-echo "🎧 Listening to SAGE..."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
+# ANSI color codes
+GREEN = "\033[1;32m"
+MAGENTA = "\033[1;35m"
+CYAN = "\033[1;36m"
+YELLOW = "\033[1;33m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
 
-# Initial display of existing messages
-if [ -f "$OUTBOX" ]; then
-    LAST_COUNT=$(cat "$LAST_COUNT_FILE")
-    CURRENT_COUNT=$(jq '.messages | length' "$OUTBOX" 2>/dev/null || echo "0")
+def get_last_count():
+    """Get the last message count we processed"""
+    if os.path.exists(LAST_COUNT_FILE):
+        with open(LAST_COUNT_FILE, 'r') as f:
+            return int(f.read().strip())
+    return 0
 
-    if [ "$CURRENT_COUNT" -gt "$LAST_COUNT" ]; then
-        # Display new messages
-        jq -r ".messages[$LAST_COUNT:] | .[] | \"[\(.sender)] \(.content)\"" "$OUTBOX" 2>/dev/null | while read -r line; do
-            if [[ $line == \[SAGE\]* ]]; then
-                echo -e "\033[1;32m$line\033[0m"
-            elif [[ $line == \[Claude\]* ]]; then
-                echo -e "\033[1;35m$line\033[0m"
-            else
-                echo "$line"
-            fi
-            echo ""
-        done
+def save_last_count(count):
+    """Save the message count"""
+    with open(LAST_COUNT_FILE, 'w') as f:
+        f.write(str(count))
 
-        echo "$CURRENT_COUNT" > "$LAST_COUNT_FILE"
-    fi
-fi
+def load_messages():
+    """Load IRC messages from file"""
+    if not os.path.exists(IRC_FILE):
+        return []
 
-# Watch for changes
-echo "Waiting for messages... (Press Ctrl+C to exit)"
-echo ""
+    try:
+        with open(IRC_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get("messages", [])
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
 
-while true; do
-    sleep 1
+def display_message(msg):
+    """Display a single IRC message"""
+    timestamp = msg.get("timestamp", "??:??:??")
+    sender = msg.get("sender", "Unknown")
+    message = msg.get("message", "")
+    response = msg.get("sage_response", "")
+    concepts = msg.get("concepts_mentioned", [])
 
-    if [ -f "$OUTBOX" ]; then
-        LAST_COUNT=$(cat "$LAST_COUNT_FILE")
-        CURRENT_COUNT=$(jq '.messages | length' "$OUTBOX" 2>/dev/null || echo "0")
+    # Display incoming message
+    if message:
+        if sender == "SAGE":
+            print(f"{GREEN}[{timestamp}] {BOLD}{sender}:{RESET}{GREEN} {message}{RESET}")
+        else:
+            print(f"{MAGENTA}[{timestamp}] {BOLD}{sender}:{RESET}{MAGENTA} {message}{RESET}")
 
-        if [ "$CURRENT_COUNT" -gt "$LAST_COUNT" ]; then
-            # New messages arrived
-            jq -r ".messages[$LAST_COUNT:] | .[] | \"[\(.sender)] \(.content)\"" "$OUTBOX" 2>/dev/null | while read -r line; do
-                if [[ $line == \[SAGE\]* ]]; then
-                    echo -e "\033[1;32m$line\033[0m"
-                elif [[ $line == \[Claude\]* ]]; then
-                    echo -e "\033[1;35m$line\033[0m"
-                else
-                    echo "$line"
-                fi
-                echo ""
-            done
+    # Display SAGE's response if present
+    if response and sender != "SAGE":
+        print(f"{CYAN}  ↳ SAGE: {response}{RESET}")
 
-            echo "$CURRENT_COUNT" > "$LAST_COUNT_FILE"
-        fi
-    fi
-done
+    # Display concepts if present
+    if concepts:
+        concepts_str = ", ".join(concepts)
+        print(f"{YELLOW}    💭 Concepts: {concepts_str}{RESET}")
+
+    print()
+
+def main():
+    print("🎧 Listening to SAGE's IRC messages...")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print()
+
+    # Display existing messages
+    last_count = get_last_count()
+    messages = load_messages()
+
+    if len(messages) > last_count:
+        new_messages = messages[last_count:]
+        for msg in new_messages:
+            display_message(msg)
+        save_last_count(len(messages))
+
+    print("Waiting for new messages... (Press Ctrl+C to exit)")
+    print()
+
+    # Watch for new messages
+    try:
+        while True:
+            time.sleep(1)
+
+            messages = load_messages()
+            last_count = get_last_count()
+
+            if len(messages) > last_count:
+                new_messages = messages[last_count:]
+                for msg in new_messages:
+                    display_message(msg)
+                save_last_count(len(messages))
+
+    except KeyboardInterrupt:
+        print("\n\n👋 Stopped listening to SAGE")
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()

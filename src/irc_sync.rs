@@ -32,6 +32,26 @@ pub struct NcaGridSnapshot {
     pub loss: f64,
 }
 
+/// Camera frame snapshot for vision display
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CameraSnapshot {
+    pub timestamp: String,
+    /// 32×32 grid of RGB values
+    pub frame: Vec<Vec<(u8, u8, u8)>>,
+    /// Visual concepts extracted from this frame
+    pub visual_concepts: Vec<String>,
+    /// Person who triggered the vision (if any)
+    pub person: String,
+}
+
+/// Autonomous activity log entry
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AutonomousActivity {
+    pub timestamp: u64,  // Unix timestamp
+    pub activity_type: String,  // "dream" or "curiosity"
+    pub description: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct IrcSync {
     pub messages: Vec<IrcMessage>,
@@ -39,6 +59,10 @@ pub struct IrcSync {
     pub nca_grid: Option<NcaGridSnapshot>,
     #[serde(default)]
     pub total_experiences: u64,
+    #[serde(default)]
+    pub camera_snapshot: Option<CameraSnapshot>,
+    #[serde(default)]
+    pub autonomous_activities: Vec<AutonomousActivity>,
 }
 
 impl Default for IrcSync {
@@ -47,6 +71,8 @@ impl Default for IrcSync {
             messages: Vec::new(),
             nca_grid: None,
             total_experiences: 0,
+            camera_snapshot: None,
+            autonomous_activities: Vec::new(),
         }
     }
 }
@@ -173,5 +199,75 @@ impl IrcSync {
             .ok()
             .map(|sync| sync.total_experiences)
             .unwrap_or(0)
+    }
+
+    /// Update camera snapshot (called by IRC bot after !see command)
+    pub fn update_camera_snapshot(
+        frame: Vec<Vec<(u8, u8, u8)>>,
+        visual_concepts: Vec<String>,
+        person: String,
+    ) -> Result<(), String> {
+        let mut sync = Self::load().unwrap_or_default();
+
+        let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
+
+        sync.camera_snapshot = Some(CameraSnapshot {
+            timestamp,
+            frame,
+            visual_concepts,
+            person,
+        });
+
+        let json = serde_json::to_string_pretty(&sync)
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        fs::write(SYNC_FILE, json)
+            .map_err(|e| format!("Write error: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Get current camera snapshot (called by TUI)
+    pub fn get_camera_snapshot() -> Option<CameraSnapshot> {
+        Self::load()
+            .ok()
+            .and_then(|sync| sync.camera_snapshot)
+    }
+
+    /// Log autonomous activity (dream or curiosity mode)
+    pub fn log_autonomous_activity(
+        timestamp: u64,
+        activity_type: String,
+        description: String,
+    ) -> Result<(), String> {
+        let mut sync = Self::load().unwrap_or_default();
+
+        sync.autonomous_activities.push(AutonomousActivity {
+            timestamp,
+            activity_type,
+            description,
+        });
+
+        // Keep only last 50 activities
+        if sync.autonomous_activities.len() > 50 {
+            sync.autonomous_activities = sync.autonomous_activities
+                .split_off(sync.autonomous_activities.len() - 50);
+        }
+
+        let json = serde_json::to_string_pretty(&sync)
+            .map_err(|e| format!("Serialization error: {}", e))?;
+
+        fs::write(SYNC_FILE, json)
+            .map_err(|e| format!("Write error: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Get autonomous activities (called by TUI)
+    pub fn get_autonomous_activities() -> Vec<AutonomousActivity> {
+        Self::load()
+            .ok()
+            .map(|sync| sync.autonomous_activities)
+            .unwrap_or_default()
     }
 }

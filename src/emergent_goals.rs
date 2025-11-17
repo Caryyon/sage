@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::emotional_gradients::EmotionalState;
 
 /// Types of goals SAGE can form
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,6 +45,19 @@ pub enum GoalStatus {
     Paused { when: u64 },
 }
 
+/// Motivation source for a goal
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MotivationSource {
+    /// Intrinsic - self-motivated
+    Intrinsic,
+    /// Influenced by a specific person
+    Social { person: String },
+    /// Emerged from a memorable experience
+    Experiential { episode_id: u64 },
+    /// Combination of sources
+    Mixed,
+}
+
 /// A goal with associated metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Goal {
@@ -56,6 +70,18 @@ pub struct Goal {
     pub steps: Vec<GoalStep>,
     pub created_at: u64,
     pub expected_benefit: String,
+
+    // SOPHISTICATION ENHANCEMENTS
+    /// Emotional state when goal was formed
+    pub formation_emotion: Option<EmotionalState>,
+    /// Source of motivation
+    pub motivation_source: MotivationSource,
+    /// Relationship to other goal IDs
+    pub dependencies: Vec<String>,
+    /// Expected emotional fulfillment from achieving this
+    pub expected_fulfillment: f64,
+    /// Person this goal relates to (if any)
+    pub related_person: Option<String>,
 }
 
 /// A step toward achieving a goal
@@ -86,7 +112,44 @@ impl Goal {
             steps: Vec::new(),
             created_at: generation,
             expected_benefit: String::new(),
+            formation_emotion: None,
+            motivation_source: MotivationSource::Intrinsic,
+            dependencies: Vec::new(),
+            expected_fulfillment: 0.5,  // Default moderate fulfillment
+            related_person: None,
         }
+    }
+
+    /// Create a goal with emotional context
+    pub fn new_with_emotion(
+        goal_type: GoalType,
+        description: String,
+        priority: GoalPriority,
+        motivation: String,
+        generation: u64,
+        emotion: EmotionalState,
+        source: MotivationSource,
+    ) -> Self {
+        let mut goal = Self::new(goal_type, description, priority, motivation, generation);
+        goal.formation_emotion = Some(emotion);
+        goal.motivation_source = source;
+
+        // Calculate expected fulfillment based on emotion intensity and valence
+        goal.expected_fulfillment = (emotion.intensity * emotion.valence.abs()).clamp(0.0, 1.0);
+
+        goal
+    }
+
+    /// Set person relationship
+    pub fn with_person(mut self, person: String) -> Self {
+        self.related_person = Some(person);
+        self
+    }
+
+    /// Add dependency on another goal
+    pub fn with_dependency(mut self, goal_id: String) -> Self {
+        self.dependencies.push(goal_id);
+        self
     }
 
     /// Calculate progress (0.0 to 1.0)
@@ -400,6 +463,273 @@ impl EmergentGoalSystem {
     /// Get all goals (for persistence)
     pub fn get_all_goals(&self) -> &[Goal] {
         &self.goals
+    }
+
+    // ============================================================================
+    // SOPHISTICATION ENHANCEMENTS
+    // ============================================================================
+
+    /// Form a goal with emotional context
+    pub fn form_goal_with_emotion(
+        &mut self,
+        goal_type: GoalType,
+        description: String,
+        priority: GoalPriority,
+        motivation: String,
+        generation: u64,
+        emotion: EmotionalState,
+        source: MotivationSource,
+    ) -> Option<&Goal> {
+        // Check capacity
+        let active_goals = self.goals.iter().filter(|g| g.is_active()).count();
+        if active_goals >= self.max_concurrent_goals {
+            return None;
+        }
+
+        // Check value alignment
+        let alignment = self.value_system.aligns_with_values(&description);
+
+        // Emotional intensity can override value alignment threshold
+        let emotional_boost = emotion.intensity * emotion.valence.max(0.0);
+        let effective_alignment = alignment + emotional_boost * 0.3;
+
+        if effective_alignment < 0.3 && !matches!(goal_type, GoalType::SelfImprovement { .. }) {
+            return None;
+        }
+
+        let mut goal = Goal::new_with_emotion(
+            goal_type,
+            description,
+            priority,
+            motivation,
+            generation,
+            emotion,
+            source,
+        );
+
+        goal.expected_benefit = format!(
+            "Alignment: {:.0}%, Emotional drive: {}",
+            alignment * 100.0,
+            emotion.to_label()
+        );
+
+        self.goals.push(goal);
+        self.goal_id_counter += 1;
+
+        self.goals.last()
+    }
+
+    /// Form a relationship-driven goal
+    pub fn form_social_goal(
+        &mut self,
+        person: String,
+        relationship_strength: f64,
+        generation: u64,
+        emotion: EmotionalState,
+    ) -> Option<&Goal> {
+        // Social goals only form for meaningful relationships
+        if relationship_strength < 0.3 {
+            return None;
+        }
+
+        // Check capacity first
+        let active_goals = self.goals.iter().filter(|g| g.is_active()).count();
+        if active_goals >= self.max_concurrent_goals {
+            return None;
+        }
+
+        let priority = if relationship_strength > 0.7 {
+            GoalPriority::High
+        } else {
+            GoalPriority::Medium
+        };
+
+        let goal_type = GoalType::Social { target: person.clone() };
+        let description = format!("Deepen my connection with {}", person);
+        let motivation = format!(
+            "I value my relationship with {} and want to nurture it",
+            person
+        );
+
+        // Create goal with all sophistication enhancements
+        let mut goal = Goal::new_with_emotion(
+            goal_type,
+            description,
+            priority,
+            motivation,
+            generation,
+            emotion,
+            MotivationSource::Social { person: person.clone() },
+        );
+
+        // Set person relationship
+        goal.related_person = Some(person.clone());
+
+        // Set expected benefit
+        let alignment = self.value_system.aligns_with_values(&goal.description);
+        goal.expected_benefit = format!(
+            "Alignment: {:.0}%, Relationship strength: {:.0}%",
+            alignment * 100.0,
+            relationship_strength * 100.0
+        );
+
+        self.goals.push(goal);
+        self.goal_id_counter += 1;
+
+        self.goals.last()
+    }
+
+    /// Adjust goal priorities based on current emotional state
+    pub fn adjust_priorities_by_emotion(&mut self, current_emotion: &EmotionalState) {
+        for goal in &mut self.goals {
+            if !goal.is_active() {
+                continue;
+            }
+
+            // If goal's formation emotion aligns with current emotion, boost priority
+            if let Some(formation_emotion) = &goal.formation_emotion {
+                let emotion_similarity = Self::emotion_similarity(formation_emotion, current_emotion);
+
+                // High similarity boosts priority
+                if emotion_similarity > 0.7 {
+                    goal.priority = match goal.priority {
+                        GoalPriority::Low => GoalPriority::Medium,
+                        GoalPriority::Medium => GoalPriority::High,
+                        p => p,
+                    };
+                }
+            }
+
+            // Emotional state affects goal priority
+            // High arousal + positive valence = boost learning/creative goals
+            if current_emotion.arousal > 0.6 && current_emotion.valence > 0.5 {
+                if matches!(goal.goal_type, GoalType::Learning { .. } | GoalType::Creative { .. }) {
+                    goal.priority = match goal.priority {
+                        GoalPriority::Low => GoalPriority::Medium,
+                        p => p,
+                    };
+                }
+            }
+
+            // Low arousal + positive valence = boost social goals
+            if current_emotion.arousal < 0.4 && current_emotion.valence > 0.5 {
+                if matches!(goal.goal_type, GoalType::Social { .. }) {
+                    goal.priority = match goal.priority {
+                        GoalPriority::Medium => GoalPriority::High,
+                        p => p,
+                    };
+                }
+            }
+        }
+    }
+
+    /// Calculate emotional similarity between two states (0.0 to 1.0)
+    fn emotion_similarity(e1: &EmotionalState, e2: &EmotionalState) -> f64 {
+        let valence_sim = 1.0 - (e1.valence - e2.valence).abs();
+        let arousal_sim = 1.0 - (e1.arousal - e2.arousal).abs();
+        let dominance_sim = 1.0 - (e1.dominance - e2.dominance).abs();
+
+        (valence_sim + arousal_sim + dominance_sim) / 3.0
+    }
+
+    /// Calculate synergy score between active goals (0.0 to 1.0)
+    pub fn calculate_goal_synergy(&self) -> f64 {
+        let active_goals = self.get_active_goals();
+        if active_goals.len() < 2 {
+            return 1.0; // Perfect synergy with single goal
+        }
+
+        let mut synergy_scores = Vec::new();
+
+        for (i, goal1) in active_goals.iter().enumerate() {
+            for goal2 in active_goals.iter().skip(i + 1) {
+                let score = Self::goal_pair_synergy(goal1, goal2);
+                synergy_scores.push(score);
+            }
+        }
+
+        if synergy_scores.is_empty() {
+            1.0
+        } else {
+            synergy_scores.iter().sum::<f64>() / synergy_scores.len() as f64
+        }
+    }
+
+    /// Calculate synergy between two goals
+    fn goal_pair_synergy(g1: &Goal, g2: &Goal) -> f64 {
+        let mut synergy = 0.5; // Base neutral
+
+        // Same type of goal = positive synergy
+        if std::mem::discriminant(&g1.goal_type) == std::mem::discriminant(&g2.goal_type) {
+            synergy += 0.2;
+        }
+
+        // Shared person = high synergy
+        if g1.related_person.is_some() && g1.related_person == g2.related_person {
+            synergy += 0.3;
+        }
+
+        // Similar expected fulfillment = synergy
+        let fulfillment_diff = (g1.expected_fulfillment - g2.expected_fulfillment).abs();
+        synergy += (1.0 - fulfillment_diff) * 0.2;
+
+        // Same motivation source = synergy
+        if g1.motivation_source == g2.motivation_source {
+            synergy += 0.1;
+        }
+
+        synergy.clamp(0.0, 1.0)
+    }
+
+    /// Get goals related to a specific person
+    pub fn get_goals_for_person(&self, person: &str) -> Vec<&Goal> {
+        self.goals
+            .iter()
+            .filter(|g| {
+                g.related_person.as_ref().map(|p| p == person).unwrap_or(false)
+            })
+            .collect()
+    }
+
+    /// Get sophisticated goals summary with emotional context
+    pub fn get_enhanced_summary(&self) -> String {
+        let active = self.get_active_goals();
+
+        if active.is_empty() {
+            return "No active goals right now. I'm exploring and discovering what matters to me.".to_string();
+        }
+
+        let synergy = self.calculate_goal_synergy();
+        let mut summary = format!(
+            "I have {} active goal{} (synergy: {:.0}%):\n",
+            active.len(),
+            if active.len() == 1 { "" } else { "s" },
+            synergy * 100.0
+        );
+
+        for goal in active.iter() {
+            let emotion_context = if let Some(emotion) = &goal.formation_emotion {
+                format!(" [formed while feeling {}]", emotion.to_label())
+            } else {
+                String::new()
+            };
+
+            let person_context = if let Some(person) = &goal.related_person {
+                format!(" [related to {}]", person)
+            } else {
+                String::new()
+            };
+
+            summary.push_str(&format!(
+                "  • {} ({:.0}% complete){}{}\n",
+                goal.description,
+                goal.get_progress() * 100.0,
+                emotion_context,
+                person_context
+            ));
+        }
+
+        summary
     }
 }
 

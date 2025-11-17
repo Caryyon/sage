@@ -75,6 +75,13 @@ pub enum TrainingMode {
     IrcLearning,       // Learning from IRC messages
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConsciousnessState {
+    Active,      // Actively learning from interactions
+    Dreaming,    // Dream Mode - memory consolidation
+    Curious,     // Curiosity Mode - autonomous goal pursuit
+}
+
 pub struct AppState {
     pub current_screen: ScreenType,
     pub current_phase: Phase,
@@ -106,6 +113,14 @@ pub struct AppState {
     pub brain_cell_offsets: Vec<f64>,  // Per-cell pulse offsets (1024 for 32×32)
     pub brain_activity_map: Vec<f64>,  // Recent activity intensity per cell
     pub brain_frame_count: u64,  // Frame counter for timing
+    // Autonomous consciousness tracking
+    pub consciousness_state: ConsciousnessState,  // Current consciousness state
+    pub last_activity_time: Instant,  // Last time SAGE had external interaction
+    pub idle_seconds: u64,  // How long SAGE has been idle
+    // Vision system tracking
+    pub camera_frame: Option<Vec<Vec<(u8, u8, u8)>>>,  // Last captured camera frame (RGB)
+    pub visual_concepts: Vec<String>,  // Active visual concepts SAGE is experiencing
+    pub autonomous_activities: Vec<(u64, String, String)>,  // (timestamp, type, description) - dream/curiosity log
 }
 
 impl AppState {
@@ -119,7 +134,8 @@ impl AppState {
         let _ = sage.load_curiosity("sage_curiosity.json");
 
         // Start IRC bot automatically in background thread
-        let irc_manager = Some(IrcManager::start());
+        // DISABLED: We're using sage_irc_autonomous as a separate process instead
+        let irc_manager = None; // Some(IrcManager::start());
 
         // Baseline training concepts
         let baseline_concepts = vec![
@@ -167,6 +183,14 @@ impl AppState {
             },
             brain_activity_map: vec![0.0; 1024],
             brain_frame_count: 0,
+            // Autonomous consciousness initialization
+            consciousness_state: ConsciousnessState::Active,
+            last_activity_time: Instant::now(),
+            idle_seconds: 0,
+            // Vision system initialization
+            camera_frame: None,
+            visual_concepts: Vec::new(),
+            autonomous_activities: Vec::new(),
         }
     }
 }
@@ -455,6 +479,38 @@ impl App {
         // Update uptime from elapsed time
         let elapsed = self.start_time.elapsed();
         self.state.uptime_seconds = elapsed.as_secs();
+
+        // Update consciousness state based on idle time
+        self.state.idle_seconds = self.state.last_activity_time.elapsed().as_secs();
+
+        if let Some(mode) = self.state.sage.should_enter_autonomous_mode(self.state.idle_seconds) {
+            if mode == "dream" && self.state.consciousness_state != ConsciousnessState::Dreaming {
+                self.state.consciousness_state = ConsciousnessState::Dreaming;
+                // Execute dream cycle
+                let _dream_log = self.state.sage.dream_cycle();
+            } else if mode == "curiosity" && self.state.consciousness_state != ConsciousnessState::Curious {
+                self.state.consciousness_state = ConsciousnessState::Curious;
+                // Execute curiosity cycle
+                let _curiosity_result = self.state.sage.curiosity_cycle(&self.state.baseline_concepts);
+            }
+        } else if self.state.idle_seconds < 300 {
+            // Reset to active if we're back to normal activity
+            self.state.consciousness_state = ConsciousnessState::Active;
+        }
+
+        // Update camera snapshot and visual concepts from IRC sync
+        use crate::irc_sync::IrcSync;
+        if let Some(camera_snapshot) = IrcSync::get_camera_snapshot() {
+            self.state.camera_frame = Some(camera_snapshot.frame);
+            self.state.visual_concepts = camera_snapshot.visual_concepts;
+        }
+
+        // Update autonomous activities from IRC sync
+        let activities = IrcSync::get_autonomous_activities();
+        self.state.autonomous_activities = activities
+            .into_iter()
+            .map(|a| (a.timestamp, a.activity_type, a.description))
+            .collect();
 
         // Update training state from training runner
         self.state.training_state = self.training_runner.get_state();

@@ -1,7 +1,6 @@
 #!/bin/bash
-# sage-speak - Send a message to SAGE via the inbox
-
-INBOX="/tmp/sage_inbox.json"
+# sage-speak - Send a message from Claude to SAGE via IRC
+# Updated to use real IRC communication
 
 if [ $# -eq 0 ]; then
     echo "Usage: ./sage-speak <message>"
@@ -11,23 +10,9 @@ if [ $# -eq 0 ]; then
 fi
 
 MESSAGE="$*"
-TIMESTAMP=$(date +%s)
 
-# Create message JSON
-cat > "$INBOX" <<EOF
-{
-  "messages": [
-    {
-      "sender": "Claude",
-      "content": "$MESSAGE",
-      "timestamp": $TIMESTAMP
-    }
-  ]
-}
-EOF
+echo "💬 Claude → SAGE (via IRC #sage-ai)"
+echo ""
 
-echo "📤 Message sent to SAGE:"
-echo ""
-echo -e "\033[1;35m[Claude] $MESSAGE\033[0m"
-echo ""
-echo "SAGE will respond in the outbox. Use ./sage-listen to see the response."
+# Use the claude_to_sage IRC messenger
+cargo run --release --example claude_to_sage "$MESSAGE" 2>&1 | grep -v "Compiling\|Finished\|Running"
