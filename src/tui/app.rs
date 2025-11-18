@@ -11,6 +11,8 @@ use crate::autonomous::AutonomousTrainer;
 use crate::sage_experience::SageExperience;
 use crate::spacetime_client::SageDbClient;
 use crate::irc_manager::IrcManager;
+use crate::sonification::SonificationEngine;
+use crate::audio_input::AudioInputEngine;
 use super::screens::{Screen, ScreenType};
 use super::training::{TrainingRunner, TrainingState};
 
@@ -121,6 +123,16 @@ pub struct AppState {
     pub camera_frame: Option<Vec<Vec<(u8, u8, u8)>>>,  // Last captured camera frame (RGB)
     pub visual_concepts: Vec<String>,  // Active visual concepts SAGE is experiencing
     pub autonomous_activities: Vec<(u64, String, String)>,  // (timestamp, type, description) - dream/curiosity log
+    // Audio status (for display only, engine is in App)
+    pub audio_available: bool,  // Is audio engine available?
+    pub audio_enabled: bool,  // Is audio playback enabled?
+    pub audio_volume: f32,  // Volume level (0.0 - 1.0)
+    pub audio_input_available: bool,  // Is audio input engine available?
+    pub audio_listening: bool,  // Is audio input listening enabled?
+    // Vision status
+    pub vision_available: bool,  // Is camera available?
+    pub vision_enabled: bool,  // Is vision capture enabled?
+    pub vision_fps: f64,  // Current vision FPS
 }
 
 impl AppState {
@@ -191,6 +203,15 @@ impl AppState {
             camera_frame: None,
             visual_concepts: Vec::new(),
             autonomous_activities: Vec::new(),
+            // Audio status initialization
+            audio_available: false,
+            audio_enabled: true,
+            audio_volume: 0.3,
+            audio_input_available: false,
+            audio_listening: false,
+            vision_available: false,
+            vision_enabled: true,
+            vision_fps: 0.0,
         }
     }
 }
@@ -204,6 +225,11 @@ pub enum Action {
     StartTraining,
     ExportData,
     HotReload,  // NEW: Trigger hot-reload manually
+    AudioToggle,  // NEW: Toggle audio output on/off
+    AudioVolumeUp,  // NEW: Increase volume
+    AudioVolumeDown,  // NEW: Decrease volume
+    AudioListenToggle,  // NEW: Toggle audio input (listening) on/off
+    VisionToggle,  // NEW: Toggle vision capture on/off
     Quit,
 }
 
@@ -233,6 +259,20 @@ pub struct App {
     pub bootstrap_state: Option<BootstrapState>,
     pub demo_grid: Vec<Vec<f64>>,  // Demo data for instant launch
     pub use_hot_reload: bool,  // Flag to use hot-reload system
+    // Audio sonification (output)
+    pub audio_engine: Option<SonificationEngine>,  // Audio output engine (may fail to initialize)
+    pub audio_enabled: bool,  // Is audio playback enabled?
+    pub audio_volume: f32,  // Volume level (0.0 - 1.0)
+    pub last_sonification_time: Instant,  // Throttle audio updates
+    // Audio input (listening)
+    pub audio_input_engine: Option<AudioInputEngine>,  // Audio input engine (may fail to initialize)
+    pub audio_listening: bool,  // Is audio listening enabled?
+    pub last_audio_input_time: Instant,  // Throttle audio input processing
+    // Vision system (camera)
+    pub vision_engine: Option<crate::vision::SageVision>,  // Camera capture system (may fail to initialize)
+    pub vision_enabled: bool,  // Is vision capture enabled?
+    pub last_vision_capture_time: Instant,  // Throttle to 30 FPS
+    pub vision_frame_counter: u64,  // Frame counter for debugging
 }
 
 impl App {
@@ -277,6 +317,37 @@ impl App {
             bootstrap_state: None,  // No bootstrap needed
             demo_grid: Self::generate_demo_grid(),
             use_hot_reload: true,  // Enable hot-reload by default!
+            // Audio sonification initialization (output)
+            audio_engine: SonificationEngine::new().ok(),  // May fail to initialize
+            audio_enabled: true,  // Start with audio enabled
+            audio_volume: 0.3,  // Start at 30% volume
+            last_sonification_time: Instant::now(),
+            // Audio input initialization (listening) - DISABLED in SSH/headless environments
+            // to prevent illegal instruction errors from rustfft SIMD on ARM
+            audio_input_engine: None,  // Disabled - AudioInputEngine::new().ok()
+            audio_listening: false,  // Start with listening disabled (user must enable)
+            last_audio_input_time: Instant::now(),
+            // Vision system initialization (camera)
+            vision_engine: {
+                use crate::vision::SageVision;
+                match SageVision::new(0, 32) {
+                    Ok(vision) => {
+                        if let Err(e) = vision.open() {
+                            eprintln!("⚠️  Failed to open camera: {}", e);
+                            None
+                        } else {
+                            Some(vision)
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Camera not available: {}", e);
+                        None
+                    }
+                }
+            },
+            vision_enabled: true,  // Enable vision by default if camera available
+            last_vision_capture_time: Instant::now(),
+            vision_frame_counter: 0,
         };
 
         // Quick initialization - just enable systems, no heavy training
@@ -316,6 +387,15 @@ impl App {
             KeyCode::Char('e') | KeyCode::Char('E') => Action::ExportData,
             KeyCode::Char('l') | KeyCode::Char('L') => Action::HotReload,  // NEW: Hot-reload
 
+            // Audio controls
+            KeyCode::Char('a') | KeyCode::Char('A') => Action::AudioToggle,
+            KeyCode::Char('+') | KeyCode::Char('=') => Action::AudioVolumeUp,
+            KeyCode::Char('-') | KeyCode::Char('_') => Action::AudioVolumeDown,
+            KeyCode::Char('i') | KeyCode::Char('I') => Action::AudioListenToggle,  // NEW: Toggle audio input
+
+            // Vision controls
+            KeyCode::Char('v') | KeyCode::Char('V') => Action::VisionToggle,  // NEW: Toggle vision capture
+
             // Quit
             KeyCode::Char('q') | KeyCode::Char('Q') => Action::Quit,
 
@@ -353,6 +433,40 @@ impl App {
                 // Signal hot-reload request to training thread
                 self.state.training_state.add_event("🔥 Hot-reload requested via 'L' key".to_string());
                 self.state.request_hot_reload = true;
+            }
+            Action::AudioToggle => {
+                // Toggle audio on/off
+                self.audio_enabled = !self.audio_enabled;
+                if let Some(ref engine) = self.audio_engine {
+                    if !self.audio_enabled {
+                        engine.stop();
+                    }
+                }
+            }
+            Action::AudioVolumeUp => {
+                // Increase volume by 10%, max 1.0
+                self.audio_volume = (self.audio_volume + 0.1).min(1.0);
+                if let Some(ref engine) = self.audio_engine {
+                    engine.set_volume(self.audio_volume);
+                }
+            }
+            Action::AudioVolumeDown => {
+                // Decrease volume by 10%, min 0.0
+                self.audio_volume = (self.audio_volume - 0.1).max(0.0);
+                if let Some(ref engine) = self.audio_engine {
+                    engine.set_volume(self.audio_volume);
+                }
+            }
+            Action::AudioListenToggle => {
+                // Toggle audio input (listening) on/off
+                self.audio_listening = !self.audio_listening;
+                if let Some(ref engine) = self.audio_input_engine {
+                    engine.set_listening(self.audio_listening);
+                }
+            }
+            Action::VisionToggle => {
+                // Toggle vision capture on/off
+                self.vision_enabled = !self.vision_enabled;
             }
             Action::Quit => {
                 self.should_quit = true;
@@ -476,6 +590,24 @@ impl App {
     }
 
     fn update(&mut self) {
+        // Sync audio status to AppState for TUI display
+        self.state.audio_available = self.audio_engine.is_some();
+        self.state.audio_enabled = self.audio_enabled;
+        self.state.audio_volume = self.audio_volume;
+        self.state.audio_input_available = self.audio_input_engine.is_some();
+        self.state.audio_listening = self.audio_listening;
+
+        // Sync vision status to AppState for TUI display
+        self.state.vision_available = self.vision_engine.is_some();
+        self.state.vision_enabled = self.vision_enabled;
+        // Calculate actual FPS from frame counter
+        let elapsed_secs = self.start_time.elapsed().as_secs_f64();
+        self.state.vision_fps = if elapsed_secs > 0.0 {
+            self.vision_frame_counter as f64 / elapsed_secs
+        } else {
+            0.0
+        };
+
         // Update uptime from elapsed time
         let elapsed = self.start_time.elapsed();
         self.state.uptime_seconds = elapsed.as_secs();
@@ -498,11 +630,77 @@ impl App {
             self.state.consciousness_state = ConsciousnessState::Active;
         }
 
-        // Update camera snapshot and visual concepts from IRC sync
+        // Live camera capture at 30 FPS (if vision engine available)
+        const VISION_FPS: u64 = 30;
+        const VISION_FRAME_DURATION_MS: u64 = 1000 / VISION_FPS;  // ~33ms
+
+        if self.vision_enabled {
+            if let Some(ref vision) = self.vision_engine {
+                // Throttle to 30 FPS
+                if self.last_vision_capture_time.elapsed().as_millis() >= VISION_FRAME_DURATION_MS as u128 {
+                    // Capture frame
+                    if let Ok(frame) = vision.capture_frame() {
+                        // Extract visual features
+                        let features = vision.extract_features(&frame);
+
+                        // Generate visual concepts
+                        let mut concepts = Vec::new();
+
+                        // Brightness concepts
+                        if features.avg_brightness > 0.7 {
+                            concepts.push("bright".to_string());
+                        } else if features.avg_brightness < 0.3 {
+                            concepts.push("dark".to_string());
+                        }
+
+                        // Color concept
+                        concepts.push(features.dominant_color.clone());
+
+                        // Edge concepts
+                        if features.edge_strength > 30.0 {
+                            concepts.push("sharp_edges".to_string());
+                        } else {
+                            concepts.push("smooth".to_string());
+                        }
+
+                        // Variance concept
+                        if features.color_variance > 0.1 {
+                            concepts.push("varied".to_string());
+                        } else {
+                            concepts.push("uniform".to_string());
+                        }
+
+                        // Convert frame to RGB format for TUI display
+                        let height = frame.height() as usize;
+                        let width = frame.width() as usize;
+                        let mut camera_frame = vec![vec![(0u8, 0u8, 0u8); width]; height];
+
+                        for y in 0..height {
+                            for x in 0..width {
+                                let pixel = frame.get_pixel(x as u32, y as u32);
+                                camera_frame[y][x] = (pixel[0], pixel[1], pixel[2]);
+                            }
+                        }
+
+                        // Update app state
+                        self.state.camera_frame = Some(camera_frame);
+                        self.state.visual_concepts = concepts.clone();
+
+                        // Update timing and counter
+                        self.last_vision_capture_time = Instant::now();
+                        self.vision_frame_counter += 1;
+                    }
+                }
+            }
+        }
+
+        // Only use IRC sync camera if we don't have live vision
         use crate::irc_sync::IrcSync;
-        if let Some(camera_snapshot) = IrcSync::get_camera_snapshot() {
-            self.state.camera_frame = Some(camera_snapshot.frame);
-            self.state.visual_concepts = camera_snapshot.visual_concepts;
+        if !self.vision_enabled || self.vision_engine.is_none() {
+            if let Some(camera_snapshot) = IrcSync::get_camera_snapshot() {
+                self.state.camera_frame = Some(camera_snapshot.frame);
+                self.state.visual_concepts = camera_snapshot.visual_concepts;
+            }
         }
 
         // Update autonomous activities from IRC sync
@@ -841,6 +1039,65 @@ impl App {
                     loss,
                 });
             }
+            }
+        }
+
+        // AUDIO SONIFICATION: Convert neural patterns to sound (OUTPUT)
+        if self.audio_enabled {
+            if let Some(ref engine) = self.audio_engine {
+                // Throttle sonification to ~6-7 FPS (150ms) to avoid overwhelming the audio engine
+                let elapsed = self.last_sonification_time.elapsed();
+                if elapsed.as_millis() >= 150 {
+                    // Convert grid_snapshot (Vec<Vec<f64>>) to format expected by sonify_grid
+                    // Expected format: [[f64; 22]; 1024] where each cell has 22 channels
+                    let mut grid: [[f64; 22]; 1024] = [[0.0; 22]; 1024];
+
+                    for y in 0..32 {
+                        for x in 0..32 {
+                            let i = y * 32 + x;
+                            if y < self.state.training_state.grid_snapshot.len()
+                                && x < self.state.training_state.grid_snapshot[y].len() {
+                                let alpha = self.state.training_state.grid_snapshot[y][x];
+                                grid[i][3] = alpha; // Alpha channel (used for sonification)
+                            }
+                        }
+                    }
+
+                    // Sonify the grid (150ms duration matches throttle interval)
+                    engine.sonify_grid(&grid, 150);
+                    self.last_sonification_time = Instant::now();
+                }
+            }
+        }
+
+        // AUDIO INPUT: Convert sound to neural patterns (INPUT) - BIDIRECTIONAL AUDIO!
+        if self.audio_listening {
+            if let Some(ref engine) = self.audio_input_engine {
+                // Throttle audio input processing to ~10 FPS (100ms)
+                let elapsed = self.last_audio_input_time.elapsed();
+                if elapsed.as_millis() >= 100 {
+                    // Get audio-derived grid from input engine
+                    let audio_grid = engine.get_grid();
+
+                    // Convert audio grid [[f64; 22]; 1024] to 32x32 grid for visualization
+                    // Extract alpha channel and display it
+                    let mut audio_snapshot = vec![vec![0.0; 32]; 32];
+                    for y in 0..32 {
+                        for x in 0..32 {
+                            let i = y * 32 + x;
+                            audio_snapshot[y][x] = audio_grid[i][3]; // Alpha channel
+                        }
+                    }
+
+                    // TODO: Feed audio patterns into SAGE's NCA for learning
+                    // For now, this demonstrates that audio input is working
+                    // In the future, we could:
+                    // 1. Blend audio grid with current NCA state
+                    // 2. Use audio as training signal for pattern recognition
+                    // 3. Create audio-visual cross-modal learning
+
+                    self.last_audio_input_time = Instant::now();
+                }
             }
         }
     }

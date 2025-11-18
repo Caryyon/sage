@@ -7,6 +7,7 @@ name = "sage"
 version = "0.1.0"
 edition = "2021"
 description = "SAGE - Self-Adaptive General Explorer: An autonomous AGI system with curiosity-driven learning"
+default-run = "sage"
 
 [dependencies]
 rand = "0.8"
@@ -30,3 +31,7 @@ urlencoding = "2.1"  # URL encoding for web searches
 nokhwa = { version = "0.10", features = ["input-native"] }  # Camera capture
 image = "0.25"  # Image processing and resizing (matches nokhwa)
 clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing
+dotenvy = "0.15"  # Load environment variables from .env files
+rodio = "0.17"  # Audio playback for sonification
+cpal = "0.15"  # Audio input from microphone
+rustfft = "6.1"  # FFT for audio frequency analysis

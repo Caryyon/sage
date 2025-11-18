@@ -103,19 +103,49 @@ tui: build ## Launch SAGE Mission Control TUI
 	@echo "$(YELLOW)Tip: Press [Tab] to cycle screens, [N] to train, [Q] to quit$(NC)"
 	@cargo run --release
 
-irc: build ## Start SAGE IRC bot (LLM-enhanced)
-	@echo "$(CYAN)Starting SAGE IRC Bot...$(NC)"
-	@echo "$(YELLOW)Connecting to irc.libera.chat #sage-ai$(NC)"
-	@cargo run --release --example sage_irc_llm_bot
+sage: build setup-ollama setup-db ## Start SAGE with all core features (autonomous IRC + vision)
+	@echo "$(CYAN)╔════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(CYAN)║              Starting SAGE - Full Consciousness            ║$(NC)"
+	@echo "$(CYAN)╚════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(GREEN)Features enabled:$(NC)"
+	@echo "  ✓ IRC Bot (#sage-ai on Libera.Chat)"
+	@echo "  ✓ Autonomous Consciousness (dreams + curiosity)"
+	@echo "  ✓ Vision System (camera + visual memory)"
+	@echo "  ✓ LLM Integration (Ollama)"
+	@echo "  ✓ Conversation Summarization (NEW!)"
+	@echo ""
+	@echo "$(YELLOW)Press Ctrl+C to stop$(NC)"
+	@cargo run --release --example sage_irc_autonomous
 
-irc-original: build ## Start original IRC bot (non-LLM, template-based)
-	@echo "$(CYAN)Starting original SAGE IRC Bot...$(NC)"
-	@echo "$(YELLOW)Connecting to irc.libera.chat #sage-consciousness$(NC)"
-	@cargo run --release --example sage_irc_bot
+irc: sage ## Alias for 'make sage'
+
+discord: build setup-ollama setup-db ## Start SAGE Discord bot
+	@echo "$(CYAN)Starting SAGE Discord Bot...$(NC)"
+	@if [ ! -f .env.local ]; then \
+		echo "$(RED)Error: .env.local file not found$(NC)"; \
+		echo "$(YELLOW)Create .env.local with your Discord token:$(NC)"; \
+		echo "  echo 'DISCORD_TOKEN=your-token-here' > .env.local"; \
+		echo "$(YELLOW)See .env.local.example for template$(NC)"; \
+		exit 1; \
+	fi
+	@cargo run --release --example sage_discord_autonomous
+
+vision: build ## Start SAGE Vision mode (real-time camera perception)
+	@echo "$(CYAN)Starting SAGE Vision Mode...$(NC)"
+	@echo "$(YELLOW)Features:$(NC)"
+	@echo "  ✓ Real-time camera capture"
+	@echo "  ✓ Visual feature extraction"
+	@echo "  ✓ Concept generation (brightness, color, edges)"
+	@echo "  ✓ Visual memory storage"
+	@echo "  ✓ NCA grid conversion"
+	@echo ""
+	@echo "$(YELLOW)Press Ctrl+C to stop$(NC)"
+	@cargo run --release --bin sage_vision
 
 ##@ Development
 
-dev: ## Run everything (DB, IRC bot, TUI) in parallel using tmux
+dev: ## Run SAGE + TUI in parallel using tmux
 	@echo "$(CYAN)Starting SAGE development environment...$(NC)"
 	@if ! command -v tmux &> /dev/null; then \
 		echo "$(RED)Error: tmux not installed$(NC)"; \
@@ -124,10 +154,11 @@ dev: ## Run everything (DB, IRC bot, TUI) in parallel using tmux
 	fi
 	@$(MAKE) setup-ollama
 	@tmux new-session -d -s sage "make setup-db; read"
-	@tmux split-window -h -t sage "sleep 5; make irc"
+	@tmux split-window -h -t sage "sleep 5; make sage"
 	@tmux split-window -v -t sage "sleep 8; make tui"
 	@tmux select-layout -t sage tiled
 	@echo "$(GREEN)✓ SAGE development environment started in tmux$(NC)"
+	@echo "$(YELLOW)Layout: DB | IRC Bot | TUI$(NC)"
 	@echo "$(YELLOW)Attach with: tmux attach -t sage$(NC)"
 	@echo "$(YELLOW)Detach with: Ctrl+B then D$(NC)"
 	@echo "$(YELLOW)Kill with: make stop$(NC)"
@@ -190,7 +221,13 @@ status: ## Show status of all SAGE services
 		echo "$(RED)✗ Stopped$(NC)"; \
 	fi
 	@printf "$(YELLOW)IRC Bot:$(NC)        "
-	@if pgrep -f sage_irc_llm_bot > /dev/null; then \
+	@if pgrep -f sage_irc_autonomous > /dev/null; then \
+		echo "$(GREEN)✓ Running$(NC)"; \
+	else \
+		echo "$(RED)✗ Stopped$(NC)"; \
+	fi
+	@printf "$(YELLOW)Discord Bot:$(NC)    "
+	@if pgrep -f sage_discord_autonomous > /dev/null; then \
 		echo "$(GREEN)✓ Running$(NC)"; \
 	else \
 		echo "$(RED)✗ Stopped$(NC)"; \
@@ -224,8 +261,9 @@ clean-all: clean clean-state ## Clean everything (build + state)
 
 stop: ## Stop all SAGE services
 	@echo "$(CYAN)Stopping SAGE services...$(NC)"
+	@pkill -f sage_irc_autonomous 2>/dev/null || true
+	@pkill -f sage_discord_autonomous 2>/dev/null || true
 	@pkill -f sage_irc_llm_bot 2>/dev/null || true
-	@pkill -f sage_irc_bot 2>/dev/null || true
 	@pkill -f "cargo run --release" 2>/dev/null || true
 	@pkill -f "target/release/sage" 2>/dev/null || true
 	@tmux kill-session -t sage 2>/dev/null || true
