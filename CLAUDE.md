@@ -8,6 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Key differentiator: SAGE doesn't just learn patterns—it learns *how to learn* through curriculum learning, self-supervised tasks, and autonomous experimentation.
 
+**Development Roadmap:** See `ROADMAP.md` for the comprehensive development plan including:
+- Phase 1: Pattern Mastery (Tier 2 patterns, stability training)
+- Phase 2: Sensory Integration (vision/audio → NCA)
+- Phase 3: Language Grounding (words ↔ patterns)
+- Phase 4: Autonomous Goal Formation
+- Phase 5: Meta-Learning
+- Phase 6: Social Intelligence
+
 ## Build & Run Commands
 
 ### Main Development
