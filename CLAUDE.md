@@ -15,8 +15,17 @@ Key differentiator: SAGE doesn't just learn patterns—it learns *how to learn* 
 # Build release version (optimized, required for real-time performance)
 cargo build --release
 
-# Run SAGE Mission Control TUI
+# Run SAGE Mission Control TUI (training visualization only)
 cargo run --release
+
+# Run SAGE with IRC bot (autonomous mode auto-enabled!)
+cargo run --release --irc
+
+# Run SAGE with IRC + Vision
+cargo run --release --irc --vision
+
+# Check all running SAGE instances via Control Center
+cargo run --release --example sage_control_cli list
 ```
 
 ### Hot-Reload System (NEW!)
@@ -39,6 +48,44 @@ cargo build --release -p sage-training
 - Loss/metrics calculations
 
 **Note**: TUI integration is in progress. Current workflow still requires manual restart, but infrastructure is ready.
+
+### SAGE Control Center (NEW!)
+
+**Unified instance management for all SAGE processes**. See `CONTROL_CENTER.md` for complete documentation.
+
+```bash
+# List all running SAGE instances
+cargo run --release --example sage_control_cli list
+
+# Restart IRC bot
+cargo run --release --example sage_control_cli restart irc
+
+# Restart Discord bot
+cargo run --release --example sage_control_cli restart discord
+
+# Stop an instance
+cargo run --release --example sage_control_cli stop irc
+
+# Start an instance
+cargo run --release --example sage_control_cli start discord
+```
+
+**Features:**
+- File-based IPC with heartbeat protocol (3-second intervals)
+- Process control (start/stop/restart) with graceful SIGTERM shutdown
+- Live monitoring via TUI Control Center screen (Tab to navigate)
+- Log viewing with last 15 lines from each instance
+- Automatic dead instance cleanup (30+ seconds without heartbeat)
+
+**Architecture:**
+- `src/sage_control.rs` (310 lines) - Core instance management protocol
+- `src/tui/screens/control_center.rs` (220 lines) - TUI monitoring screen
+- `examples/sage_control_cli.rs` (200 lines) - CLI control tool
+- `/tmp/sage_instances.json` - Runtime instance registry
+
+**Integrated instances:**
+- ✅ IRC Bot (`examples/sage_irc_autonomous.rs`)
+- ✅ Discord Bot (`examples/sage_discord_autonomous.rs`)
 
 ### SpacetimeDB Integration
 SAGE uses SpacetimeDB for persistent state, metrics, and training history.
@@ -77,19 +124,38 @@ The NCA uses a 2-layer neural network (`UpdateNetwork`) with Adam optimizer. Eac
 - **Batch processing**: Training processes 5 generations at once via Rayon parallelization
 - **Weight snapshots**: Networks save/restore weights for pattern-specific training
 
-### Training System (`src/tui/training.rs`)
+### Training System (`src/tui/app.rs` pattern training loop)
 
-**Spiral Curriculum Learning**:
-- SAGE cycles through patterns: Circle → Square → Cross → Spiral → (repeat)
-- Moves on after mastery (50 low-loss steps) OR 100 attempts (500 generations)
-- Revisits previously learned patterns with new knowledge (transfer learning)
-- Pattern-specific learning rates: Square gets 2× higher rate due to difficulty
+**Two-Phase Training Per Pattern** (Growing CA paper approach):
+
+**Phase 1: Pattern Formation (📐 FORM)** - Iterations 0-49
+- Standard NCA training: seed → evolve 64-96 steps → compare to target
+- Network learns to grow pattern from single seed
+- Batch size: 8 samples per iteration
+
+**Phase 2: Damage Resistance (🛡️ REGEN)** - Iterations 50-100
+- Damage resistance training: seed → evolve → **DAMAGE** → recover 32-48 steps → compare
+- Network learns to **regenerate** after perturbation
+- This is the key innovation from the Growing CA paper
+- Creates robust, self-healing patterns
+
+**Damage Types** (`src/grid.rs`):
+- `apply_damage()` - Random circular region zeroed (radius 3-8)
+- `apply_rectangular_damage()` - Localized rectangular region
+- `apply_circular_damage()` - Center-focused damage
+- `apply_half_damage()` - Remove left/right half
 
 **Pattern Types** (`TargetPattern` enum):
 - **Circle**: Smooth radial gradient (easiest)
 - **Square**: Sharp corners, uniform interior (hardest—edge discontinuities)
 - **Cross**: Complex shape with multiple lobes (medium)
 - **Spiral**: Logarithmic curve with gradients (complex)
+
+**Spiral Curriculum Learning**:
+- SAGE cycles through patterns: Circle → Square → Cross → Spiral → (repeat)
+- Each pattern: 100 iterations (50 formation + 50 damage resistance)
+- Moves on after mastery (loss < 0.05) OR 100 iterations
+- Pattern-specific learning rates: Square gets 2× higher rate due to difficulty
 
 ### Metrics System
 
@@ -253,7 +319,30 @@ Lines 639-672 in `src/tui/training.rs`:
 - Revisiting on cycle 2+ with messages like "🔄 Revisiting: Square (Cycle 2)"
 
 ### State Persistence
-`AppState` automatically saves to `/tmp/sage_state.json` on Ctrl+C and restores on startup. Network weights stored separately via SpacetimeDB.
+
+SAGE uses a **dual-layer persistence strategy** to save training progress:
+
+**Layer 1: Local JSON Files (Fast Restore)**
+- `pattern_training_weights.json` - Current NCA network weights
+  - Saved every 25 iterations (periodic checkpoints)
+  - Saved after each pattern completion
+  - Saved on Ctrl+C exit
+  - Automatically restored on startup
+- `/tmp/sage_state.json` - TUI state (grid snapshot, phase progress)
+
+**Layer 2: SpacetimeDB (Historical Tracking)**
+- `network_snapshots` table - Milestone snapshots with metadata
+  - Saved when patterns are mastered (loss < 0.05)
+  - Saved every other pattern for historical analysis
+  - Includes: generation, pattern name, loss, full weights JSON
+  - Query: `spacetime sql sage-db "SELECT * FROM network_snapshots ORDER BY generation DESC"`
+
+**Persistence Flow:**
+1. Pattern training runs → weights update in memory
+2. Every 25 iterations → quick save to local JSON
+3. Pattern mastered → save to both local + SpacetimeDB
+4. Ctrl+C → final save to local JSON
+5. Next startup → restore weights from local JSON, continue training
 
 ## Development Workflow
 

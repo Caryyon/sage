@@ -76,7 +76,7 @@ impl Grid {
         self.cells[y][x][3] > 0.1
     }
 
-    // Apply damage to the grid
+    // Apply scattered random damage to the grid
     pub fn apply_damage(&mut self, damage_percent: f64) {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -90,6 +90,71 @@ impl Grid {
             // Kill the cell
             for channel in 0..NUM_CHANNELS {
                 self.cells[y][x][channel] = 0.0;
+            }
+        }
+    }
+
+    /// Apply localized rectangular damage (Growing CA paper style)
+    /// Removes a rectangular region of cells to test regeneration
+    pub fn apply_rectangular_damage(&mut self, size_fraction: f64) -> (usize, usize, usize, usize) {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        // Damage region size (fraction of grid)
+        let damage_width = ((self.width as f64 * size_fraction) as usize).max(3);
+        let damage_height = ((self.height as f64 * size_fraction) as usize).max(3);
+
+        // Random position (ensure it's within bounds)
+        let start_x = rng.gen_range(0..self.width.saturating_sub(damage_width));
+        let start_y = rng.gen_range(0..self.height.saturating_sub(damage_height));
+
+        // Zero out the rectangular region
+        for y in start_y..(start_y + damage_height).min(self.height) {
+            for x in start_x..(start_x + damage_width).min(self.width) {
+                for channel in 0..NUM_CHANNELS {
+                    self.cells[y][x][channel] = 0.0;
+                }
+            }
+        }
+
+        (start_x, start_y, damage_width, damage_height)
+    }
+
+    /// Apply circular damage centered on the pattern
+    /// More challenging: removes the center of the pattern
+    pub fn apply_circular_damage(&mut self, radius_fraction: f64) -> (usize, usize, f64) {
+        let center_x = self.width / 2;
+        let center_y = self.height / 2;
+        let radius = (self.width as f64 * radius_fraction).max(2.0);
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let dx = x as f64 - center_x as f64;
+                let dy = y as f64 - center_y as f64;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                if dist < radius {
+                    for channel in 0..NUM_CHANNELS {
+                        self.cells[y][x][channel] = 0.0;
+                    }
+                }
+            }
+        }
+
+        (center_x, center_y, radius)
+    }
+
+    /// Apply half-pattern damage (remove left or right half)
+    /// Tests if pattern can regenerate from partial state
+    pub fn apply_half_damage(&mut self, remove_left: bool) {
+        let mid_x = self.width / 2;
+
+        for y in 0..self.height {
+            let x_range = if remove_left { 0..mid_x } else { mid_x..self.width };
+            for x in x_range {
+                for channel in 0..NUM_CHANNELS {
+                    self.cells[y][x][channel] = 0.0;
+                }
             }
         }
     }

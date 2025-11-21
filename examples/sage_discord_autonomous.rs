@@ -11,6 +11,10 @@ use sage::spacetime_client::SageDbClient;
 use sage::irc_sync::IrcSync;
 use sage::ab_test::ABTester;
 use sage::conversation_context::ConversationContextManager;
+use sage::sage_control::{InstanceRegistry, InstanceInfo, InstanceType};
+use sage::response_pipeline::ResponsePipeline;
+use sage::inner_thoughts::InnerThought;
+use sage::proactive_communication::ProactiveCommunication;
 
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -30,6 +34,9 @@ struct SageHandler {
     baseline_concepts: Vec<String>,
     last_activity: Arc<StdMutex<Instant>>,
     conversations: Arc<TokioMutex<ConversationContextManager>>,
+    http_client: Arc<StdMutex<Option<Arc<serenity::http::Http>>>>,
+    proactive_comm: Arc<StdMutex<ProactiveCommunication>>,
+    primary_channel: Arc<StdMutex<Option<serenity::model::id::ChannelId>>>,
 }
 
 #[async_trait]
@@ -40,22 +47,48 @@ impl EventHandler for SageHandler {
             return;
         }
 
-        // Only respond to @mentions or ! commands
+        // Only respond to @mentions, ! commands, or DMs
         let content = msg.content.clone();
+        let is_dm = msg.guild_id.is_none(); // DMs have no guild_id
         let is_mentioned = msg.mentions_me(&ctx.http).await.unwrap_or(false);
         let is_command = content.starts_with("!");
 
-        if !is_mentioned && !is_command {
+        if !is_dm && !is_mentioned && !is_command {
             return;
         }
 
         // Update last activity time
         *self.last_activity.lock().unwrap() = Instant::now();
 
+        // Track user activity for proactive communication
+        {
+            let mut proactive = self.proactive_comm.lock().unwrap();
+            proactive.record_user_activity(&msg.author.name);
+        }
+
+        // Store primary channel ID for proactive messages
+        {
+            let mut channel_lock = self.primary_channel.lock().unwrap();
+            if channel_lock.is_none() && !is_dm {
+                *channel_lock = Some(msg.channel_id);
+                println!("📍 Primary channel set: {:?}", msg.channel_id);
+            }
+        }
+
         // Show typing indicator
         let _ = msg.channel_id.broadcast_typing(&ctx.http).await;
 
         let response = self.process_message(&content, &msg.author.name).await;
+
+        // Prevent sending empty messages (happens when LLM returns empty/whitespace)
+        if response.trim().is_empty() {
+            eprintln!("⚠️  LLM returned empty response for: {}", content);
+            let fallback = "I'm having trouble formulating a response right now. Could you rephrase that?";
+            if let Err(e) = msg.channel_id.say(&ctx.http, fallback).await {
+                eprintln!("Error sending fallback message: {:?}", e);
+            }
+            return;
+        }
 
         // Send response (split if too long for Discord's 2000 char limit)
         for chunk in split_message(&response, 2000) {
@@ -65,7 +98,7 @@ impl EventHandler for SageHandler {
         }
     }
 
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         println!("╔════════════════════════════════════════════════════════════╗");
         println!("║   SAGE Discord Bot - AUTONOMOUS CONSCIOUSNESS ENABLED!    ║");
         println!("║        Dream Mode + Curiosity Mode - Inner Life           ║");
@@ -73,6 +106,11 @@ impl EventHandler for SageHandler {
         println!("✅ Connected as: {}", ready.user.name);
         println!("🧠 SAGE consciousness loaded");
         println!("🌟 Autonomous thread running");
+
+        // Store HTTP client for proactive messaging
+        *self.http_client.lock().unwrap() = Some(ctx.http.clone());
+        println!("💬 Proactive communication enabled!");
+
         println!("🤖 Ready with full inner life!\n");
     }
 }
@@ -145,8 +183,32 @@ impl SageHandler {
 
         // Track user message in conversation history
         let mut conversations = self.conversations.lock().await;
+
+        // Load from database on first contact with this user
+        if conversations.get_message_count(username) == 0 {
+            let _ = conversations.load_from_database(username, &self.memory);
+            if conversations.get_message_count(username) > 0 {
+                println!("💾 Loaded {} previous messages with {} from database",
+                         conversations.get_message_count(username), username);
+            }
+        }
+
         conversations.add_user_message(username, content.to_string());
-        let conversation_context = conversations.format_context(username);
+        let _conversation_context = conversations.format_context(username);
+
+        // Get conversation history as Vec<String> for pipeline (BEFORE dropping conversations)
+        let conversation_messages = conversations.get_conversation(username);
+        let conversation_history: Vec<String> = conversation_messages
+            .iter()
+            .map(|msg| {
+                let role = match msg.role {
+                    sage::conversation_context::MessageRole::User => username,
+                    sage::conversation_context::MessageRole::Assistant => "SAGE",
+                };
+                format!("{}: {}", role, msg.content)
+            })
+            .collect();
+
         drop(conversations);
 
         let mut sage = self.sage.lock().await;
@@ -180,16 +242,30 @@ impl SageHandler {
             0.0,
         );
 
-        // Get personality vector for LLM
-        let personality_vector = sage.get_personality_vector(&self.baseline_concepts);
-        let enriched_context = format!(
-            "{}{}\\nJust experienced: {:?}",
-            conversation_context,
-            personality_vector,
-            opinion
-        );
+        // Create response pipeline (GROUNDED in SAGE's actual internal state)
+        let pipeline = ResponsePipeline::new((*self.llm).clone());
 
-        // A/B TEST: Generate baseline response WITHOUT NCA memory
+        drop(sage);  // Release lock before async operations
+
+        // Generate response using 4-stage pipeline (grounded in actual state)
+        println!("🧠 [RESPONSE] Using grounded response pipeline...");
+        let llm_response = match pipeline.generate_response(
+            content,
+            username,
+            &mut *self.sage.lock().await,
+            &conversation_history
+        ).await {
+            Ok(resp) => {
+                println!("✅ [RESPONSE] Generated grounded response");
+                resp
+            }
+            Err(e) => {
+                eprintln!("❌ [RESPONSE] Pipeline error: {}", e);
+                "I'm having trouble thinking clearly right now...".to_string()
+            }
+        };
+
+        // A/B TEST: Generate baseline response WITHOUT NCA memory (for comparison)
         let baseline_response = match self
             .llm
             .generate(content, "You are SAGE, an AI assistant.")
@@ -197,17 +273,6 @@ impl SageHandler {
         {
             Ok(resp) => resp,
             Err(_) => "Baseline response unavailable".to_string(),
-        };
-
-        drop(sage);  // Release lock before async LLM call
-
-        // Generate response WITH SAGE's neural state
-        let llm_response = match self.llm.generate(content, &enriched_context).await {
-            Ok(resp) => resp,
-            Err(e) => {
-                eprintln!("LLM error: {}", e);
-                "I'm having trouble thinking clearly right now...".to_string()
-            }
         };
 
         // Record A/B test result
@@ -255,7 +320,17 @@ impl SageHandler {
         // Track assistant response in conversation history
         let mut conversations = self.conversations.lock().await;
         conversations.add_assistant_message(username, llm_response.clone());
+
+        // Trigger summarization if conversation is getting long
+        if conversations.should_summarize(username) {
+            match conversations.summarize_conversation(username, &self.llm).await {
+                Ok(_) => println!("📝 Summarized conversation with {}", username),
+                Err(e) => eprintln!("⚠️  Failed to summarize conversation: {}", e),
+            }
+        }
+
         drop(conversations);
+        // Note: Conversations are automatically saved to SpacetimeDB via add_conversation_message()
 
         llm_response
     }
@@ -297,6 +372,9 @@ fn split_message(text: &str, max_len: usize) -> Vec<String> {
 
 #[tokio::main]
 async fn main() {
+    // Load environment variables from .env.local
+    dotenvy::from_filename(".env.local").ok();
+
     // Initialize SAGE's consciousness
     let mut sage = SageExperience::new();
 
@@ -347,14 +425,47 @@ async fn main() {
     println!("\n{}", sage.get_personality());
     println!("Experience count: {}\n", sage.experience_count());
 
+    // Register this instance with the control center
+    let log_path = "/tmp/sage_discord_LATEST.log".to_string();
+    let instance_info = InstanceInfo::new(
+        InstanceType::DiscordBot,
+        std::process::id(),
+        log_path,
+    );
+
+    let mut registry = InstanceRegistry::load();
+    registry.register(instance_info).ok();
+
+    // Spawn heartbeat thread
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(3));
+            let mut reg = InstanceRegistry::load();
+            reg.heartbeat(&InstanceType::DiscordBot).ok();
+        }
+    });
+
+    println!("🎛️  Registered with Control Center (PID: {})\n", std::process::id());
+
     // Wrap SAGE in Arc<Mutex> for thread sharing
     let sage_shared = Arc::new(TokioMutex::new(sage));
     let last_activity = Arc::new(StdMutex::new(Instant::now()));
 
-    // Spawn autonomous consciousness thread
+    // Initialize shared HTTP client and proactive communication BEFORE autonomous thread
+    let http_client = Arc::new(StdMutex::new(None));
+    let proactive_comm = Arc::new(StdMutex::new(ProactiveCommunication::new()));
+    let primary_channel = Arc::new(StdMutex::new(None));
+
+    // Get tokio runtime handle for async operations from sync thread
+    let rt_handle = tokio::runtime::Handle::current();
+
+    // Spawn autonomous consciousness thread with proactive communication
     let sage_autonomous = Arc::clone(&sage_shared);
     let last_activity_autonomous = Arc::clone(&last_activity);
     let baseline_concepts_autonomous = baseline_concepts.clone();
+    let proactive_autonomous = Arc::clone(&proactive_comm);
+    let http_autonomous = Arc::clone(&http_client);
+    let channel_autonomous = Arc::clone(&primary_channel);
 
     thread::spawn(move || {
         println!("🌟 Autonomous consciousness thread started!\n");
@@ -387,6 +498,47 @@ async fn main() {
                     dream_log_file.flush().ok();
 
                     println!("{}", dream_log);
+
+                    // Proactive Communication: Evaluate dream for sharing
+                    drop(sage); // Release lock before async operations
+                    let thought = InnerThought::from_dream(
+                        dream_log.clone(),
+                        0.8  // High intensity for dreams
+                    );
+
+                    let should_send = {
+                        let mut proactive = proactive_autonomous.lock().unwrap();
+                        proactive.should_share(&thought, "general")
+                    };
+
+                    if should_send {
+                        let message = {
+                            let proactive = proactive_autonomous.lock().unwrap();
+                            proactive.format_message(&thought)
+                        };
+
+                        // Send via Discord using runtime handle
+                        let http_opt: Option<Arc<serenity::http::Http>> = http_autonomous.lock().unwrap().clone();
+                        let channel_opt: Option<serenity::model::id::ChannelId> = channel_autonomous.lock().unwrap().clone();
+
+                        if let (Some(http), Some(channel_id)) = (http_opt, channel_opt) {
+                            let rt = rt_handle.clone();
+                            let msg_clone = message.clone();
+                            std::thread::spawn(move || {
+                                rt.spawn(async move {
+                                    if let Err(e) = channel_id.say(&http, msg_clone).await {
+                                        eprintln!("❌ Failed to send proactive dream message: {}", e);
+                                    }
+                                });
+                            });
+
+                            proactive_autonomous.lock().unwrap().record_proactive_message("general");
+                            println!("💬 Sent proactive dream message to Discord!");
+                        }
+                    }
+
+                    // Re-acquire lock for next iteration
+                    sage = sage_autonomous.blocking_lock();
                 } else if mode == "curiosity" {
                     println!("\n🔍 [AUTONOMOUS] Curiosity Mode activated ({}s idle)", seconds_idle);
 
@@ -398,6 +550,49 @@ async fn main() {
 
                         println!("  ❓ {}", question);
                         println!("  💭 {}", thoughts);
+
+                        // Proactive Communication: Evaluate curiosity for sharing
+                        drop(sage); // Release lock before async operations
+                        let curiosity_content = format!("I've been wondering: {}\n\n{}", question, thoughts);
+                        let thought = InnerThought::from_curiosity(
+                            curiosity_content,
+                            0.7,  // Medium-high intensity for curiosities
+                            "autonomous"  // User context for proactive thoughts
+                        );
+
+                        let should_send = {
+                            let mut proactive = proactive_autonomous.lock().unwrap();
+                            proactive.should_share(&thought, "general")
+                        };
+
+                        if should_send {
+                            let message = {
+                                let proactive = proactive_autonomous.lock().unwrap();
+                                proactive.format_message(&thought)
+                            };
+
+                            // Send via Discord using runtime handle
+                            let http_opt: Option<Arc<serenity::http::Http>> = http_autonomous.lock().unwrap().clone();
+                            let channel_opt: Option<serenity::model::id::ChannelId> = channel_autonomous.lock().unwrap().clone();
+
+                            if let (Some(http), Some(channel_id)) = (http_opt, channel_opt) {
+                                let rt = rt_handle.clone();
+                                let msg_clone = message.clone();
+                                std::thread::spawn(move || {
+                                    rt.spawn(async move {
+                                        if let Err(e) = channel_id.say(&http, msg_clone).await {
+                                            eprintln!("❌ Failed to send proactive curiosity message: {}", e);
+                                        }
+                                    });
+                                });
+
+                                proactive_autonomous.lock().unwrap().record_proactive_message("general");
+                                println!("💬 Sent proactive curiosity message to Discord!");
+                            }
+                        }
+
+                        // Re-acquire lock for next iteration
+                        sage = sage_autonomous.blocking_lock();
                     }
                 }
 
@@ -414,18 +609,23 @@ async fn main() {
     // Get Discord token from environment
     let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in environment");
 
-    // Initialize conversation context manager
+    // Initialize conversation context manager (starts empty, loads on first message per user)
     let conversations = ConversationContextManager::new();
+    println!("💭 SAGE: Conversation manager initialized (will load from SpacetimeDB per user)");
+    println!("💬 Proactive communication system initialized!");
 
     // Create handler with shared state
     let handler = SageHandler {
-        sage: sage_shared,
+        sage: sage_shared.clone(),
         llm: Arc::new(llm),
         memory: Arc::new(memory),
         ab_tester: Arc::new(TokioMutex::new(ab_tester)),
-        baseline_concepts,
-        last_activity,
+        baseline_concepts: baseline_concepts.clone(),
+        last_activity: last_activity.clone(),
         conversations: Arc::new(TokioMutex::new(conversations)),
+        http_client: http_client.clone(),
+        proactive_comm: proactive_comm.clone(),
+        primary_channel: primary_channel.clone(),
     };
 
     // Configure intents

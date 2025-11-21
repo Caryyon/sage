@@ -546,28 +546,88 @@ impl SageDbClient {
         Ok(Vec::new())  // TODO: Parse actual results
     }
 
-    /// Get recent conversations
-    pub fn get_recent_conversations(&self, limit: usize) -> Result<Vec<ConversationRecord>, String> {
+    /// Get recent conversations for a specific user from SpacetimeDB
+    pub fn get_user_conversations(&self, username: &str, limit: usize) -> Result<Vec<ConversationRecord>, String> {
         if !*self.connected.lock().unwrap() {
             return Err("Not connected to SpacetimeDB".to_string());
         }
 
-        let output = std::process::Command::new("spacetime")
+        // Call the reducer and capture logs
+        let _output = std::process::Command::new("spacetime")
             .args(&[
-                "sql",
+                "logs",
                 &self.db_name,
-                &format!("SELECT sender, message, sage_response, nca_loss FROM conversations ORDER BY id DESC LIMIT {}", limit),
+                "--follow",
             ])
-            .output()
-            .map_err(|e| format!("Failed to query: {}", e))?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to start logs: {}", e))?;
 
-        if !output.status.success() {
-            return Ok(Vec::new());
+        // Give logs a moment to start
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Call the query reducer
+        let call_status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "get_user_conversations",
+                username,
+                &limit.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !call_status.success() {
+            return Err("Reducer call failed".to_string());
         }
 
-        eprintln!("📚 Retrieved {} recent conversations", limit);
+        // Give reducer time to log results
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
-        Ok(Vec::new())  // TODO: Parse actual results
+        // Read recent logs to get conversation data
+        let log_output = std::process::Command::new("spacetime")
+            .args(&[
+                "logs",
+                &self.db_name,
+                "-n",
+                "100",  // Get last 100 log lines
+            ])
+            .output()
+            .map_err(|e| format!("Failed to read logs: {}", e))?;
+
+        let logs = String::from_utf8_lossy(&log_output.stdout);
+
+        // Parse CONVERSATION_DATA lines
+        let mut conversations = Vec::new();
+        for line in logs.lines().rev() {  // Reverse to get chronological order
+            if line.contains("CONVERSATION_DATA|") {
+                if let Some(data_part) = line.split("CONVERSATION_DATA|").nth(1) {
+                    let parts: Vec<&str> = data_part.split('|').collect();
+                    if parts.len() >= 3 {
+                        conversations.push(ConversationRecord {
+                            sender: parts[0].replace("\\|", "|").to_string(),
+                            message: parts[1].replace("\\|", "|").to_string(),
+                            sage_response: parts[2].replace("\\|", "|").to_string(),
+                            nca_loss: 0.0,  // Not stored in conversation data
+                        });
+                    }
+                }
+            }
+        }
+
+        eprintln!("📚 Retrieved {} conversations for {} from database", conversations.len(), username);
+        Ok(conversations)
+    }
+
+    /// Get recent conversations (legacy method - use get_user_conversations instead)
+    #[deprecated(note = "Use get_user_conversations instead")]
+    pub fn get_recent_conversations(&self, _limit: usize) -> Result<Vec<ConversationRecord>, String> {
+        // This method is deprecated - return empty for now
+        eprintln!("⚠️  get_recent_conversations is deprecated, use get_user_conversations instead");
+        Ok(Vec::new())
     }
 
     /// Check if SAGE has memory of a concept

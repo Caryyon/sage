@@ -75,7 +75,7 @@ impl MemoryTrace {
 
     /// Calculate importance score for consolidation decision
     pub fn importance(&self) -> f64 {
-        let recency_factor = 0.3;
+        let _recency_factor = 0.3;
         let recall_factor = 0.4;
         let emotion_factor = 0.3;
 

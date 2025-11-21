@@ -640,3 +640,228 @@ pub fn save_visual_memory(
     log::info!("👁️  Visual memory saved: SAGE saw {} (brightness: {:.2}, color: {})",
         person_name, avg_brightness, dominant_color);
 }
+
+/// Query recent conversations for a specific user
+#[spacetimedb::reducer]
+pub fn get_user_conversations(
+    ctx: &ReducerContext,
+    sender: String,
+    limit: u32,
+) {
+    let conversations: Vec<_> = ctx.db.conversations()
+        .iter()
+        .filter(|c| c.sender == sender)
+        .collect();
+
+    let count = conversations.len().min(limit as usize);
+    let recent: Vec<_> = conversations.iter().rev().take(count).collect();
+
+    log::info!("📚 Retrieved {} conversations for {}", recent.len(), sender);
+
+    // Print conversations in a parseable format (JSON-like)
+    for conv in recent.iter().rev() {
+        log::info!("CONVERSATION_DATA|{}|{}|{}",
+            conv.sender,
+            conv.message.replace("|", "\\|"),
+            conv.sage_response.replace("|", "\\|")
+        );
+    }
+}
+
+// ============================================================================
+// USER MEMORY SYSTEM - Facts and Messages
+// ============================================================================
+
+/// Individual chat messages (pre-response) for building conversation context
+#[spacetimedb::table(name = messages, public)]
+pub struct Message {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub user_id: String,  // Discord username, IRC nick, etc.
+    pub text: String,
+    pub platform: String,  // "discord", "irc", "cli"
+    pub timestamp: Timestamp,
+}
+
+/// User facts - structured knowledge about each user
+#[spacetimedb::table(name = user_facts, public)]
+pub struct UserFact {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub user_id: String,
+    pub fact_key: String,  // "name", "wife_name", "son_name", etc.
+    pub value: String,
+    pub confidence: f64,  // 0.0-1.0
+    pub last_mentioned: Timestamp,
+    pub mention_count: u32,
+}
+
+/// Store or update a user fact with validation
+#[spacetimedb::reducer]
+pub fn store_user_fact(
+    ctx: &ReducerContext,
+    user_id: String,
+    fact_key: String,
+    value: String,
+    confidence: f64,
+) -> Result<(), String> {
+    // VALIDATION
+    if user_id.is_empty() {
+        return Err("User ID cannot be empty".to_string());
+    }
+
+    if fact_key.is_empty() {
+        return Err("Fact key cannot be empty".to_string());
+    }
+
+    if value.is_empty() {
+        return Err("Fact value cannot be empty".to_string());
+    }
+
+    if !(0.0..=1.0).contains(&confidence) {
+        return Err("Confidence must be between 0 and 1".to_string());
+    }
+
+    // Validate relationship fact keys
+    let valid_keys = [
+        "name", "japanese_name", "wife_name", "husband_name",
+        "son_name", "daughter_name", "child_name",
+        "preference:", "detail:", "fact:"
+    ];
+
+    let is_valid_key = valid_keys.iter().any(|&k| {
+        fact_key == k || fact_key.starts_with(k)
+    });
+
+    if !is_valid_key {
+        return Err(format!("Invalid fact key: {}. Must be one of: name, wife_name, son_name, preference:*, detail:*, fact:*", fact_key));
+    }
+
+    // Check for existing fact with same key for this user
+    let existing = ctx.db.user_facts()
+        .iter()
+        .find(|f| f.user_id == user_id && f.fact_key == fact_key);
+
+    if let Some(old_fact) = existing {
+        // Update existing fact
+        let new_confidence = old_fact.confidence.max(confidence);
+        let new_mention_count = old_fact.mention_count + 1;
+
+        // Delete old entry
+        ctx.db.user_facts().delete(old_fact);
+
+        // Insert updated version
+        ctx.db.user_facts().insert(UserFact {
+            id: 0,
+            user_id: user_id.clone(),
+            fact_key: fact_key.clone(),
+            value: value.clone(),
+            confidence: new_confidence,
+            last_mentioned: ctx.timestamp,
+            mention_count: new_mention_count,
+        });
+
+        log::info!("📝 Updated fact for {}: {} = {} (confidence: {:.2}, mentions: {})",
+            user_id, fact_key, value, new_confidence, new_mention_count);
+    } else {
+        // Insert new fact
+        ctx.db.user_facts().insert(UserFact {
+            id: 0,
+            user_id: user_id.clone(),
+            fact_key: fact_key.clone(),
+            value: value.clone(),
+            confidence,
+            last_mentioned: ctx.timestamp,
+            mention_count: 1,
+        });
+
+        log::info!("✨ New fact for {}: {} = {} (confidence: {:.2})",
+            user_id, fact_key, value, confidence);
+    }
+
+    Ok(())
+}
+
+/// Add a message to the chat history
+#[spacetimedb::reducer]
+pub fn add_message(
+    ctx: &ReducerContext,
+    user_id: String,
+    text: String,
+    platform: String,
+) -> Result<(), String> {
+    if user_id.is_empty() {
+        return Err("User ID cannot be empty".to_string());
+    }
+
+    if text.is_empty() {
+        return Err("Message text cannot be empty".to_string());
+    }
+
+    ctx.db.messages().insert(Message {
+        id: 0,
+        user_id: user_id.clone(),
+        text: text.clone(),
+        platform,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("💬 Message from {}: {}", user_id, text.chars().take(50).collect::<String>());
+
+    Ok(())
+}
+
+/// Batch store multiple facts (for initial seeding or fact extraction)
+#[spacetimedb::reducer]
+pub fn batch_store_facts(
+    ctx: &ReducerContext,
+    user_id: String,
+    facts_json: String,  // JSON array: [{"key": "name", "value": "Cary", "confidence": 1.0}, ...]
+) -> Result<(), String> {
+    // Parse JSON (simplified - in production use serde_json)
+    // For now, accept pipe-delimited format: "key1|value1|conf1;key2|value2|conf2"
+
+    for fact_str in facts_json.split(';') {
+        let parts: Vec<&str> = fact_str.split('|').collect();
+        if parts.len() == 3 {
+            if let Ok(confidence) = parts[2].parse::<f64>() {
+                store_user_fact(ctx, user_id.clone(), parts[0].to_string(), parts[1].to_string(), confidence)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Get fact count for a user (for debugging)
+#[spacetimedb::reducer]
+pub fn get_fact_count(ctx: &ReducerContext, user_id: String) {
+    let count = ctx.db.user_facts()
+        .iter()
+        .filter(|f| f.user_id == user_id)
+        .count();
+
+    log::info!("📊 User {} has {} facts stored", user_id, count);
+}
+
+/// Delete a specific fact (for corrections)
+#[spacetimedb::reducer]
+pub fn delete_user_fact(
+    ctx: &ReducerContext,
+    user_id: String,
+    fact_key: String,
+) -> Result<(), String> {
+    let fact = ctx.db.user_facts()
+        .iter()
+        .find(|f| f.user_id == user_id && f.fact_key == fact_key);
+
+    if let Some(f) = fact {
+        ctx.db.user_facts().delete(f);
+        log::info!("🗑️  Deleted fact for {}: {}", user_id, fact_key);
+        Ok(())
+    } else {
+        Err(format!("Fact not found: {} for user {}", fact_key, user_id))
+    }
+}

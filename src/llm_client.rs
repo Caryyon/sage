@@ -23,7 +23,7 @@ impl LlmClient {
     pub fn new() -> Self {
         Self {
             endpoint: "http://localhost:11434/api/generate".to_string(),
-            model: "dolphin-llama3".to_string(),
+            model: "llama3.2:3b".to_string(),
         }
     }
 
@@ -56,7 +56,7 @@ impl LlmClient {
     }
 
     /// Generate a response with conversation history (for multi-part messages)
-    pub async fn generate_with_history(&self, message_history: &[String], sage_context: &str) -> Result<String, Box<dyn Error>> {
+    pub async fn generate_with_history(&self, _message_history: &[String], sage_context: &str) -> Result<String, Box<dyn Error>> {
         // Extract user ID from context (look for username pattern)
         let user_id = if sage_context.contains("caryyon") || sage_context.contains("カライーオン") {
             "caryyon"
@@ -163,6 +163,32 @@ CRITICAL RULES:\n\
         } else {
             Err(format!("Ollama not responding: {}", response.status()).into())
         }
+    }
+
+    /// Generate a response using a raw prompt (no system prompt wrapping)
+    /// Used by ResponsePipeline which constructs its own complete prompts
+    pub async fn generate_raw(&self, prompt: &str) -> Result<String, Box<dyn Error>> {
+        // DEBUG: Log the raw prompt being sent
+        eprintln!("\n🔍 DEBUG: Raw LLM prompt (no system wrapping):\n{}\n", &prompt[..prompt.len().min(1000)]);
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&self.endpoint)
+            .json(&OllamaRequest {
+                model: self.model.clone(),
+                prompt: prompt.to_string(),
+                stream: false,
+            })
+            .timeout(std::time::Duration::from_secs(120))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(format!("LLM API error: {}", response.status()).into());
+        }
+
+        let ollama_response: OllamaResponse = response.json().await?;
+        Ok(ollama_response.response.trim().to_string())
     }
 }
 

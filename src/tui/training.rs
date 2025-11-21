@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use super::app::Phase;
 use crate::spacetime_client::SageDbClient;
+use crate::learning::meta_learning::MetaLearner;
 
 /// Target patterns for NCA to learn
 #[derive(Clone, Copy)]
@@ -192,6 +193,18 @@ pub struct TrainingState {
 
     // 🔄 Curriculum info (dynamic - updates with hot-reload)
     pub total_patterns: usize,         // Total patterns in curriculum
+
+    // 📊 Training history buffer (for Database Monitor charts)
+    pub metrics_history: Vec<MetricSnapshot>,  // Last 200 training iterations
+}
+
+#[derive(Debug, Clone)]
+pub struct MetricSnapshot {
+    pub generation: u64,
+    pub loss: f64,
+    pub complexity: f64,
+    pub diversity: f64,
+    pub pattern: String,
 }
 
 impl TrainingState {
@@ -250,6 +263,23 @@ impl TrainingState {
 
             // Initialize curriculum info
             total_patterns: 4,  // Will be updated by hot-reload to 5
+
+            // Initialize training history
+            metrics_history: Vec::new(),
+        }
+    }
+
+    pub fn add_metric_snapshot(&mut self, generation: u64, loss: f64, complexity: f64, diversity: f64, pattern: String) {
+        self.metrics_history.push(MetricSnapshot {
+            generation,
+            loss,
+            complexity,
+            diversity,
+            pattern,
+        });
+        // Keep only last 200 metrics for performance
+        if self.metrics_history.len() > 200 {
+            self.metrics_history.remove(0);
         }
     }
 
@@ -462,6 +492,11 @@ impl TrainingRunner {
             let mut learning_rate = 0.00005;  // Start with ultra-low learning rate for stability with Adam
             let mut pattern_attempts = 0u64;  // Track attempts on current pattern
 
+            // META-LEARNING: Adaptive learning rate controller
+            // Initializes with pattern-specific base rates, then adjusts based on progress
+            let base_lr = 0.00005;  // Base learning rate for meta-learner
+            let mut meta_learner = MetaLearner::new(base_lr);
+
             // Spiral curriculum: track patterns to revisit
             let mut curriculum_progress = vec![
                 (TargetPattern::Circle, false),     // Pattern, is_mastered
@@ -485,32 +520,35 @@ impl TrainingRunner {
                 // Different patterns need different approaches
                 pattern_attempts += 1;
 
-                // Adjust learning rate based on pattern difficulty and progress
-                match current_pattern_type {
+                // META-LEARNING: Get adaptive learning rate and apply pattern-specific multipliers
+                // Meta-learner adjusts based on loss trends, then we scale for pattern difficulty
+                let base_adaptive_rate = meta_learner.get_learning_rate();
+                learning_rate = match current_pattern_type {
                     TargetPattern::Circle => {
-                        // Circle is easiest - standard rate
-                        learning_rate = 0.00005;
+                        // Circle is easiest - use standard adaptive rate
+                        base_adaptive_rate
                     },
                     TargetPattern::Square => {
-                        // Square needs sharper edges - boost learning rate and use more steps
-                        // Also benefit from seeing the target more often
-                        learning_rate = 0.0001;  // 2X higher for sharper features
+                        // Square needs sharper edges - boost learning rate 2×
+                        let boosted_rate = base_adaptive_rate * 2.0;
 
                         // If struggling (many attempts), provide extra help
                         if pattern_attempts > 500 && pattern_attempts % 100 == 0 {
                             let mut s = state.lock().unwrap();
                             s.add_event("💡 Tip: Square requires sharp corners - increasing precision training".to_string());
                         }
+
+                        boosted_rate
                     },
                     TargetPattern::Cross => {
-                        // Cross needs understanding of intersections
-                        learning_rate = 0.00008;
+                        // Cross needs understanding of intersections - moderate boost
+                        base_adaptive_rate * 1.6
                     },
                     TargetPattern::Spiral => {
-                        // Spiral is most complex - needs patience
-                        learning_rate = 0.00006;
+                        // Spiral is most complex - slightly boosted rate
+                        base_adaptive_rate * 1.2
                     },
-                }
+                };
 
                 // BALANCED TRAINING - Pattern-specific step counts
                 let num_steps = match current_pattern_type {
@@ -572,6 +610,11 @@ impl TrainingRunner {
 
                 // Use average loss from batch for stability
                 let loss = batch_losses.iter().sum::<f64>() / batch_size as f64;
+
+                // META-LEARNING: Record training step for adaptive learning rate adjustment
+                // Use inverse loss as "accuracy" (higher is better) for meta-learner
+                let pseudo_accuracy = 1.0 / (1.0 + loss);  // 0.5 at loss=1.0, approaches 1.0 as loss→0
+                meta_learner.record_step(step_count as usize, loss, pseudo_accuracy);
 
                 // OPTIMIZATION: Only calculate expensive metrics every 10 steps for speed
                 let should_update_metrics = step_count % 10 == 0;
@@ -1091,6 +1134,9 @@ impl Clone for TrainingState {
 
             // Clone curriculum info
             total_patterns: self.total_patterns,
+
+            // Clone training history
+            metrics_history: self.metrics_history.clone(),
         }
     }
 }

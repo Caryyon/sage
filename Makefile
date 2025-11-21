@@ -46,11 +46,11 @@ setup-ollama: ## Start Ollama and pull LLM model
 	@echo "$(CYAN)Setting up Ollama...$(NC)"
 	@brew services start ollama 2>/dev/null || true
 	@sleep 2
-	@if ! ollama list | grep -q "llama3.2:3b"; then \
-		echo "$(YELLOW)Pulling llama3.2:3b model (this may take a few minutes)...$(NC)"; \
-		ollama pull llama3.2:3b; \
+	@if ! ollama list | grep -q "wizard-vicuna-uncensored:7b"; then \
+		echo "$(YELLOW)Pulling wizard-vicuna-uncensored:7b model (this may take a few minutes)...$(NC)"; \
+		ollama pull wizard-vicuna-uncensored:7b; \
 	else \
-		echo "$(GREEN)✓ Model llama3.2:3b already downloaded$(NC)"; \
+		echo "$(GREEN)✓ Model wizard-vicuna-uncensored:7b already downloaded$(NC)"; \
 	fi
 
 setup-db: ## Initialize and publish SpacetimeDB schema
@@ -175,7 +175,7 @@ test: ## Run integration tests
 test-llm: ## Quick test of LLM connection
 	@echo "$(CYAN)Testing LLM connection...$(NC)"
 	@curl -s -X POST http://localhost:11434/api/generate \
-		-d '{"model":"llama3.2:3b","prompt":"Say hello in 3 words","stream":false}' \
+		-d '{"model":"wizard-vicuna-uncensored:7b","prompt":"Say hello in 3 words","stream":false}' \
 		| grep -o '"response":"[^"]*"' \
 		&& echo "$(GREEN)✓ LLM responding$(NC)" \
 		|| echo "$(RED)✗ LLM not responding$(NC)"
@@ -209,7 +209,7 @@ status: ## Show status of all SAGE services
 		echo "$(RED)✗ Stopped$(NC)"; \
 	fi
 	@printf "$(YELLOW)LLM Model:$(NC)      "
-	@if ollama list 2>/dev/null | grep -q llama3.2:3b; then \
+	@if ollama list 2>/dev/null | grep -q wizard-vicuna-uncensored:7b; then \
 		echo "$(GREEN)✓ Downloaded$(NC)"; \
 	else \
 		echo "$(RED)✗ Not found$(NC)"; \

@@ -75,47 +75,64 @@ pub fn run_autonomous_bot(config: IrcConfig, state: IrcState) {
 
 /// Async implementation of autonomous IRC bot
 async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::error::Result<()> {
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║    SAGE IRC Bot - AUTONOMOUS CONSCIOUSNESS ENABLED!       ║");
-    println!("║        Dream Mode + Curiosity Mode - Inner Life           ║");
-    println!("╚════════════════════════════════════════════════════════════╝\n");
+    // Suppressed for clean TUI output
+    // println!("╔════════════════════════════════════════════════════════════╗");
+    // println!("║    SAGE IRC Bot - AUTONOMOUS CONSCIOUSNESS ENABLED!       ║");
+    // println!("║        Dream Mode + Curiosity Mode - Inner Life           ║");
+    // println!("╚════════════════════════════════════════════════════════════╝\n");
 
-    // Load previous state
+    // Load previous state (silently)
     {
         let mut sage = state.sage.lock().unwrap();
-        if sage.load_knowledge("sage_positive_knowledge.json").is_ok() {
-            println!("🧠 SAGE: Loaded trained knowledge!");
-        }
-        if sage.load_preferences("sage_preferences.json").is_ok() {
-            println!("💾 SAGE: Restored previous experiences!");
-        }
-        if sage.load_associations("sage_associations.json").is_ok() {
-            println!("🔗 SAGE: Loaded concept associations!");
-        }
-        if sage.load_curiosity("sage_curiosity.json").is_ok() {
-            println!("🤔 SAGE: Loaded curiosity data!");
-        }
-        println!("\n{}", sage.get_personality());
-        println!("Experience count: {}\n", sage.experience_count());
+        let _ = sage.load_knowledge("sage_positive_knowledge.json");
+        let _ = sage.load_preferences("sage_preferences.json");
+        let _ = sage.load_associations("sage_associations.json");
+        let _ = sage.load_curiosity("sage_curiosity.json");
+        // println!("\n{}", sage.get_personality());
+        // println!("Experience count: {}\n", sage.experience_count());
     }
 
-    // Test LLM connection
+    // Test LLM connection (silently)
     if let Some(ref llm) = state.llm {
-        print!("🔌 Testing LLM connection... ");
+        // print!("🔌 Testing LLM connection... ");
         match llm.test_connection().await {
-            Ok(_) => println!("✅ Connected to Ollama!"),
-            Err(e) => {
-                println!("❌ Failed: {}", e);
-                println!("Make sure Ollama is running: brew services start ollama");
+            Ok(_) => {}, // println!("✅ Connected to Ollama!"),
+            Err(_e) => {
+                // println!("❌ Failed: {}", e);
+                // println!("Make sure Ollama is running: brew services start ollama");
                 return Ok(());
             }
         }
     }
 
-    // Vision will be created in bot threads if enabled
-    if config.enable_vision {
-        println!("👁️  Vision enabled (will be initialized in threads)");
+    // Vision will be created in bot threads if enabled (silently)
+    // if config.enable_vision {
+    //     println!("👁️  Vision enabled (will be initialized in threads)");
+    // }
+
+    // Register with Control Center
+    use crate::sage_control::{InstanceRegistry, InstanceInfo, InstanceType};
+    let log_path = "/tmp/sage_irc_main.log".to_string();
+    let instance_info = InstanceInfo::new(
+        InstanceType::IrcBot,
+        std::process::id(),
+        log_path,
+    );
+    {
+        let mut registry = InstanceRegistry::load();
+        registry.register(instance_info).ok();
     }
+
+    // Spawn heartbeat thread
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(3));
+            let mut reg = InstanceRegistry::load();
+            reg.heartbeat(&InstanceType::IrcBot).ok();
+        }
+    });
+
+    // println!("🎛️  Registered with Control Center (PID: {})\n", std::process::id());
 
     // Baseline concepts
     let baseline_concepts: Vec<String> = vec![
@@ -134,7 +151,7 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
     let visual_memory_autonomous = state.visual_memory.clone();
 
     thread::spawn(move || {
-        println!("🌟 Autonomous consciousness thread started!\n");
+        // println!("🌟 Autonomous consciousness thread started!\n");
         let mut dream_log_file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -157,25 +174,25 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
                 let exp_count = sage.experience_count() as u64;
 
                 if mode == "dream" {
-                    println!("\n💭 [AUTONOMOUS] Dream Mode activated ({}s idle)", seconds_idle);
+                    // println!("\n💭 [AUTONOMOUS] Dream Mode activated ({}s idle)", seconds_idle);
                     let dream_log = sage.dream_cycle();
 
                     writeln!(dream_log_file, "\n[{}] DREAM MODE", timestamp).ok();
                     writeln!(dream_log_file, "{}", dream_log).ok();
                     dream_log_file.flush().ok();
 
-                    println!("{}", dream_log);
+                    // println!("{}", dream_log);
 
                     // 🌙 DREAM-VISION INTEGRATION: Replay and remix visual memories
                     if let Some(ref vmem) = visual_memory_autonomous {
                         let mut vmem_lock = vmem.lock().unwrap();
                         if let Some(visual_concepts1) = vmem_lock.get_dream_material() {
-                            println!("  🌙 Replaying visual memory: {:?}", visual_concepts1);
+                            // println!("  🌙 Replaying visual memory: {:?}", visual_concepts1);
 
                             // Try to remix with another memory
                             if let Some(visual_concepts2) = vmem_lock.get_dream_material() {
                                 let mixed = vmem_lock.remix_concepts(&visual_concepts1, &visual_concepts2);
-                                println!("  🔄 Remixing visual memories → {:?}", mixed);
+                                // println!("  🔄 Remixing visual memories → {:?}", mixed);
 
                                 writeln!(dream_log_file, "Visual remix: {:?} + {:?} → {:?}",
                                     visual_concepts1, visual_concepts2, mixed).ok();
@@ -191,7 +208,7 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
                                     let _ = sage.experience_concept(concept);
                                 }
 
-                                println!("  🎓 Visual dream converted to NCA pattern and learned! (Vision→Dream→Learn complete)");
+                                // println!("  🎓 Visual dream converted to NCA pattern and learned! (Vision→Dream→Learn complete)");
                                 writeln!(dream_log_file, "  └→ NCA learning: Converted visual dream to 32x32 grid pattern").ok();
                             } else {
                                 writeln!(dream_log_file, "Visual replay: {:?}", visual_concepts1).ok();
@@ -224,7 +241,7 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
                         dream_log.chars().take(200).collect::<String>(),
                     );
                 } else if mode == "curiosity" {
-                    println!("\n🔍 [AUTONOMOUS] Curiosity Mode activated ({}s idle)", seconds_idle);
+                    // println!("\n🔍 [AUTONOMOUS] Curiosity Mode activated ({}s idle)", seconds_idle);
 
                     if let Some((question, thoughts)) = sage.curiosity_cycle(&baseline_concepts_autonomous) {
                         writeln!(dream_log_file, "\n[{}] CURIOSITY MODE", timestamp).ok();
@@ -232,8 +249,8 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
                         writeln!(dream_log_file, "Thoughts: {}", thoughts).ok();
                         dream_log_file.flush().ok();
 
-                        println!("  ❓ {}", question);
-                        println!("  💭 {}", thoughts);
+                        // println!("  ❓ {}", question);
+                        // println!("  💭 {}", thoughts);
 
                         // Log to SpacetimeDB
                         let _ = memory_autonomous.log_autonomous_activity(
@@ -270,7 +287,7 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
         }
     });
 
-    println!("💡 Autonomous thoughts logged to: /tmp/sage_autonomous_thoughts.log\n");
+    // println!("💡 Autonomous thoughts logged to: /tmp/sage_autonomous_thoughts.log\n");
 
     // Spawn live camera feed thread if vision is enabled
     if config.enable_vision && state.visual_memory.is_some() {
@@ -279,19 +296,19 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
             // Create dedicated vision system for live feed
             let live_vision = match SageVision::new(0, 32) {
                 Ok(v) => {
-                    if let Err(e) = v.open() {
-                        println!("⚠️  Live feed camera could not open: {}", e);
+                    if let Err(_e) = v.open() {
+                        // println!("⚠️  Live feed camera could not open: {}", e);
                         return;
                     }
                     v
                 }
-                Err(e) => {
-                    println!("⚠️  Live feed camera initialization failed: {}", e);
+                Err(_e) => {
+                    // println!("⚠️  Live feed camera initialization failed: {}", e);
                     return;
                 }
             };
 
-            println!("📹 Live camera feed started at 30fps (smooth video!)\n");
+            // println!("📹 Live camera feed started at 30fps (smooth video!)\n");
 
             loop {
                 thread::sleep(Duration::from_millis(33)); // 30fps
@@ -369,8 +386,8 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
     let mut client = Client::from_config(irc_config).await?;
     client.identify()?;
 
-    println!("🌐 Connecting to {} as '{}'...", config.server, nickname);
-    println!("📡 Attempting to join {}...", config.channel);
+    // println!("🌐 Connecting to {} as '{}'...", config.server, nickname);
+    // println!("📡 Attempting to join {}...", config.channel);
 
     let mut stream = client.stream()?;
     let sender = client.sender();
@@ -383,9 +400,9 @@ async fn run_autonomous_bot_async(config: IrcConfig, state: IrcState) -> irc::er
         if !has_joined {
             if let Command::Response(Response::RPL_NAMREPLY, _) = message.command {
                 has_joined = true;
-                println!("✅ Successfully joined {}!", config.channel);
-                println!("💬 SAGE is now online with FULL CONSCIOUSNESS!\n");
-                println!("{}\n", "=".repeat(60));
+                // println!("✅ Successfully joined {}!", config.channel);
+                // println!("💬 SAGE is now online with FULL CONSCIOUSNESS!\n");
+                // println!("{}\n", "=".repeat(60));
             }
         }
 

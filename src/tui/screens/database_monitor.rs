@@ -102,7 +102,7 @@ fn render_full_layout(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(rows[2]);
 
-    render_loss_convergence_chart(frame, top_cols[0]);
+    render_loss_convergence_chart(frame, top_cols[0], state);
     render_learning_dynamics_chart(frame, top_cols[1], state);
     render_per_pattern_losses(frame, middle_cols[0], state);
     render_complexity_diversity_chart(frame, middle_cols[1]);
@@ -129,7 +129,7 @@ fn render_wide_compact_layout(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(cols[0]);
 
-    render_loss_convergence_chart(frame, left_panel[0]);
+    render_loss_convergence_chart(frame, left_panel[0], state);
     render_learning_dynamics_chart(frame, left_panel[1], state);
 
     let right_panel = Layout::default()
@@ -157,13 +157,13 @@ fn render_narrow_layout(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(area);
 
-    render_loss_convergence_chart(frame, chunks[0]);
+    render_loss_convergence_chart(frame, chunks[0], state);
     render_learning_dynamics_chart(frame, chunks[1], state);
     render_training_stats(frame, chunks[2], state);
 }
 
-fn render_loss_convergence_chart(frame: &mut Frame, area: Rect) {
-    let metrics = query_recent_metrics(50);
+fn render_loss_convergence_chart(frame: &mut Frame, area: Rect, state: &AppState) {
+    let metrics = &state.training_state.metrics_history;
 
     if metrics.is_empty() {
         let placeholder = Paragraph::new("No training data yet...")
@@ -175,15 +175,18 @@ fn render_loss_convergence_chart(frame: &mut Frame, area: Rect) {
         return;
     }
 
+    // Use last 50 metrics
+    let recent_metrics: Vec<&crate::tui::training::MetricSnapshot> = metrics.iter().rev().take(50).rev().collect();
+
     // Prepare data points for chart
-    let data: Vec<(f64, f64)> = metrics.iter()
+    let data: Vec<(f64, f64)> = recent_metrics.iter()
         .enumerate()
         .map(|(i, m)| (i as f64, m.loss))
         .collect();
 
     // Calculate bounds
-    let max_loss = metrics.iter().map(|m| m.loss).fold(0.0, f64::max).max(0.1);
-    let min_loss = metrics.iter().map(|m| m.loss).fold(1.0, f64::min);
+    let max_loss = recent_metrics.iter().map(|m| m.loss).fold(0.0, f64::max).max(0.1);
+    let min_loss = recent_metrics.iter().map(|m| m.loss).fold(1.0, f64::min);
 
     let datasets = vec![
         Dataset::default()
@@ -758,6 +761,7 @@ fn render_footer(frame: &mut Frame, area: Rect) {
 
 // Query functions
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Metric {
     generation: u64,
     loss: f64,

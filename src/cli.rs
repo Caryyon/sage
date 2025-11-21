@@ -64,8 +64,9 @@ impl Cli {
     }
 
     pub fn should_enable_autonomous(&self) -> bool {
-        self.autonomous || self.all || matches!(self.command, Some(Commands::Autonomous))
-            || matches!(self.command, Some(Commands::Irc { autonomous: true, .. }))
+        // Autonomous is always enabled when IRC is enabled (that's the whole point of SAGE!)
+        self.autonomous || self.all || self.should_enable_irc()
+            || matches!(self.command, Some(Commands::Autonomous))
     }
 
     pub fn should_run_tui(&self) -> bool {

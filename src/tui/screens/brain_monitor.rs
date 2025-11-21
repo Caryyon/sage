@@ -97,6 +97,29 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled(" | 👁️  Vision: Standby", Style::default().fg(Color::DarkGray))
     };
 
+    // Show audio output status
+    let audio_status = if state.audio_available {
+        if state.audio_enabled {
+            let vol_pct = (state.audio_volume * 100.0) as u8;
+            Span::styled(format!(" | 🔊 {}%", vol_pct), Style::default().fg(Color::Green))
+        } else {
+            Span::styled(" | 🔇 Muted", Style::default().fg(Color::Red))
+        }
+    } else {
+        Span::styled(" | 🔇 No Audio", Style::default().fg(Color::DarkGray))
+    };
+
+    // Show audio input (listening) status
+    let listen_status = if state.audio_input_available {
+        if state.audio_listening {
+            Span::styled(" | 👂 Listening", Style::default().fg(Color::Cyan))
+        } else {
+            Span::styled(" | 👂 Off", Style::default().fg(Color::DarkGray))
+        }
+    } else {
+        Span::styled("", Style::default())  // Don't show if input not available
+    };
+
     let title = Paragraph::new(Line::from(vec![
         Span::styled("🧠 ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
         Span::styled("SAGE BRAIN MONITOR", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -107,6 +130,8 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::raw("  │  "),
         Span::styled(format!("{}", opinion), Style::default().fg(opinion_color)),
         vision_status,
+        audio_status,
+        listen_status,
     ]))
     .alignment(Alignment::Center)
     .block(

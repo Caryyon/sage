@@ -12,14 +12,16 @@ use sage::spacetime_client::SageDbClient;
 use sage::irc_sync::IrcSync;
 use sage::ab_test::ABTester;
 use sage::vision::SageVision;
-use sage::visual_memory::{VisualMemory, visual_features_to_pattern, concepts_to_pattern};
+use sage::visual_memory::{VisualMemory, concepts_to_pattern};
 use sage::conversation_context::ConversationContextManager;
+use sage::sage_control::{InstanceRegistry, InstanceInfo, InstanceType};
 use irc::client::prelude::*;
 use futures::stream::StreamExt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use std::thread;
 use serde_json;
+use tokio::sync::Mutex as TokioMutex;
 
 /// Split message into IRC-safe chunks (max 400 chars per line)
 fn split_for_irc(text: &str) -> Vec<String> {
@@ -107,7 +109,7 @@ async fn main() -> irc::error::Result<()> {
                 None
             } else {
                 println!("✅ SAGE can see!");
-                Some(Arc::new(Mutex::new(v)))
+                Some(Arc::new(StdMutex::new(v)))
             }
         }
         Err(e) => {
@@ -130,15 +132,38 @@ async fn main() -> irc::error::Result<()> {
     let memory = SageDbClient::new("sage-db");
 
     // Initialize visual memory for cross-modal learning
-    let visual_memory = Arc::new(Mutex::new(VisualMemory::new()));
+    let visual_memory = Arc::new(StdMutex::new(VisualMemory::new()));
     println!("🎨 Visual memory initialized for dream-vision integration!\n");
 
-    // Initialize conversation context manager
-    let conversations = Arc::new(Mutex::new(ConversationContextManager::new()));
+    // Initialize conversation context manager (starts empty, loads on first message per user)
+    let conversations = Arc::new(TokioMutex::new(ConversationContextManager::new()));
+    println!("💭 SAGE: Conversation manager initialized (will load from SpacetimeDB per user)");
+
+    // Register this instance with the control center
+    let log_path = "/tmp/sage_irc_LATEST.log".to_string();
+    let instance_info = InstanceInfo::new(
+        InstanceType::IrcBot,
+        std::process::id(),
+        log_path,
+    );
+
+    let mut registry = InstanceRegistry::load();
+    registry.register(instance_info).ok();
+
+    // Spawn heartbeat thread
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(3));
+            let mut reg = InstanceRegistry::load();
+            reg.heartbeat(&InstanceType::IrcBot).ok();
+        }
+    });
+
+    println!("🎛️  Registered with Control Center (PID: {})\n", std::process::id());
 
     // Wrap SAGE in Arc<Mutex> for thread sharing
-    let sage_shared = Arc::new(Mutex::new(sage));
-    let last_activity = Arc::new(Mutex::new(Instant::now()));
+    let sage_shared = Arc::new(StdMutex::new(sage));
+    let last_activity = Arc::new(StdMutex::new(Instant::now()));
 
     // Spawn autonomous consciousness thread
     let sage_autonomous = Arc::clone(&sage_shared);
@@ -635,7 +660,17 @@ async fn main() -> irc::error::Result<()> {
             // Get SAGE's response (conversation mode)
 
             // Track user message in conversation history
-            let mut convs = conversations.lock().unwrap();
+            let mut convs = conversations.lock().await;
+
+            // Load from database on first contact with this user
+            if convs.get_message_count(nick) == 0 {
+                let _ = convs.load_from_database(nick, &memory);
+                if convs.get_message_count(nick) > 0 {
+                    println!("💾 Loaded {} previous messages with {} from database",
+                             convs.get_message_count(nick), nick);
+                }
+            }
+
             convs.add_user_message(nick, msg.to_string());
             let conversation_context = convs.format_context(nick);
             drop(convs);
@@ -730,9 +765,29 @@ async fn main() -> irc::error::Result<()> {
             drop(sage);
 
             // Track assistant response in conversation history
-            let mut convs = conversations.lock().unwrap();
+            let mut convs = conversations.lock().await;
             convs.add_assistant_message(nick, llm_response.clone());
-            drop(convs);
+
+            // Trigger summarization if conversation is getting long
+            if convs.should_summarize(nick) {
+                drop(convs); // Release lock before async call
+                let llm_clone = llm.clone();
+                let nick_clone = nick.to_string();
+                let conversations_clone = Arc::clone(&conversations);
+
+                // Summarize in background to avoid blocking IRC loop
+                tokio::spawn(async move {
+                    let mut convs = conversations_clone.lock().await;
+                    match convs.summarize_conversation(&nick_clone, &llm_clone).await {
+                        Ok(_) => println!("📝 Summarized conversation with {}", nick_clone),
+                        Err(e) => eprintln!("⚠️  Failed to summarize conversation: {}", e),
+                    }
+                    // Note: Conversations are automatically saved to SpacetimeDB via add_conversation_message()
+                });
+            } else {
+                drop(convs);
+            }
+            // Note: Conversations are automatically saved to SpacetimeDB via add_conversation_message()
 
             // Send response
             for chunk in split_for_irc(&llm_response) {

@@ -5,6 +5,7 @@ pub mod brain_monitor;           // Live NCA grid visualization
 pub mod social_mind;
 pub mod neural_observatory;
 pub mod evolution_timeline;
+pub mod control_center;          // SAGE instance management
 
 // Legacy screens (kept for reference)
 pub mod unified_dashboard;
@@ -25,6 +26,7 @@ pub enum ScreenType {
     SocialMind,
     NeuralObservatory,
     EvolutionTimeline,
+    ControlCenter,        // SAGE instance management
     // Legacy (deprecated)
     UnifiedDashboard,
     DatabaseMonitor,
@@ -38,11 +40,12 @@ impl ScreenType {
             Self::BrainMonitor => Self::SocialMind,
             Self::SocialMind => Self::NeuralObservatory,
             Self::NeuralObservatory => Self::EvolutionTimeline,
-            Self::EvolutionTimeline => Self::BrainMonitor,
+            Self::EvolutionTimeline => Self::ControlCenter,
+            Self::ControlCenter => Self::BrainMonitor,
             // Legacy screens cycle among themselves
             Self::UnifiedDashboard => Self::DatabaseMonitor,
-            Self::DatabaseMonitor => Self::Chat,
-            Self::Chat => Self::MissionControl,
+            Self::DatabaseMonitor => Self::MissionControl,
+            Self::Chat => Self::MissionControl,  // Skip Chat - go straight to MissionControl
             Self::MissionControl => Self::UnifiedDashboard,
         }
     }
@@ -53,6 +56,7 @@ impl ScreenType {
             Self::SocialMind => "Social Mind",
             Self::NeuralObservatory => "Neural Observatory",
             Self::EvolutionTimeline => "Evolution Timeline",
+            Self::ControlCenter => "Control Center",
             Self::UnifiedDashboard => "Unified Dashboard",
             Self::DatabaseMonitor => "Database Monitor",
             Self::Chat => "Chat",
@@ -74,6 +78,7 @@ impl Screen {
             ScreenType::SocialMind => Box::new(social_mind::SocialMindScreen::new()),
             ScreenType::NeuralObservatory => Box::new(neural_observatory::NeuralObservatoryScreen::new()),
             ScreenType::EvolutionTimeline => Box::new(evolution_timeline::EvolutionTimelineScreen::new()),
+            ScreenType::ControlCenter => Box::new(control_center::ControlCenterScreen),
             ScreenType::UnifiedDashboard => Box::new(unified_dashboard::UnifiedDashboardScreen),
             ScreenType::DatabaseMonitor => Box::new(database_monitor::DatabaseMonitorScreen),
             ScreenType::Chat => Box::new(chat::ChatScreen),

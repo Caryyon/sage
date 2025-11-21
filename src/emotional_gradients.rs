@@ -93,25 +93,25 @@ impl EmotionalState {
         match (self.valence, self.arousal, self.dominance) {
             // Positive valence
             (v, a, d) if v > 0.5 && a > 0.6 && d > 0.6 => "ecstatic",
-            (v, a, d) if v > 0.5 && a > 0.6 => "excited",
+            (v, a, _d) if v > 0.5 && a > 0.6 => "excited",
             (v, a, d) if v > 0.3 && a > 0.6 && d > 0.6 => "joyful",
             (v, a, d) if v > 0.3 && a < 0.4 && d > 0.5 => "content",
-            (v, a, d) if v > 0.3 && a < 0.4 => "peaceful",
+            (v, a, _d) if v > 0.3 && a < 0.4 => "peaceful",
             (v, a, _) if v > 0.3 && a > 0.5 => "delighted",
             (v, _, _) if v > 0.1 => "pleased",
 
             // Negative valence
             (v, a, d) if v < -0.5 && a > 0.6 && d < 0.4 => "terrified",
-            (v, a, d) if v < -0.5 && a > 0.6 => "angry",
+            (v, a, _d) if v < -0.5 && a > 0.6 => "angry",
             (v, a, d) if v < -0.3 && a > 0.5 && d < 0.4 => "anxious",
-            (v, a, d) if v < -0.3 && a > 0.5 => "frustrated",
-            (v, a, d) if v < -0.3 && a < 0.4 => "sad",
-            (v, a, d) if v < -0.1 && a < 0.4 => "melancholic",
+            (v, a, _d) if v < -0.3 && a > 0.5 => "frustrated",
+            (v, a, _d) if v < -0.3 && a < 0.4 => "sad",
+            (v, a, _d) if v < -0.1 && a < 0.4 => "melancholic",
             (v, _, _) if v < -0.1 => "uncomfortable",
 
             // Neutral/Curious
             (_, a, d) if a > 0.5 && d > 0.5 => "curious",
-            (_, a, d) if a > 0.6 => "interested",
+            (_, a, _d) if a > 0.6 => "interested",
             (_, a, _) if a < 0.3 => "calm",
             _ => "neutral",
         }

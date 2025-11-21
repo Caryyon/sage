@@ -38,7 +38,16 @@ pub mod introspection;  // Phenomenological self-awareness and subjective experi
 pub mod vision;  // Camera capture and visual perception
 pub mod visual_memory;  // Cross-modal learning and dream-vision integration
 pub mod fractal_analysis;  // Fractal dimension calculation for pattern complexity
+pub mod sonification;  // Convert neural patterns into audio
+pub mod audio_input;  // Microphone input and audio-to-grid conversion (inverse sonification)
 pub mod conversation_context;  // Per-user conversation history and context management
+pub mod fact_memory;  // Structured fact extraction and storage for user memory
+pub mod sage_control;  // Unified instance management and control
 pub mod cli;  // Command-line interface and subsystem configuration
 pub mod irc;  // IRC bot integration (basic + autonomous)
+pub mod inner_thoughts;  // Autonomous thought evaluation and classification
+pub mod proactive_communication;  // AGI-level proactive conversation initiation
+pub mod response_pipeline;  // Multi-stage LLM pipeline for grounded responses
+pub mod embeddings;  // Text embedding engine using Ollama (nomic-embed-text)
+pub mod vector_memory;  // In-memory vector store for semantic RAG search
 pub mod tui;

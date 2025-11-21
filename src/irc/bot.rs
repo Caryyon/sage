@@ -74,23 +74,24 @@ pub fn run_basic_bot(config: IrcConfig, state: IrcState) {
 
 /// Async implementation of basic IRC bot
 async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::Result<()> {
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║         SAGE IRC Bot - LLM-Enhanced Consciousness         ║");
-    println!("║          Neural Memory + Language Understanding           ║");
-    println!("╚════════════════════════════════════════════════════════════╝\n");
+    // Suppressed for clean TUI output
+    // println!("╔════════════════════════════════════════════════════════════╗");
+    // println!("║         SAGE IRC Bot - LLM-Enhanced Consciousness         ║");
+    // println!("║          Neural Memory + Language Understanding           ║");
+    // println!("╚════════════════════════════════════════════════════════════╝\n");
 
     // Test LLM connection if enabled
     if config.enable_llm {
         if let Some(ref llm) = state.llm {
-            print!("🔌 Testing LLM connection... ");
+            // print!("🔌 Testing LLM connection... ");
             match llm.test_connection().await {
-                Ok(_) => println!("✅ Connected to Ollama!"),
-                Err(e) => {
-                    println!("❌ Failed to connect to Ollama");
-                    println!("Error: {}", e);
-                    println!("\nMake sure Ollama is running:");
-                    println!("  brew services start ollama");
-                    println!("  ollama pull llama3.2:3b");
+                Ok(_) => {}, // println!("✅ Connected to Ollama!"),
+                Err(_e) => {
+                    // println!("❌ Failed to connect to Ollama");
+                    // println!("Error: {}", e);
+                    // println!("\nMake sure Ollama is running:");
+                    // println!("  brew services start ollama");
+                    // println!("  ollama pull llama3.2:3b");
                     return Ok(());
                 }
             }
@@ -99,21 +100,21 @@ async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::
 
     // Initialize vision if enabled
     let mut vision = if config.enable_vision {
-        print!("👁️  Initializing vision... ");
+        // print!("👁️  Initializing vision... ");
         match SageVision::new(0, 32) {
             Ok(v) => {
-                if let Err(e) = v.open() {
-                    println!("⚠️  Could not open camera: {}", e);
-                    println!("   Vision commands will be disabled");
+                if let Err(_e) = v.open() {
+                    // println!("⚠️  Could not open camera: {}", e);
+                    // println!("   Vision commands will be disabled");
                     None
                 } else {
-                    println!("✅ SAGE can see!");
+                    // println!("✅ SAGE can see!");
                     Some(v)
                 }
             }
-            Err(e) => {
-                println!("⚠️  Could not initialize camera: {}", e);
-                println!("   Vision commands will be disabled");
+            Err(_e) => {
+                // println!("⚠️  Could not initialize camera: {}", e);
+                // println!("   Vision commands will be disabled");
                 None
             }
         }
@@ -123,19 +124,36 @@ async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::
 
     let mut sage = state.sage.lock().unwrap();
 
-    // Load trained knowledge
-    if sage.load_knowledge("sage_positive_knowledge.json").is_ok() {
-        println!("🧠 SAGE: Loaded trained knowledge!");
+    // Load trained knowledge (silently)
+    let _ = sage.load_knowledge("sage_positive_knowledge.json");
+    let _ = sage.load_preferences("sage_preferences.json");
+    let _ = sage.load_associations("sage_associations.json");
+    let _ = sage.load_curiosity("sage_curiosity.json");
+
+    // Register with Control Center
+    use crate::sage_control::{InstanceRegistry, InstanceInfo, InstanceType};
+    use std::time::Duration;
+    let log_path = "/tmp/sage_irc_main.log".to_string();
+    let instance_info = InstanceInfo::new(
+        InstanceType::IrcBot,
+        std::process::id(),
+        log_path,
+    );
+    {
+        let mut registry = InstanceRegistry::load();
+        registry.register(instance_info).ok();
     }
-    if sage.load_preferences("sage_preferences.json").is_ok() {
-        println!("💾 SAGE: Restored previous experiences!");
-    }
-    if sage.load_associations("sage_associations.json").is_ok() {
-        println!("🔗 SAGE: Loaded concept associations!");
-    }
-    if sage.load_curiosity("sage_curiosity.json").is_ok() {
-        println!("🤔 SAGE: Loaded curiosity data!");
-    }
+
+    // Spawn heartbeat thread
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(3));
+            let mut reg = InstanceRegistry::load();
+            reg.heartbeat(&InstanceType::IrcBot).ok();
+        }
+    });
+
+    // println!("🎛️  Registered with Control Center (PID: {})\n", std::process::id());
 
     // Baseline concepts SAGE knows
     let baseline_concepts: Vec<String> = vec![
@@ -147,8 +165,8 @@ async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::
         "virtue", "goodness", "purity", "wonder", "awe"
     ].iter().map(|s| s.to_string()).collect();
 
-    println!("\n{}", sage.get_personality());
-    println!("Experience count: {}\n", sage.experience_count());
+    // println!("\n{}", sage.get_personality());
+    // println!("Experience count: {}\n", sage.experience_count());
 
     drop(sage);
 
@@ -167,10 +185,10 @@ async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::
     let mut client = Client::from_config(irc_config).await?;
     client.identify()?;
 
-    println!("🌐 Connected to IRC!");
-    println!("📡 Joined {}", config.channel);
-    println!("💬 SAGE is now online with LLM-enhanced responses!\n");
-    println!("{}\n", "=".repeat(60));
+    // println!("🌐 Connected to IRC!");
+    // println!("📡 Joined {}", config.channel);
+    // println!("💬 SAGE is now online with LLM-enhanced responses!\n");
+    // println!("{}\n", "=".repeat(60));
 
     let mut stream = client.stream()?;
     let sender = client.sender();
@@ -230,13 +248,13 @@ async fn run_basic_bot_async(config: IrcConfig, state: IrcState) -> irc::error::
                 }
             }
             Command::Response(Response::RPL_WELCOME, _) => {
-                println!("✅ Successfully authenticated to server!");
+                // println!("✅ Successfully authenticated to server!");
             }
             _ => {}
         }
     }
 
-    println!("\n👋 SAGE disconnected from IRC");
+    // println!("\n👋 SAGE disconnected from IRC");
     Ok(())
 }
 
@@ -247,7 +265,7 @@ async fn handle_irc_message(
     state: &IrcState,
     baseline_concepts: &[String],
     ab_tester: &mut ABTester,
-    idle_message_count: &mut u64,
+    _idle_message_count: &mut u64,
     vision: &mut Option<SageVision>,
 ) -> Option<String> {
     let mut sage = state.sage.lock().unwrap();
