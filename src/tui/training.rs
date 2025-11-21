@@ -186,15 +186,15 @@ pub struct TrainingState {
     pub low_loss_streak: usize,        // Consecutive low-loss iterations
     pub patterns_mastered: usize,      // Total patterns mastered
 
-    // 🎨 Batch Progress (for smooth UI)
+    // Batch Progress (for smooth UI)
     pub current_batch: usize,          // Current batch being processed
     pub total_batches: usize,          // Total batches per step
     pub batch_losses: Vec<f64>,        // Individual batch losses
 
-    // 🔄 Curriculum info (dynamic - updates with hot-reload)
+    // [SYNC] Curriculum info (dynamic - updates with hot-reload)
     pub total_patterns: usize,         // Total patterns in curriculum
 
-    // 📊 Training history buffer (for Database Monitor charts)
+    // Training history buffer (for Database Monitor charts)
     pub metrics_history: Vec<MetricSnapshot>,  // Last 200 training iterations
 }
 
@@ -436,7 +436,7 @@ impl TrainingRunner {
             let mut db_client = SageDbClient::new("sage-db");
             let _ = db_client.connect();
 
-            // 🔥 LOAD BEST WEIGHTS FROM DATABASE - Resume training from previous best!
+            // LOAD BEST WEIGHTS FROM DATABASE - Resume training from previous best!
             let load_result = std::process::Command::new("spacetime")
                 .args(&["sql", "sage-db", "SELECT * FROM network_snapshots"])
                 .stderr(std::process::Stdio::null())
@@ -464,7 +464,7 @@ impl TrainingRunner {
                                 if let Ok(_weights_json) = serde_json::from_str::<serde_json::Value>(parts[5]) {
                                     // TODO: Actually restore NCA weights when we serialize them
                                     let mut s = state.lock().unwrap();
-                                    s.add_event(format!("🔄 Resuming from generation {} ({})", resumed_from_gen, resumed_pattern));
+                                    s.add_event(format!("[SYNC] Resuming from generation {} ({})", resumed_from_gen, resumed_pattern));
                                 }
                             }
                         }
@@ -535,7 +535,7 @@ impl TrainingRunner {
                         // If struggling (many attempts), provide extra help
                         if pattern_attempts > 500 && pattern_attempts % 100 == 0 {
                             let mut s = state.lock().unwrap();
-                            s.add_event("💡 Tip: Square requires sharp corners - increasing precision training".to_string());
+                            s.add_event("[TIP] Tip: Square requires sharp corners - increasing precision training".to_string());
                         }
 
                         boosted_rate
@@ -691,7 +691,7 @@ impl TrainingRunner {
                         TargetPattern::Circle => "🔴 Circle",
                         TargetPattern::Square => "🟦 Square",
                         TargetPattern::Cross => "➕ Cross",
-                        TargetPattern::Spiral => "🌀 Spiral",
+                        TargetPattern::Spiral => "Spiral",
                     }.to_string();
 
                     // Update SpacetimeDB every generation (real-time sync)
@@ -708,10 +708,10 @@ impl TrainingRunner {
                         s.add_event("🌱 NCA initialized - cells beginning to learn".to_string());
                         let _ = db_client.log_training_event(step_count, "milestone", "🌱 NCA initialized");
                     } else if step_count == 10 {
-                        s.add_event(format!("🔬 First training cycle complete - loss: {:.4}", loss));
+                        s.add_event(format!("First training cycle complete - loss: {:.4}", loss));
                         let _ = db_client.log_training_event(step_count, "milestone", &format!("First cycle - loss: {:.4}", loss));
                     } else if step_count % 100 == 0 {
-                        s.add_event(format!("📊 Generation {} - loss: {:.4}, diversity: {:.3}", step_count, loss, diversity));
+                        s.add_event(format!("Generation {} - loss: {:.4}, diversity: {:.3}", step_count, loss, diversity));
                         let _ = db_client.log_training_event(step_count, "milestone", &format!("Gen {} - loss: {:.4}", step_count, loss));
                     } else if step_count % 50 == 0 {
                         let pattern_name = match current_pattern_type {
@@ -720,7 +720,7 @@ impl TrainingRunner {
                             TargetPattern::Cross => "Cross",
                             TargetPattern::Spiral => "Spiral",
                         };
-                        s.add_event(format!("🎯 {} learning - {} steps, loss: {:.4}", pattern_name, steps_on_target, loss));
+                        s.add_event(format!("[TARGET] {} learning - {} steps, loss: {:.4}", pattern_name, steps_on_target, loss));
                     }
 
                     // Learning quality events
@@ -731,12 +731,12 @@ impl TrainingRunner {
                     } else if low_loss_streak == 50 {
                         s.add_event("🏆 Pattern forming well - 50 step streak".to_string());
                     } else if low_loss_streak == 75 {
-                        s.add_event("💫 Approaching mastery - 75 consecutive good steps".to_string());
+                        s.add_event("Approaching mastery - 75 consecutive good steps".to_string());
                     } else if low_loss_streak == 100 {
-                        s.add_event("🎯 MASTERY ACHIEVED! Moving to next pattern...".to_string());
+                        s.add_event("[TARGET] MASTERY ACHIEVED! Moving to next pattern...".to_string());
                     }
 
-                    // 💾 Save checkpoint every 100 generations for quick resume
+                    // Save checkpoint every 100 generations for quick resume
                     if step_count % 100 == 0 && step_count > 0 {
                         let _nca_lock = nca.lock().unwrap();
                         let weights_json = "{}"; // TODO: Serialize actual weights
@@ -746,14 +746,14 @@ impl TrainingRunner {
                             loss,
                             weights_json
                         );
-                        s.add_event(format!("💾 Checkpoint saved at generation {}", step_count));
+                        s.add_event(format!("Checkpoint saved at generation {}", step_count));
                     }
                 }
 
                 // Check for successful repair after damage
                 if last_damage_step > 0 && step_count == last_damage_step + 50 && loss < 0.02 {
                     let mut s = state.lock().unwrap();
-                    s.add_event("✅ Self-repair successful! Pattern restored.".to_string());
+                    s.add_event("[OK] Self-repair successful! Pattern restored.".to_string());
                     last_damage_step = 0;  // Reset
                 }
 
@@ -770,13 +770,13 @@ impl TrainingRunner {
                 if low_loss_streak > 0 && low_loss_streak % 25 == 0 {
                     let mut s = state.lock().unwrap();
                     let progress_pct = (low_loss_streak as f64 / 50.0 * 100.0).min(100.0);
-                    s.add_event(format!("📈 Pattern mastery: {:.0}% ({}/50 streak)", progress_pct, low_loss_streak));
+                    s.add_event(format!("Pattern mastery: {:.0}% ({}/50 streak)", progress_pct, low_loss_streak));
                 }
 
                 // Show spiral curriculum progress every 25 attempts
                 if pattern_attempts > 0 && pattern_attempts % 25 == 0 && low_loss_streak < 50 {
                     let mut s = state.lock().unwrap();
-                    s.add_event(format!("🔄 Spiral curriculum: {}/100 attempts (will move on if not mastered)", pattern_attempts));
+                    s.add_event(format!("[SYNC] Spiral curriculum: {}/100 attempts (will move on if not mastered)", pattern_attempts));
                 }
 
                 // SPIRAL CURRICULUM: Move on after either mastery OR enough attempts
@@ -809,7 +809,7 @@ impl TrainingRunner {
 
                         if curriculum_cycle == 1 {
                             let mut s = state.lock().unwrap();
-                            s.add_event("🔄 SPIRAL LEARNING: Revisiting all patterns with new knowledge!".to_string());
+                            s.add_event("[SYNC] SPIRAL LEARNING: Revisiting all patterns with new knowledge!".to_string());
                         }
                     }
 
@@ -820,16 +820,16 @@ impl TrainingRunner {
                             TargetPattern::Circle => "🔴 Circle",
                             TargetPattern::Square => "🟦 Square",
                             TargetPattern::Cross => "➕ Cross",
-                            TargetPattern::Spiral => "🌀 Spiral",
+                            TargetPattern::Spiral => "Spiral",
                         };
 
                         // Save knowledge before transitioning (transfer learning)
                         {
                             let mut s = state.lock().unwrap();
                             if low_loss_streak >= 50 {
-                                s.add_event(format!("✅ {} mastered! Saving knowledge", old_pattern_name));
+                                s.add_event(format!("[OK] {} mastered! Saving knowledge", old_pattern_name));
                             } else {
-                                s.add_event(format!("🔄 Moving from {} (will revisit with new skills)", old_pattern_name));
+                                s.add_event(format!("[SYNC] Moving from {} (will revisit with new skills)", old_pattern_name));
                             }
                         }
 
@@ -857,16 +857,16 @@ impl TrainingRunner {
                             TargetPattern::Circle => "🔴 Circle",
                             TargetPattern::Square => "🟦 Square",
                             TargetPattern::Cross => "➕ Cross",
-                            TargetPattern::Spiral => "🌀 Spiral",
+                            TargetPattern::Spiral => "Spiral",
                         };
 
                         let mut s = state.lock().unwrap();
                         if curriculum_cycle > 0 {
-                            s.add_event(format!("🔄 Revisiting: {} (Cycle {})", new_pattern_name, curriculum_cycle + 1));
-                            s.add_event("💡 Applying knowledge from other patterns".to_string());
+                            s.add_event(format!("[SYNC] Revisiting: {} (Cycle {})", new_pattern_name, curriculum_cycle + 1));
+                            s.add_event("[TIP] Applying knowledge from other patterns".to_string());
                         } else {
-                            s.add_event(format!("🎯 New challenge: {}", new_pattern_name));
-                            s.add_event("🔄 Initializing grid with new pattern template".to_string());
+                            s.add_event(format!("[TARGET] New challenge: {}", new_pattern_name));
+                            s.add_event("[SYNC] Initializing grid with new pattern template".to_string());
                         }
 
                         // Initialize grid with new pattern
@@ -875,7 +875,7 @@ impl TrainingRunner {
                     } else {
                         // Mastered all patterns!
                         let mut s = state.lock().unwrap();
-                        s.add_event("🌀 Spiral mastered - completing full curriculum!".to_string());
+                        s.add_event("Spiral mastered - completing full curriculum!".to_string());
                         s.add_event("🎊 CURRICULUM COMPLETE! All patterns learned.".to_string());
                         s.add_event("🌌 Entering free-form evolution mode...".to_string());
 
@@ -901,7 +901,7 @@ impl TrainingRunner {
                         s.chat_history.push(("SAGE".to_string(), response.clone()));
 
                         // Also add summary to events
-                        s.add_event(format!("💬 {} asked a question", message.sender));
+                        s.add_event(format!(" {} asked a question", message.sender));
                         s.add_event("🤖 SAGE responded".to_string());
                     }
                 }
@@ -924,7 +924,7 @@ impl TrainingRunner {
             {
                 let mut s = state.lock().unwrap();
                 s.is_running = true;  // Set running state!
-                s.add_event("🔥 Hot-reload training engine starting...".to_string());
+                s.add_event("Hot-reload training engine starting...".to_string());
             }
 
             // Load engine
@@ -948,7 +948,7 @@ impl TrainingRunner {
 
             {
                 let mut s = state.lock().unwrap();
-                s.add_event(format!("✅ Engine loaded! Version: {}", loader.version()));
+                s.add_event(format!("[OK] Engine loaded! Version: {}", loader.version()));
             }
 
             // Initialize SpacetimeDB
@@ -971,12 +971,12 @@ impl TrainingRunner {
                 // Check for hot-reload
                 if loader.check_for_reload() {
                     let mut s = state.lock().unwrap();
-                    s.add_event("🔄 LIBRARY CHANGED! Hot-reloading...".to_string());
+                    s.add_event("[SYNC] LIBRARY CHANGED! Hot-reloading...".to_string());
 
                     // Save checkpoint
                     match engine.save_checkpoint() {
                         Ok(checkpoint) => {
-                            s.add_event(format!("   💾 Checkpoint saved: Gen {}", checkpoint.generation));
+                            s.add_event(format!("   Checkpoint saved: Gen {}", checkpoint.generation));
                             drop(s);  // Release lock before reload
 
                             // Reload engine
@@ -989,10 +989,10 @@ impl TrainingRunner {
                                     // Restore checkpoint
                                     match engine.load_checkpoint(checkpoint) {
                                         Ok(_) => {
-                                            s.add_event("   ✅ HOT RELOAD COMPLETE!".to_string());
+                                            s.add_event("   [OK] HOT RELOAD COMPLETE!".to_string());
                                         }
                                         Err(e) => {
-                                            s.add_event(format!("   ⚠️  Checkpoint restore failed: {}", e));
+                                            s.add_event(format!("   [WARN]  Checkpoint restore failed: {}", e));
                                         }
                                     }
                                 }

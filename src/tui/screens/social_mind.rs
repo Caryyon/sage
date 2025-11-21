@@ -72,7 +72,7 @@ fn render_conversation(frame: &mut Frame, area: Rect, _state: &AppState) {
 
     // Title
     feed_items.push(ListItem::new(Line::from(vec![
-        Span::styled("💬 Live Conversation", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled("Live Conversation", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
     ])));
     feed_items.push(ListItem::new(Line::from("")));
 
@@ -110,7 +110,7 @@ fn render_conversation(frame: &mut Frame, area: Rect, _state: &AppState) {
                 let concepts_str = msg.concepts_mentioned.join(", ");
                 feed_items.push(ListItem::new(Line::from(vec![
                     Span::raw("         "),
-                    Span::styled("🧠 ", Style::default().fg(Color::Magenta)),
+                    Span::styled("", Style::default().fg(Color::Magenta)),
                     Span::styled(concepts_str, Style::default().fg(Color::Magenta)),
                 ])));
             }
@@ -129,7 +129,7 @@ fn render_cognitive_state(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![];
 
     lines.push(Line::from(vec![
-        Span::styled("🧠 Cognitive State", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("Cognitive State", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
 
@@ -189,14 +189,14 @@ fn render_pattern_mastery(frame: &mut Frame, area: Rect, _state: &AppState) {
         .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
 
     let patterns = vec![
-        ("● Circle", "97%"),
-        ("○ Square", "52%"),
-        ("● Cross", "89%"),
-        ("○ Spiral", "23%"),
+        ("*Circle", "97%"),
+        ("o Square", "52%"),
+        ("*Cross", "89%"),
+        ("o Spiral", "23%"),
     ];
 
     let rows: Vec<Row> = patterns.iter().map(|(name, progress)| {
-        let status_color = if name.starts_with("●") {
+        let status_color = if name.starts_with("*") {
             Color::Green
         } else {
             Color::Yellow
@@ -212,7 +212,7 @@ fn render_pattern_mastery(frame: &mut Frame, area: Rect, _state: &AppState) {
         .header(header)
         .block(
             Block::default()
-                .title("🎯 Pattern Mastery")
+                .title("Pattern Mastery")
                 .borders(Borders::ALL)
         );
 

@@ -32,10 +32,10 @@ impl ScreenTrait for DatabaseMonitorScreen {
 }
 
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
-    let status_icon = if state.training_state.is_running { "🟢" } else { "⏸️" };
+    let status_icon = if state.training_state.is_running { "[ON]" } else { "[PAUSED]" };
     let header_text = vec![
         Line::from(vec![
-            Span::styled("📊 ", Style::default().fg(Color::Cyan)),
+            Span::styled("", Style::default().fg(Color::Cyan)),
             Span::styled("Training Analytics", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
             Span::styled(format!("{} Gen {}", status_icon, state.training_state.nca_generation), Style::default().fg(Color::Green)),
@@ -168,7 +168,7 @@ fn render_loss_convergence_chart(frame: &mut Frame, area: Rect, state: &AppState
     if metrics.is_empty() {
         let placeholder = Paragraph::new("No training data yet...")
             .block(Block::default()
-                .title("📉 Loss Convergence")
+                .title("Loss Convergence")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)));
         frame.render_widget(placeholder, area);
@@ -212,7 +212,7 @@ fn render_loss_convergence_chart(frame: &mut Frame, area: Rect, state: &AppState
     let chart = Chart::new(datasets)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("📉 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("Loss Convergence ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled(format!("(Last {} gens)", metrics.len()), Style::default().fg(Color::Gray)),
             ]))
@@ -242,7 +242,7 @@ fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
     if metrics.is_empty() {
         let placeholder = Paragraph::new("No training data yet...")
             .block(Block::default()
-                .title("📊 System Dynamics")
+                .title("System Dynamics")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)));
         frame.render_widget(placeholder, area);
@@ -282,7 +282,7 @@ fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
     let chart = Chart::new(datasets)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("📊 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("System Dynamics", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -336,7 +336,7 @@ fn render_learning_dynamics_chart(frame: &mut Frame, area: Rect, state: &AppStat
 
     let lines = vec![
         Line::from(vec![
-            Span::styled("📈 Learning Rate Analysis", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Learning Rate Analysis", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -350,7 +350,7 @@ fn render_learning_dynamics_chart(frame: &mut Frame, area: Rect, state: &AppStat
         Line::from(vec![
             Span::raw("  "),
             Span::styled(
-                if velocity < -0.001 { "↓ Improving" } else if velocity > 0.001 { "↑ Worsening" } else { "→ Stable" },
+                if velocity < -0.001 { "-> Improving" } else if velocity > 0.001 { "<- Worsening" } else { "-> Stable" },
                 Style::default().fg(velocity_color)
             ),
         ]),
@@ -366,27 +366,27 @@ fn render_learning_dynamics_chart(frame: &mut Frame, area: Rect, state: &AppStat
         Line::from(vec![
             Span::raw("  "),
             Span::styled(
-                if acceleration < -0.0001 { "⚡ Accelerating" } else if acceleration > 0.0001 { "⚠️  Decelerating" } else { "→ Steady" },
+                if acceleration < -0.0001 { " Accelerating" } else if acceleration > 0.0001 { " Decelerating" } else { "-> Steady" },
                 Style::default().fg(accel_color)
             ),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("📊 Interpretation:", Style::default().fg(Color::Cyan)),
+            Span::styled("Interpretation:", Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
             Span::raw("  "),
             Span::styled(
                 if velocity < -0.001 && acceleration < -0.0001 {
-                    "✓ Excellent: Fast convergence"
+                    "*Excellent: Fast convergence"
                 } else if velocity < -0.001 {
-                    "✓ Good: Steady improvement"
+                    "*Good: Steady improvement"
                 } else if velocity.abs() < 0.001 && state.training_state.current_loss < 0.1 {
-                    "→ Stable: Near optimal"
+                    "-> Stable: Near optimal"
                 } else if velocity.abs() < 0.001 {
-                    "⚠️  Stuck: May need adjustment"
+                    " Stuck: May need adjustment"
                 } else {
-                    "✗ Diverging: Check hyperparameters"
+                    "x Diverging: Check hyperparameters"
                 },
                 Style::default().fg(
                     if velocity < -0.001 { Color::Green }
@@ -400,7 +400,7 @@ fn render_learning_dynamics_chart(frame: &mut Frame, area: Rect, state: &AppStat
     let block = Paragraph::new(lines)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("🧠 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("Learning Dynamics", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -418,13 +418,13 @@ fn render_per_pattern_losses(frame: &mut Frame, area: Rect, state: &AppState) {
     } else {
         per_pattern.iter().map(|(pattern, loss)| {
             let (icon, color, status) = if *loss < 0.05 {
-                ("✓", Color::Green, "Mastered")
+                ("*", Color::Green, "Mastered")
             } else if *loss < 0.1 {
-                ("◉", Color::Yellow, "Learning")
+                ("*", Color::Yellow, "Learning")
             } else if *loss < 0.3 {
-                ("○", Color::Cyan, "Training")
+                ("o", Color::Cyan, "Training")
             } else {
-                ("●", Color::Red, "Struggling")
+                ("*", Color::Red, "Struggling")
             };
 
             let content = vec![
@@ -460,7 +460,7 @@ fn render_per_pattern_losses(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("🎯 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("Per-Pattern Performance", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -473,7 +473,7 @@ fn render_hyperparameter_panel(frame: &mut Frame, area: Rect, state: &AppState) 
     // Display current hyperparameters - essential for AI engineering
     let lines = vec![
         Line::from(vec![
-            Span::styled("⚙️  Active Configuration", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" Active Configuration", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -502,11 +502,11 @@ fn render_hyperparameter_panel(frame: &mut Frame, area: Rect, state: &AppState) 
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("🔥 Hot-Reload Status", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Hot-Reload Status", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
             Span::raw("  "),
-            Span::styled("✓ Active", Style::default().fg(Color::Green)),
+            Span::styled("*Active", Style::default().fg(Color::Green)),
             Span::raw(" - Press [L] to reload"),
         ]),
     ];
@@ -514,7 +514,7 @@ fn render_hyperparameter_panel(frame: &mut Frame, area: Rect, state: &AppState) 
     let block = Paragraph::new(lines)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("⚙️  ", Style::default().fg(Color::Cyan)),
+                Span::styled(" ", Style::default().fg(Color::Cyan)),
                 Span::styled("Hyperparameters", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -531,7 +531,7 @@ fn render_eta_panel(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let lines = vec![
         Line::from(vec![
-            Span::styled("🎯 Mastery Prediction", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Mastery Prediction", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -553,7 +553,7 @@ fn render_eta_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             Span::styled(
                 if let Some(gens) = eta {
                     if gens < 1.0 {
-                        "✓ Mastered!".to_string()
+                        "*Mastered!".to_string()
                     } else if gens < 100.0 {
                         format!("{:.0} generations", gens)
                     } else if gens < 1000.0 {
@@ -594,7 +594,7 @@ fn render_eta_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Paragraph::new(lines)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("⏱️  ", Style::default().fg(Color::Cyan)),
+                Span::styled(" ", Style::default().fg(Color::Cyan)),
                 Span::styled("Progress Tracker", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -609,11 +609,11 @@ fn render_pattern_comparison(frame: &mut Frame, area: Rect) {
 
     let items: Vec<ListItem> = patterns.iter().map(|p| {
         let (icon, color, status) = if p.is_mastered {
-            ("✓", Color::Green, "Mastered")
+            ("*", Color::Green, "Mastered")
         } else if p.best_loss < 0.1 {
-            ("◉", Color::Yellow, "Learning")
+            ("*", Color::Yellow, "Learning")
         } else {
-            ("○", Color::Gray, "Training")
+            ("o", Color::Gray, "Training")
         };
 
         // Calculate convergence rate (inverse of loss as proxy)
@@ -645,7 +645,7 @@ fn render_pattern_comparison(frame: &mut Frame, area: Rect) {
     let list = List::new(items)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("🎯 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("Pattern Performance", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)
@@ -676,11 +676,11 @@ fn render_training_stats(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let mastered_count = state.training_state.patterns_mastered;
-    let total_patterns = state.training_state.total_patterns;  // 🔄 Dynamic - updates with hot-reload (now 5 with Hexagon)
+    let total_patterns = state.training_state.total_patterns;  // Dynamic - updates with hot-reload (now 5 with Hexagon)
 
     let lines = vec![
         Line::from(vec![
-            Span::styled("📈 Training Overview", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Training Overview", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -707,7 +707,7 @@ fn render_training_stats(frame: &mut Frame, area: Rect, state: &AppState) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("🎯 Mastery Status", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Mastery Status", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -729,7 +729,7 @@ fn render_training_stats(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Paragraph::new(lines)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("📊 ", Style::default().fg(Color::Cyan)),
+                Span::styled("", Style::default().fg(Color::Cyan)),
                 Span::styled("Quick Stats", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]))
             .borders(Borders::ALL)

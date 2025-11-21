@@ -38,6 +38,15 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         HealthStatus::Critical => ("XX", Color::Red),
     };
 
+    // Performance mode color based on CPU usage
+    let perf_color = match state.performance_mode {
+        crate::tui::app::PerformanceMode::Eco => Color::Green,
+        crate::tui::app::PerformanceMode::Low => Color::Cyan,
+        crate::tui::app::PerformanceMode::Medium => Color::Yellow,
+        crate::tui::app::PerformanceMode::High => Color::Magenta,
+        crate::tui::app::PerformanceMode::Max => Color::Red,
+    };
+
     let status_text = vec![
         Line::from(vec![
             Span::styled("SAGE NCA Training", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -52,6 +61,11 @@ fn render_status_bar(frame: &mut Frame, area: Rect, state: &AppState) {
             Span::styled(
                 if state.is_paused { "[Paused]" } else { "[Training]" },
                 Style::default().fg(if state.is_paused { Color::Yellow } else { Color::Green }),
+            ),
+            Span::raw("  |  "),
+            Span::styled(
+                format!("{}", state.performance_mode.label()),
+                Style::default().fg(perf_color),
             ),
         ]),
     ];
@@ -260,11 +274,11 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &AppState) {
     for (i, (pattern_name, is_mastered, best_loss)) in state.pattern_mastery_status.iter().enumerate() {
         let is_current = i == state.pattern_current_index;
         let (status_icon, status_color) = if *is_mastered {
-            ("✓", Color::Green)
+            ("*", Color::Green)
         } else if is_current {
             ("⟳", Color::Yellow)
         } else {
-            ("○", Color::DarkGray)
+            ("o", Color::DarkGray)
         };
 
         metrics_text.push(Line::from(vec![
@@ -363,15 +377,15 @@ fn render_training_diagnostics(frame: &mut Frame, area: Rect, state: &AppState) 
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("→", Style::default().fg(Color::Yellow)),
+        Span::styled("->", Style::default().fg(Color::Yellow)),
         Span::raw(" Training NCA to self-organize"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("→", Style::default().fg(Color::Yellow)),
+        Span::styled("->", Style::default().fg(Color::Yellow)),
         Span::raw(" Each cell learns local rules"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("→", Style::default().fg(Color::Yellow)),
+        Span::styled("->", Style::default().fg(Color::Yellow)),
         Span::raw(" Emergent global patterns"),
     ]));
     lines.push(Line::from(""));
@@ -404,8 +418,10 @@ fn render_footer(frame: &mut Frame, area: Rect, _state: &AppState) {
             Span::raw("Database  "),
             Span::styled("[Space] ", Style::default().fg(Color::Yellow)),
             Span::raw("Pause  "),
+            Span::styled("[P] ", Style::default().fg(Color::Yellow)),
+            Span::raw("Perf  "),
             Span::styled("[N] ", Style::default().fg(Color::Yellow)),
-            Span::raw("New Training  "),
+            Span::raw("Train  "),
             Span::styled("[Q] ", Style::default().fg(Color::Yellow)),
             Span::raw("Quit"),
         ]),

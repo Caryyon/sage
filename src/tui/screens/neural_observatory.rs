@@ -64,9 +64,9 @@ impl ScreenTrait for NeuralObservatoryScreen {
 
 fn render_system_vitals(frame: &mut Frame, area: Rect, state: &AppState) {
     let status_indicator = if state.training_mode != crate::tui::app::TrainingMode::Idle {
-        ("◉", Color::Green)
+        ("*", Color::Green)
     } else {
-        ("○", Color::DarkGray)
+        ("o", Color::DarkGray)
     };
 
     let pattern = if !state.training_state.nca_current_pattern.is_empty() {
@@ -84,7 +84,7 @@ fn render_system_vitals(frame: &mut Frame, area: Rect, state: &AppState) {
     ]))
     .block(
         Block::default()
-            .title("🔬 SAGE NEURAL OBSERVATORY")
+            .title("SAGE NEURAL OBSERVATORY")
             .borders(Borders::ALL)
             .style(Style::default().fg(Color::Cyan))
     );
@@ -112,7 +112,7 @@ fn render_pattern_progress(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut lines = vec![];
 
     lines.push(Line::from(vec![
-        Span::styled("🎯 Pattern Progress", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled("Pattern Progress", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
     ]));
     lines.push(Line::from(""));
 
@@ -184,7 +184,7 @@ fn render_conversation_stream(frame: &mut Frame, area: Rect) {
     let list = List::new(items)
         .block(
             Block::default()
-                .title("💬 Conversation Stream (SAGE only)")
+                .title("Conversation Stream (SAGE only)")
                 .borders(Borders::ALL)
         );
 

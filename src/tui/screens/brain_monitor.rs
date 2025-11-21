@@ -85,16 +85,16 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let (consciousness_text, consciousness_color, consciousness_emoji) = match state.consciousness_state {
-        crate::tui::app::ConsciousnessState::Active => ("ACTIVE", Color::Green, "⚡"),
-        crate::tui::app::ConsciousnessState::Dreaming => ("DREAMING", Color::Magenta, "💭"),
+        crate::tui::app::ConsciousnessState::Active => ("ACTIVE", Color::Green, ""),
+        crate::tui::app::ConsciousnessState::Dreaming => ("DREAMING", Color::Magenta, ""),
         crate::tui::app::ConsciousnessState::Curious => ("CURIOUS", Color::Yellow, "🔍"),
     };
 
     // Show vision status
     let vision_status = if state.camera_frame.is_some() {
-        Span::styled(" | 👁️  VISION ACTIVE", Style::default().fg(Color::Cyan))
+        Span::styled(" |  VISION ACTIVE", Style::default().fg(Color::Cyan))
     } else {
-        Span::styled(" | 👁️  Vision: Standby", Style::default().fg(Color::DarkGray))
+        Span::styled(" |  Vision: Standby", Style::default().fg(Color::DarkGray))
     };
 
     // Show audio output status
@@ -121,7 +121,7 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled("🧠 ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled("", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
         Span::styled("SAGE BRAIN MONITOR", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  "),
         Span::styled(format!("{} Experiences", total_exp), Style::default().fg(Color::Yellow)),
@@ -192,7 +192,7 @@ fn render_camera_view(frame: &mut Frame, area: Rect, state: &AppState) {
         let camera_widget = Paragraph::new(camera_lines)
             .block(
                 Block::default()
-                    .title("👁️  Camera View (What SAGE Sees)")
+                    .title(" Camera View (What SAGE Sees)")
                     .borders(Borders::ALL)
                     .style(Style::default().fg(Color::Cyan))
             )
@@ -204,7 +204,7 @@ fn render_camera_view(frame: &mut Frame, area: Rect, state: &AppState) {
         let placeholder = Paragraph::new(vec![
             Line::from(""),
             Line::from(""),
-            Line::from(Span::styled("👁️  Vision Standby",
+            Line::from(Span::styled(" Vision Standby",
                 Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))),
             Line::from(""),
             Line::from(Span::styled("Waiting for !see command on IRC...",
@@ -213,7 +213,7 @@ fn render_camera_view(frame: &mut Frame, area: Rect, state: &AppState) {
         .alignment(Alignment::Center)
         .block(
             Block::default()
-                .title("👁️  Camera View")
+                .title(" Camera View")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::DarkGray))
         );
@@ -264,7 +264,7 @@ fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
             "No active concepts".to_string()
         };
 
-        let block_title = format!("🧠 NCA Processing {}×{} │ Gen: {} │ {}",
+        let block_title = format!("NCA Processing {}×{} │ Gen: {} │ {}",
             grid_size, grid_size, snapshot.generation, concepts_display);
 
         let grid = Paragraph::new(grid_text)
@@ -290,7 +290,7 @@ fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
         .alignment(Alignment::Center)
         .block(
             Block::default()
-                .title("🧠 NCA Processing 32×32")
+                .title("NCA Processing 32×32")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::DarkGray))
         );
@@ -322,9 +322,9 @@ fn render_autonomous_activity(frame: &mut Frame, area: Rect, state: &AppState) {
             let secs = elapsed % 60;
 
             let (emoji, color) = match activity_type.as_str() {
-                "dream" => ("💭", Color::Magenta),
+                "dream" => ("", Color::Magenta),
                 "curiosity" => ("🔍", Color::Yellow),
-                _ => ("🧠", Color::Cyan),
+                _ => ("", Color::Cyan),
             };
 
             activity_lines.push(Line::from(vec![
@@ -340,7 +340,7 @@ fn render_autonomous_activity(frame: &mut Frame, area: Rect, state: &AppState) {
     let activity_widget = Paragraph::new(activity_lines)
         .block(
             Block::default()
-                .title("💭 Autonomous Activity (Dreams & Curiosity)")
+                .title(" Autonomous Activity (Dreams & Curiosity)")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Magenta))
         );
@@ -358,10 +358,10 @@ fn render_visual_memories_status(frame: &mut Frame, area: Rect, state: &AppState
     // Consciousness state
     let consciousness_info = match state.consciousness_state {
         crate::tui::app::ConsciousnessState::Active => {
-            format!("⚡ Active learning │ Idle: {}m {}s", idle_mins, idle_secs)
+            format!(" Active learning │ Idle: {}m {}s", idle_mins, idle_secs)
         },
         crate::tui::app::ConsciousnessState::Dreaming => {
-            format!("💭 Consolidating memories │ Idle: {}m {}s", idle_mins, idle_secs)
+            format!(" Consolidating memories │ Idle: {}m {}s", idle_mins, idle_secs)
         },
         crate::tui::app::ConsciousnessState::Curious => {
             format!("🔍 Exploring autonomous goals │ Idle: {}m {}s", idle_mins, idle_secs)
@@ -398,7 +398,7 @@ fn render_visual_memories_status(frame: &mut Frame, area: Rect, state: &AppState
     if let Some(msg) = recent_messages.last() {
         status_lines.push(Line::from(vec![
             Span::styled("Latest: ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("{}: {} → {}",
+            Span::raw(format!("{}: {} -> {}",
                 msg.sender,
                 msg.message.chars().take(20).collect::<String>(),
                 msg.sage_response.chars().take(30).collect::<String>())),
@@ -408,7 +408,7 @@ fn render_visual_memories_status(frame: &mut Frame, area: Rect, state: &AppState
     let status = Paragraph::new(status_lines)
         .block(
             Block::default()
-                .title("📊 System Status")
+                .title("System Status")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::Cyan))
         );
@@ -419,8 +419,8 @@ fn render_visual_memories_status(frame: &mut Frame, area: Rect, state: &AppState
 /// Compact status for minimal mode
 fn render_compact_status(frame: &mut Frame, area: Rect, state: &AppState) {
     let consciousness_emoji = match state.consciousness_state {
-        crate::tui::app::ConsciousnessState::Active => "⚡",
-        crate::tui::app::ConsciousnessState::Dreaming => "💭",
+        crate::tui::app::ConsciousnessState::Active => "",
+        crate::tui::app::ConsciousnessState::Dreaming => "",
         crate::tui::app::ConsciousnessState::Curious => "🔍",
     };
 

@@ -37,7 +37,7 @@ impl ScreenTrait for ControlCenterScreen {
 fn render_header(frame: &mut Frame, area: Rect) {
     let header_text = vec![
         Line::from(vec![
-            Span::styled("🎛️ ", Style::default().fg(Color::Cyan)),
+            Span::styled("", Style::default().fg(Color::Cyan)),
             Span::styled("SAGE Control Center", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
             Span::styled("Unified Instance Management", Style::default().fg(Color::Yellow)),

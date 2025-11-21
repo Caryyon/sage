@@ -59,11 +59,11 @@ impl TrainingTimeline {
         // For now, simplified version - can be enhanced with actual pattern history
         let timeline_str = if self.current_cycle == 1 {
             "  Circle    Square    Cross    Spiral  \n\
-             ───●────────○────────────────────────▶\n\
+             ───*────────o────────────────────────▶\n\
              Gen 0     500     1000    1500    2000"
         } else {
             "  Circle    Square    Cross    Spiral   │Circle│   Square  \n\
-             ───●────────●─────────●────────●───────┼──●───┼─────○────▶\n\
+             ───*────────*─────────*────────*───────┼──*───┼─────o────▶\n\
              Gen 0     500     1000    1500    2000 2200    2450   2700\n\
              └────── Cycle 1 ─────────────────────────┘─── Cycle 2 ──────\n\
                                                           YOU ARE HERE"

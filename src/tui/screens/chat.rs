@@ -42,7 +42,7 @@ impl ScreenTrait for ChatScreen {
 fn render_header(frame: &mut Frame, area: Rect, state: &AppState) {
     let title = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled("💬 SAGE IRC Chat  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("SAGE IRC Chat  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(format!("│ #sage-consciousness  │ ", ), Style::default().fg(Color::Gray)),
             Span::styled(
                 format!("{} messages", state.irc_messages.len()),
@@ -116,7 +116,7 @@ fn render_sage_status(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(
             state.sage.get_likes()
                 .first()
-                .map(|s| format!("❤️  {}", s))
+                .map(|s| format!(" {}", s))
                 .unwrap_or_else(|| "No preferences yet".to_string())
         ),
     ];
@@ -146,7 +146,7 @@ fn render_sage_status(frame: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
         Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::Green)),
-            Span::styled("● Online", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("*Online", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         ]),
     ];
 

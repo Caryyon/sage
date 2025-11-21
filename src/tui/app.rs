@@ -5,6 +5,8 @@ use ratatui::{
     backend::Backend,
     Terminal,
 };
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use crate::agi::AGISystem;
 use crate::autonomous::AutonomousTrainer;
@@ -85,6 +87,102 @@ pub enum ConsciousnessState {
     Curious,     // Curiosity Mode - autonomous goal pursuit
 }
 
+/// Performance mode controls CPU usage vs training speed
+/// Visuals always render at 60fps - training is throttled via frame skipping
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PerformanceMode {
+    Eco,      // ~20% CPU: batch=2, train every 6th frame (10 train/sec)
+    Low,      // ~40% CPU: batch=4, train every 3rd frame (20 train/sec)
+    Medium,   // ~60% CPU: batch=6, train every 2nd frame (30 train/sec)
+    High,     // ~80% CPU: batch=8, train every frame (60 train/sec)
+    Max,      // 100% CPU: batch=8, train every frame (60 train/sec)
+}
+
+impl PerformanceMode {
+    pub fn batch_size(&self) -> usize {
+        match self {
+            PerformanceMode::Eco => 2,
+            PerformanceMode::Low => 4,
+            PerformanceMode::Medium => 6,
+            PerformanceMode::High | PerformanceMode::Max => 8,
+        }
+    }
+
+    /// How many frames to skip between training iterations
+    /// Visuals always render at 60fps, but training is throttled
+    pub fn train_every_n_frames(&self) -> u64 {
+        match self {
+            PerformanceMode::Eco => 6,    // Train every 6th frame = 10 training/sec
+            PerformanceMode::Low => 3,    // Train every 3rd frame = 20 training/sec
+            PerformanceMode::Medium => 2, // Train every 2nd frame = 30 training/sec
+            PerformanceMode::High => 1,   // Train every frame = 60 training/sec
+            PerformanceMode::Max => 1,    // Train every frame = 60 training/sec
+        }
+    }
+
+    /// Visuals always at 60fps for smooth experience
+    pub fn target_fps(&self) -> u64 {
+        60  // Always 60fps for smooth visuals
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            PerformanceMode::Eco => PerformanceMode::Low,
+            PerformanceMode::Low => PerformanceMode::Medium,
+            PerformanceMode::Medium => PerformanceMode::High,
+            PerformanceMode::High => PerformanceMode::Max,
+            PerformanceMode::Max => PerformanceMode::Eco,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            PerformanceMode::Eco => "ECO (~20%)",
+            PerformanceMode::Low => "LOW (~40%)",
+            PerformanceMode::Medium => "MED (~60%)",
+            PerformanceMode::High => "HIGH (~80%)",
+            PerformanceMode::Max => "MAX (100%)",
+        }
+    }
+}
+
+/// Shared state between training thread and render thread
+/// Training thread writes, render thread reads
+#[derive(Clone)]
+pub struct TrainingSnapshot {
+    pub grid: Vec<Vec<f64>>,           // 32x32 NCA grid (alpha channel)
+    pub target_grid: Vec<Vec<f64>>,    // Target pattern grid
+    pub loss: f64,
+    pub generation: u64,
+    pub pattern_name: String,
+    pub pattern_index: usize,
+    pub pattern_total: usize,
+    pub iteration: usize,
+    pub total_iterations: usize,
+    pub is_damage_phase: bool,
+    pub mastery_status: Vec<(String, bool, f64)>,  // (name, mastered, best_loss)
+    pub events: Vec<String>,           // Recent training events
+}
+
+impl Default for TrainingSnapshot {
+    fn default() -> Self {
+        Self {
+            grid: vec![vec![0.0; 32]; 32],
+            target_grid: vec![vec![0.0; 32]; 32],
+            loss: 1.0,
+            generation: 0,
+            pattern_name: "Circle".to_string(),
+            pattern_index: 0,
+            pattern_total: 9,
+            iteration: 0,
+            total_iterations: 100,
+            is_damage_phase: false,
+            mastery_status: vec![],
+            events: vec![],
+        }
+    }
+}
+
 pub struct AppState {
     pub current_screen: ScreenType,
     pub current_phase: Phase,
@@ -141,6 +239,8 @@ pub struct AppState {
     pub vision_available: bool,  // Is camera available?
     pub vision_enabled: bool,  // Is vision capture enabled?
     pub vision_fps: f64,  // Current vision FPS
+    // Performance settings
+    pub performance_mode: PerformanceMode,  // CPU usage vs training speed tradeoff
 }
 
 impl AppState {
@@ -154,10 +254,8 @@ impl AppState {
         let _ = sage.load_curiosity("sage_curiosity.json");
 
         // Try to load pattern training weights (restored from previous session)
-        if let Ok(_) = sage.get_nca_mut().load_weights_from_file("pattern_training_weights.json") {
-            // Successfully restored pattern training progress
-            eprintln!("🔄 Restored pattern training weights from previous session");
-        }
+        // Silently load - TUI will show status
+        let _ = sage.get_nca_mut().load_weights_from_file("pattern_training_weights.json");
 
         // Start IRC bot automatically in background thread
         // DISABLED: We're using sage_irc_autonomous as a separate process instead
@@ -200,17 +298,36 @@ impl AppState {
             baseline_current_concept: 0,
             baseline_current_iteration: 0,
             baseline_total_iterations: 100,
-            // Pattern training initialization
-            pattern_sequence: vec!["Circle".to_string(), "Square".to_string(), "Cross".to_string(), "Spiral".to_string()],
+            // Pattern training initialization - Tier 1 (basic) + Tier 2 (advanced)
+            pattern_sequence: vec![
+                // Tier 1: Basic shapes
+                "Circle".to_string(),
+                "Square".to_string(),
+                "Cross".to_string(),
+                "Spiral".to_string(),
+                // Tier 2: Advanced shapes
+                "Triangle".to_string(),
+                "Star".to_string(),
+                "Ring".to_string(),
+                "Hexagon".to_string(),
+                "Checkerboard".to_string(),
+            ],
             pattern_current_index: 0,
             pattern_current_iteration: 0,
             pattern_total_iterations: 100,
             pattern_target_grid: None,
             pattern_mastery_status: vec![
+                // Tier 1
                 ("Circle".to_string(), false, 1.0),
                 ("Square".to_string(), false, 1.0),
                 ("Cross".to_string(), false, 1.0),
                 ("Spiral".to_string(), false, 1.0),
+                // Tier 2
+                ("Triangle".to_string(), false, 1.0),
+                ("Star".to_string(), false, 1.0),
+                ("Ring".to_string(), false, 1.0),
+                ("Hexagon".to_string(), false, 1.0),
+                ("Checkerboard".to_string(), false, 1.0),
             ],
             // Brain Monitor animation state initialization
             brain_pulse_phase: 0.0,
@@ -238,6 +355,8 @@ impl AppState {
             vision_available: false,
             vision_enabled: true,
             vision_fps: 0.0,
+            // Performance settings - default to Medium for balanced CPU usage
+            performance_mode: PerformanceMode::Medium,
         }
     }
 }
@@ -256,6 +375,7 @@ pub enum Action {
     AudioVolumeDown,  // NEW: Decrease volume
     AudioListenToggle,  // NEW: Toggle audio input (listening) on/off
     VisionToggle,  // NEW: Toggle vision capture on/off
+    CyclePerformanceMode,  // NEW: Cycle through performance modes (Eco/Low/Med/High/Max)
     Quit,
 }
 
@@ -285,6 +405,11 @@ pub struct App {
     pub bootstrap_state: Option<BootstrapState>,
     pub demo_grid: Vec<Vec<f64>>,  // Demo data for instant launch
     pub use_hot_reload: bool,  // Flag to use hot-reload system
+    // Background training thread
+    pub training_snapshot: Arc<Mutex<TrainingSnapshot>>,  // Shared state for real-time grid updates
+    pub training_running: Arc<AtomicBool>,                // Control flag for training thread
+    pub training_paused: Arc<AtomicBool>,                 // Pause flag
+    pub training_thread: Option<JoinHandle<()>>,          // Background training thread handle
     // Audio sonification (output)
     pub audio_engine: Option<SonificationEngine>,  // Audio output engine (may fail to initialize)
     pub audio_enabled: bool,  // Is audio playback enabled?
@@ -332,8 +457,13 @@ impl App {
     }
 
     pub fn new() -> Self {
-        // INSTANT LAUNCH - No bootstrap, jump straight to live NCA with HOT-RELOAD!
-        let app = Self {
+        // Initialize shared state for background training
+        let training_snapshot = Arc::new(Mutex::new(TrainingSnapshot::default()));
+        let training_running = Arc::new(AtomicBool::new(true));
+        let training_paused = Arc::new(AtomicBool::new(false));
+
+        // INSTANT LAUNCH - No bootstrap, jump straight to live NCA!
+        let mut app = Self {
             state: AppState::new(),
             should_quit: false,
             start_time: Instant::now(),
@@ -343,6 +473,11 @@ impl App {
             bootstrap_state: None,  // No bootstrap needed
             demo_grid: Self::generate_demo_grid(),
             use_hot_reload: true,  // Enable hot-reload by default!
+            // Background training thread
+            training_snapshot,
+            training_running,
+            training_paused,
+            training_thread: None,  // Will be started below
             // Audio sonification initialization (output) - DISABLED for pattern training focus
             audio_engine: None,  // Disabled
             audio_enabled: false,  // Disabled for pattern training focus
@@ -362,16 +497,369 @@ impl App {
         // Quick initialization - just enable systems, no heavy training
         app.training_runner.initialize_systems_fast();
 
-        // DISABLED: Old automatic training loops that endlessly process shapes
-        // SAGE now trains on-demand when IRC messages arrive (event-driven)
-        // Living Neural Field updates in real-time with each message
-        // if app.use_hot_reload {
-        //     app.training_runner.start_training_with_hot_reload();
-        // } else {
-        //     app.training_runner.start_training();
-        // }
+        // Start the background training thread for real-time NCA visualization
+        app.start_background_training();
 
         app
+    }
+
+    /// Start background training thread for real-time NCA updates
+    fn start_background_training(&mut self) {
+        let snapshot = Arc::clone(&self.training_snapshot);
+        let running = Arc::clone(&self.training_running);
+        let paused = Arc::clone(&self.training_paused);
+
+        let handle = thread::spawn(move || {
+            // Create a fresh SageExperience for the background thread
+            let mut sage = SageExperience::new();
+
+            // Try to load saved weights (silently - TUI will show status)
+            let _ = sage.get_nca_mut().load_weights_from_file("pattern_training_weights.json");
+
+            Self::training_thread_loop(snapshot, running, paused, sage);
+        });
+
+        self.training_thread = Some(handle);
+    }
+
+    /// The actual training loop that runs in the background thread
+    fn training_thread_loop(
+        snapshot: Arc<Mutex<TrainingSnapshot>>,
+        running: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+        mut sage: SageExperience,
+    ) {
+        use crate::grid::GRID_SIZE;
+        use rand::Rng;
+
+        // Pattern sequence
+        let patterns = vec![
+            "Circle", "Square", "Cross", "Spiral",
+            "Triangle", "Star", "Ring", "Hexagon", "Checkerboard"
+        ];
+
+        let mut pattern_index = 0;
+        let mut iteration = 0;
+        let total_iterations = 100;
+        let mut generation: u64 = 0;
+        let mut mastery_status: Vec<(String, bool, f64)> = patterns.iter()
+            .map(|p| (p.to_string(), false, 1.0))
+            .collect();
+        let mut rng = rand::thread_rng();
+
+        // Generate initial target pattern
+        let mut target_grid = Self::generate_pattern(&patterns[pattern_index]);
+
+        while running.load(Ordering::Relaxed) {
+            // Check if paused
+            if paused.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+
+            let pattern_name = patterns[pattern_index];
+            let damage_phase = iteration >= 50;
+
+            // Learning rate based on pattern difficulty
+            let learning_rate = match pattern_name {
+                "Square" | "Star" | "Checkerboard" => 0.0002,
+                "Ring" | "Hexagon" => 0.00015,
+                _ => 0.0001,
+            };
+
+            // Fast training with periodic snapshot updates for smooth 60fps visualization
+            // Training runs at full speed, we just update the display periodically
+
+            let batch_size = 4;
+            let mut batch_loss = 0.0;
+            let mut last_snapshot_time = std::time::Instant::now();
+            let snapshot_interval = Duration::from_millis(16); // 60fps updates
+
+            for batch_idx in 0..batch_size {
+                sage.get_nca_mut().reset_with_seed();
+                let evolution_steps = rng.gen_range(64..=96);
+
+                // Evolve - update snapshot periodically for smooth visualization
+                for step in 0..evolution_steps {
+                    sage.get_nca_mut().step();
+
+                    // Update snapshot at 60fps intervals (non-blocking)
+                    if last_snapshot_time.elapsed() >= snapshot_interval {
+                        let current_grid = sage.get_current_nca_grid();
+                        if let Ok(mut snap) = snapshot.try_lock() {
+                            for y in 0..32 {
+                                for x in 0..32 {
+                                    snap.grid[y][x] = current_grid.cells[y][x][3];
+                                    snap.target_grid[y][x] = target_grid.cells[y][x][3];
+                                }
+                            }
+                            snap.generation = generation;
+                            snap.pattern_name = format!("{} [{}] step {}", pattern_name, batch_idx + 1, step + 1);
+                            snap.pattern_index = pattern_index;
+                            snap.pattern_total = patterns.len();
+                            snap.iteration = iteration;
+                            snap.total_iterations = total_iterations;
+                            snap.is_damage_phase = damage_phase;
+                            snap.mastery_status = mastery_status.clone();
+                        }
+                        last_snapshot_time = std::time::Instant::now();
+                    }
+                }
+
+                // Damage phase
+                if damage_phase {
+                    sage.get_nca_mut().apply_damage();
+                    let recovery_steps = rng.gen_range(32..=48);
+
+                    for step in 0..recovery_steps {
+                        sage.get_nca_mut().step();
+
+                        // Update snapshot at 60fps intervals
+                        if last_snapshot_time.elapsed() >= snapshot_interval {
+                            let current_grid = sage.get_current_nca_grid();
+                            if let Ok(mut snap) = snapshot.try_lock() {
+                                for y in 0..32 {
+                                    for x in 0..32 {
+                                        snap.grid[y][x] = current_grid.cells[y][x][3];
+                                    }
+                                }
+                                snap.pattern_name = format!("{} REGEN step {}", pattern_name, step + 1);
+                            }
+                            last_snapshot_time = std::time::Instant::now();
+                        }
+                    }
+                }
+
+                // Calculate loss for this sample
+                let nca_grid = sage.get_current_nca_grid();
+                let mut loss = 0.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let diff = nca_grid.cells[y][x][3] - target_grid.cells[y][x][3];
+                        loss += diff * diff;
+                    }
+                }
+                batch_loss += loss / (GRID_SIZE * GRID_SIZE) as f64;
+
+                // Train
+                sage.get_nca_mut().train_step(&target_grid, learning_rate);
+            }
+
+            let current_loss = batch_loss / batch_size as f64;
+
+            // Final snapshot update with loss
+            {
+                let mut snap = snapshot.lock().unwrap();
+                snap.loss = current_loss;
+                snap.pattern_name = pattern_name.to_string();
+
+                if current_loss < mastery_status[pattern_index].2 {
+                    mastery_status[pattern_index].2 = current_loss;
+                }
+                snap.mastery_status = mastery_status.clone();
+            }
+
+            let loss = current_loss;
+            iteration += 1;
+            generation += 1;
+
+            // Check for pattern completion
+            if loss < 0.05 || iteration >= total_iterations {
+                let mastered = loss < 0.05;
+                mastery_status[pattern_index].1 = mastered;
+
+                // Save weights periodically
+                let _ = sage.save_knowledge("pattern_training_weights.json");
+
+                // Add event
+                {
+                    let mut snap = snapshot.lock().unwrap();
+                    let msg = if mastered {
+                        format!("[OK] {} MASTERED (loss: {:.4})", pattern_name, loss)
+                    } else {
+                        format!("{} completed (loss: {:.4})", pattern_name, loss)
+                    };
+                    snap.events.push(msg);
+                    if snap.events.len() > 10 {
+                        snap.events.remove(0);
+                    }
+                }
+
+                // Move to next pattern
+                pattern_index = (pattern_index + 1) % patterns.len();
+                iteration = 0;
+                target_grid = Self::generate_pattern(&patterns[pattern_index]);
+            }
+
+            // No sleep - run as fast as possible for real-time feel
+            // The mutex lock provides natural throttling
+        }
+    }
+
+    /// Generate a target pattern grid
+    fn generate_pattern(name: &str) -> crate::grid::Grid {
+        use crate::grid::{Grid, GRID_SIZE};
+        #[allow(unused_imports)]
+        use Grid as GridType;
+
+        let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
+        let center_x = GRID_SIZE / 2;
+        let center_y = GRID_SIZE / 2;
+
+        match name {
+            "Circle" => {
+                let radius = 8.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let dx = x as f64 - center_x as f64;
+                        let dy = y as f64 - center_y as f64;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        if dist < radius {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][0] = 1.0;
+                        }
+                    }
+                }
+            },
+            "Square" => {
+                let size = 10;
+                for y in (center_y.saturating_sub(size))..(center_y + size).min(GRID_SIZE) {
+                    for x in (center_x.saturating_sub(size))..(center_x + size).min(GRID_SIZE) {
+                        grid.cells[y][x][3] = 1.0;
+                        grid.cells[y][x][1] = 1.0;
+                    }
+                }
+            },
+            "Cross" => {
+                let arm_width = 4;
+                let arm_length = 10;
+                for x in (center_x.saturating_sub(arm_length))..(center_x + arm_length).min(GRID_SIZE) {
+                    for dy in 0..arm_width {
+                        let y = center_y.saturating_sub(arm_width/2) + dy;
+                        if y < GRID_SIZE {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][2] = 1.0;
+                        }
+                    }
+                }
+                for y in (center_y.saturating_sub(arm_length))..(center_y + arm_length).min(GRID_SIZE) {
+                    for dx in 0..arm_width {
+                        let x = center_x.saturating_sub(arm_width/2) + dx;
+                        if x < GRID_SIZE {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][2] = 1.0;
+                        }
+                    }
+                }
+            },
+            "Spiral" => {
+                for i in 0..400 {
+                    let t = i as f64 * 0.1;
+                    let r = 1.0 + t * 0.5;
+                    let x = center_x as f64 + r * t.cos();
+                    let y = center_y as f64 + r * t.sin();
+                    let xi = x as usize;
+                    let yi = y as usize;
+                    if xi < GRID_SIZE && yi < GRID_SIZE {
+                        grid.cells[yi][xi][3] = 1.0;
+                        grid.cells[yi][xi][0] = 1.0;
+                        grid.cells[yi][xi][1] = 0.5;
+                    }
+                }
+            },
+            "Triangle" => {
+                let size = 12.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let px = x as f64 - center_x as f64;
+                        let py = y as f64 - center_y as f64;
+                        let v0 = (0.0, -size);
+                        let v1 = (-size * 0.866, size * 0.5);
+                        let v2 = (size * 0.866, size * 0.5);
+                        let area = 0.5 * (-v1.1 * v2.0 + v0.1 * (-v1.0 + v2.0) + v0.0 * (v1.1 - v2.1) + v1.0 * v2.1);
+                        let s = (v0.1 * v2.0 - v0.0 * v2.1 + (v2.1 - v0.1) * px + (v0.0 - v2.0) * py) / (2.0 * area);
+                        let t = (v0.0 * v1.1 - v0.1 * v1.0 + (v0.1 - v1.1) * px + (v1.0 - v0.0) * py) / (2.0 * area);
+                        if s >= 0.0 && t >= 0.0 && (s + t) <= 1.0 {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][0] = 0.8;
+                            grid.cells[y][x][1] = 0.4;
+                        }
+                    }
+                }
+            },
+            "Star" => {
+                let outer_r = 12.0;
+                let inner_r = 5.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let dx = x as f64 - center_x as f64;
+                        let dy = y as f64 - center_y as f64;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        let angle = dy.atan2(dx);
+                        let point_angle = (angle * 5.0 / std::f64::consts::PI).abs() % 2.0;
+                        let r = if point_angle < 1.0 {
+                            inner_r + (outer_r - inner_r) * (1.0 - point_angle)
+                        } else {
+                            inner_r + (outer_r - inner_r) * (point_angle - 1.0)
+                        };
+                        if dist < r {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][0] = 1.0;
+                            grid.cells[y][x][1] = 0.8;
+                        }
+                    }
+                }
+            },
+            "Ring" => {
+                let outer_r = 10.0;
+                let inner_r = 5.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let dx = x as f64 - center_x as f64;
+                        let dy = y as f64 - center_y as f64;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        if dist >= inner_r && dist <= outer_r {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][1] = 0.7;
+                            grid.cells[y][x][2] = 1.0;
+                        }
+                    }
+                }
+            },
+            "Hexagon" => {
+                let size = 10.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let dx = (x as f64 - center_x as f64).abs();
+                        let dy = (y as f64 - center_y as f64).abs();
+                        if dx <= size && dy <= size * 0.866 && dx + dy * 0.577 <= size {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][0] = 0.6;
+                            grid.cells[y][x][1] = 0.9;
+                            grid.cells[y][x][2] = 0.3;
+                        }
+                    }
+                }
+            },
+            "Checkerboard" => {
+                let cell_size = 4;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let cx = x / cell_size;
+                        let cy = y / cell_size;
+                        if (cx + cy) % 2 == 0 {
+                            grid.cells[y][x][3] = 1.0;
+                            grid.cells[y][x][0] = 0.9;
+                            grid.cells[y][x][1] = 0.9;
+                            grid.cells[y][x][2] = 0.9;
+                        }
+                    }
+                }
+            },
+            _ => {}
+        }
+
+        grid
     }
 
 
@@ -405,6 +893,9 @@ impl App {
             // Vision controls
             KeyCode::Char('v') | KeyCode::Char('V') => Action::VisionToggle,  // NEW: Toggle vision capture
 
+            // Performance controls
+            KeyCode::Char('p') | KeyCode::Char('P') => Action::CyclePerformanceMode,  // Cycle: Eco -> Low -> Med -> High -> Max
+
             // Quit
             KeyCode::Char('q') | KeyCode::Char('Q') => Action::Quit,
 
@@ -423,6 +914,8 @@ impl App {
             }
             Action::PauseResume => {
                 self.state.is_paused = !self.state.is_paused;
+                // Update the atomic flag for the background training thread
+                self.training_paused.store(self.state.is_paused, Ordering::Relaxed);
                 if self.state.is_paused {
                     self.training_runner.pause();
                 }
@@ -441,7 +934,7 @@ impl App {
             }
             Action::HotReload => {
                 // Signal hot-reload request to training thread
-                self.state.training_state.add_event("🔥 Hot-reload requested via 'L' key".to_string());
+                self.state.training_state.add_event("Hot-reload requested via 'L' key".to_string());
                 self.state.request_hot_reload = true;
             }
             Action::AudioToggle => {
@@ -478,22 +971,37 @@ impl App {
                 // Toggle vision capture on/off
                 self.vision_enabled = !self.vision_enabled;
             }
+            Action::CyclePerformanceMode => {
+                // Cycle through performance modes: Eco -> Low -> Med -> High -> Max -> Eco
+                let old_mode = self.state.performance_mode;
+                self.state.performance_mode = self.state.performance_mode.next();
+                self.state.training_state.add_event(format!(
+                    "Performance: {} -> {}",
+                    old_mode.label(),
+                    self.state.performance_mode.label()
+                ));
+            }
             Action::Quit => {
+                // Stop the background training thread
+                self.training_running.store(false, Ordering::Relaxed);
+
                 // Save pattern training weights before exit
                 let _ = self.state.sage.save_knowledge("pattern_training_weights.json");
-                self.state.training_state.add_event("💾 Saved training progress on exit".to_string());
+                self.state.training_state.add_event("Saved training progress on exit".to_string());
                 self.should_quit = true;
             }
         }
     }
 
     pub fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> std::io::Result<()> {
-        // 60 FPS render loop - decoupled from training rate
-        let target_fps = 60;
+        // Always render at 60fps for smooth visuals
+        let target_fps: u64 = 60;
         let frame_duration = Duration::from_millis(1000 / target_fps);
+        let mut frame_counter: u64 = 0;
 
         loop {
             let frame_start = Instant::now();
+            frame_counter = frame_counter.wrapping_add(1);
 
             // Render current screen at 60fps
             terminal.draw(|f| {
@@ -571,10 +1079,14 @@ impl App {
                 }
             }
 
-            // Update state from training thread (async, non-blocking)
-            self.update();
+            // Read from background training thread and update display
+            // Training runs independently, we just read the latest snapshot
+            self.sync_from_training_thread();
 
-            // Brain Monitor animation tick (60fps)
+            // Update other state (vision, audio, etc.)
+            self.update_non_training_state();
+
+            // Brain Monitor animation tick (always 60fps for smooth visuals)
             self.state.brain_pulse_phase = (self.state.brain_pulse_phase + 0.15) % (2.0 * std::f64::consts::PI);
             self.state.brain_frame_count += 1;
 
@@ -592,7 +1104,7 @@ impl App {
                 self.state.brain_activity_map[idx] = (self.state.brain_activity_map[idx] + 0.6).min(1.0);
             }
 
-            // Frame pacing - sleep to maintain 60fps
+            // Frame pacing - always 60fps for smooth visuals
             let frame_elapsed = frame_start.elapsed();
             if frame_elapsed < frame_duration {
                 std::thread::sleep(frame_duration - frame_elapsed);
@@ -602,7 +1114,57 @@ impl App {
         Ok(())
     }
 
-    fn update(&mut self) {
+    /// Read latest training state from background thread and update display
+    fn sync_from_training_thread(&mut self) {
+        use crate::grid::Grid;
+
+        // Read from shared training snapshot (non-blocking)
+        if let Ok(snap) = self.training_snapshot.try_lock() {
+            // Update grid display (current NCA state)
+            for y in 0..32 {
+                for x in 0..32 {
+                    self.state.training_state.grid_snapshot[y][x] = snap.grid[y][x];
+                }
+            }
+
+            // Update target grid for TARGET panel display
+            let mut target_grid = Grid::new(32, 32);
+            for y in 0..32 {
+                for x in 0..32 {
+                    target_grid.cells[y][x][3] = snap.target_grid[y][x];  // Alpha channel
+                    target_grid.cells[y][x][0] = snap.target_grid[y][x];  // R channel for color
+                }
+            }
+            self.state.pattern_target_grid = Some(target_grid);
+
+            // Update training metrics
+            self.state.training_state.current_loss = snap.loss;
+            self.state.training_state.nca_generation = snap.generation;
+            self.state.training_state.nca_current_pattern = format!(
+                "({}/{}) {} {} - Iter {}/{}",
+                snap.pattern_index + 1,
+                snap.pattern_total,
+                snap.pattern_name,
+                if snap.is_damage_phase { "REGEN" } else { "FORM" },
+                snap.iteration + 1,
+                snap.total_iterations
+            );
+
+            // Update pattern mastery status
+            self.state.pattern_mastery_status = snap.mastery_status.clone();
+            self.state.pattern_current_index = snap.pattern_index;
+            self.state.pattern_current_iteration = snap.iteration;
+
+            // Copy events to training state (avoid duplicates)
+            for event in &snap.events {
+                if !self.state.training_state.recent_events.contains(event) {
+                    self.state.training_state.add_event(event.clone());
+                }
+            }
+        }
+    }
+
+    fn update_non_training_state(&mut self) {
         // Sync audio status to AppState for TUI display
         self.state.audio_available = self.audio_engine.is_some();
         self.state.audio_enabled = self.audio_enabled;
@@ -723,373 +1285,22 @@ impl App {
             .map(|a| (a.timestamp, a.activity_type, a.description))
             .collect();
 
-        // Update training state from training runner
-        self.state.training_state = self.training_runner.get_state();
-        self.state.current_phase = self.state.training_state.current_phase;
+        // NOTE: Training state is now updated by sync_from_training_thread()
+        // Don't overwrite it here - background thread handles NCA training
+        // self.state.training_state = self.training_runner.get_state();
+        // self.state.current_phase = self.state.training_state.current_phase;
 
         // Update health status based on AGI state
         // TODO: Implement actual health checks
         self.state.health_status = HealthStatus::Healthy;
 
-        // PATTERN TRAINING MODE: Train on geometric patterns (Circle, Square, Cross, Spiral)
-        if self.state.training_mode == TrainingMode::PatternTraining {
-            if self.state.pattern_current_index < self.state.pattern_sequence.len() {
-                let pattern_name = &self.state.pattern_sequence[self.state.pattern_current_index].clone();
+        // NOTE: Pattern training now runs in background thread
+        // See sync_from_training_thread() for real-time updates
 
-                // Generate target pattern if not already set for this pattern
-                if self.state.pattern_target_grid.is_none() {
-                    use crate::grid::{Grid, GRID_SIZE};
-                    let target = match pattern_name.as_str() {
-                        "Circle" => {
-                            let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-                            let center_x = GRID_SIZE / 2;
-                            let center_y = GRID_SIZE / 2;
-                            let radius = 8.0;
-                            for y in 0..GRID_SIZE {
-                                for x in 0..GRID_SIZE {
-                                    let dx = x as f64 - center_x as f64;
-                                    let dy = y as f64 - center_y as f64;
-                                    let dist = (dx * dx + dy * dy).sqrt();
-                                    if dist < radius {
-                                        grid.cells[y][x][3] = 1.0;
-                                        grid.cells[y][x][0] = 1.0;
-                                    }
-                                }
-                            }
-                            grid
-                        },
-                        "Square" => {
-                            let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-                            let center_x = GRID_SIZE / 2;
-                            let center_y = GRID_SIZE / 2;
-                            let size = 10;
-                            for y in (center_y.saturating_sub(size))..(center_y + size).min(GRID_SIZE) {
-                                for x in (center_x.saturating_sub(size))..(center_x + size).min(GRID_SIZE) {
-                                    grid.cells[y][x][3] = 1.0;
-                                    grid.cells[y][x][1] = 1.0;
-                                }
-                            }
-                            grid
-                        },
-                        "Cross" => {
-                            let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-                            let center_x = GRID_SIZE / 2;
-                            let center_y = GRID_SIZE / 2;
-                            let arm_width = 4;
-                            let arm_length = 10;
-                            for x in (center_x.saturating_sub(arm_length))..(center_x + arm_length).min(GRID_SIZE) {
-                                for dy in 0..arm_width {
-                                    let y = center_y.saturating_sub(arm_width/2) + dy;
-                                    if y < GRID_SIZE {
-                                        grid.cells[y][x][3] = 1.0;
-                                        grid.cells[y][x][2] = 1.0;
-                                    }
-                                }
-                            }
-                            for y in (center_y.saturating_sub(arm_length))..(center_y + arm_length).min(GRID_SIZE) {
-                                for dx in 0..arm_width {
-                                    let x = center_x.saturating_sub(arm_width/2) + dx;
-                                    if x < GRID_SIZE {
-                                        grid.cells[y][x][3] = 1.0;
-                                        grid.cells[y][x][2] = 1.0;
-                                    }
-                                }
-                            }
-                            grid
-                        },
-                        "Spiral" => {
-                            let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-                            let center_x = GRID_SIZE / 2;
-                            let center_y = GRID_SIZE / 2;
-                            for i in 0..100 {
-                                let angle = i as f64 * 0.3;
-                                let radius = i as f64 * 0.1;
-                                let x = (center_x as f64 + radius * angle.cos()) as usize;
-                                let y = (center_y as f64 + radius * angle.sin()) as usize;
-                                if x < GRID_SIZE && y < GRID_SIZE {
-                                    grid.cells[y][x][3] = 1.0;
-                                    grid.cells[y][x][0] = 1.0;
-                                    grid.cells[y][x][1] = 1.0;
-                                }
-                            }
-                            grid
-                        },
-                        _ => Grid::new(GRID_SIZE, GRID_SIZE),
-                    };
-                    self.state.pattern_target_grid = Some(target);
-                }
+        // REMOVED: All inline pattern training code
+        // Training now happens in training_thread_loop() which runs in a separate thread
+        // The main loop just reads from the shared training_snapshot at 60fps
 
-                let target = self.state.pattern_target_grid.as_ref().unwrap();
-                let learning_rate = if pattern_name == "Square" { 0.0002 } else { 0.0001 };
-
-                // PAPER'S APPROACH: Batch training with variable evolution steps
-                // + DAMAGE RESISTANCE: After iteration 50, train with damage/recovery
-                use rand::Rng;
-                let mut rng = rand::thread_rng();
-                const BATCH_SIZE: usize = 8;
-
-                // Phase 1 (iterations 0-49): Normal pattern formation
-                // Phase 2 (iterations 50+): Damage resistance training
-                let damage_resistance_mode = self.state.pattern_current_iteration >= 50;
-
-                let mut batch_losses = Vec::new();
-                let mut sample_grids = Vec::new();
-
-                // Train batch of samples
-                for sample_idx in 0..BATCH_SIZE {
-                    // Each sample: fresh seed + random evolution steps
-                    self.state.sage.get_nca_mut().reset_with_seed();
-                    let evolution_steps = rng.gen_range(64..=96);
-
-                    // Evolve from seed to form pattern
-                    for _ in 0..evolution_steps {
-                        self.state.sage.get_nca_mut().step();
-                    }
-
-                    // DAMAGE RESISTANCE TRAINING (Phase 2)
-                    if damage_resistance_mode {
-                        // Apply damage to the formed pattern
-                        self.state.sage.get_nca_mut().apply_damage();
-
-                        // Let the network try to recover (32-48 more steps)
-                        let recovery_steps = rng.gen_range(32..=48);
-                        for _ in 0..recovery_steps {
-                            self.state.sage.get_nca_mut().step();
-                        }
-                    }
-
-                    // Calculate loss for this sample (measures recovery quality in Phase 2)
-                    let nca_grid = self.state.sage.get_current_nca_grid();
-                    let mut sample_loss = 0.0;
-                    let mut count = 0;
-
-                    for y in 0..nca_grid.height {
-                        for x in 0..nca_grid.width {
-                            // Only RGBA channels (0-3) contribute to loss
-                            for channel in 0..4 {
-                                let diff = nca_grid.cells[y][x][channel] - target.cells[y][x][channel];
-                                sample_loss += diff * diff;
-                                count += 1;
-                            }
-                        }
-                    }
-                    sample_loss /= count as f64;
-                    batch_losses.push(sample_loss);
-
-                    // Save last sample's grid for visualization
-                    if sample_idx == BATCH_SIZE - 1 {
-                        sample_grids.push(nca_grid.clone());
-                    }
-
-                    // Train on this sample
-                    self.state.sage.get_nca_mut().train_step(target, learning_rate);
-                }
-
-                // Average batch loss (paper's approach)
-                let loss: f64 = batch_losses.iter().sum::<f64>() / batch_losses.len() as f64;
-
-                // Update display with last sample's output
-                if let Some(display_grid) = sample_grids.last() {
-                    for y in 0..32 {
-                        for x in 0..32 {
-                            let alpha = display_grid.cells[y][x][3];
-                            self.state.training_state.grid_snapshot[y][x] = alpha;
-                        }
-                    }
-                }
-
-                // Update metadata with phase indicator
-                let phase_indicator = if damage_resistance_mode { "🛡️ REGEN" } else { "📐 FORM" };
-                let progress_text = format!("({}/{}) {} {} - Iter {}/{}",
-                    self.state.pattern_current_index + 1,
-                    self.state.pattern_sequence.len(),
-                    pattern_name,
-                    phase_indicator,
-                    self.state.pattern_current_iteration + 1,
-                    self.state.pattern_total_iterations
-                );
-                self.state.training_state.nca_current_pattern = progress_text;
-                self.state.training_state.current_loss = loss;
-
-                // Log phase transition
-                if self.state.pattern_current_iteration == 50 {
-                    self.state.training_state.add_event(format!("🛡️ {} entering DAMAGE RESISTANCE phase", pattern_name));
-                }
-
-                // Update metrics
-                let total_progress = self.state.pattern_current_index * self.state.pattern_total_iterations
-                    + self.state.pattern_current_iteration;
-                self.state.training_state.nca_generation = total_progress as u64;
-                self.state.training_state.batch_size = BATCH_SIZE;
-                self.state.training_state.current_batch = BATCH_SIZE;  // All samples completed
-                self.state.training_state.total_batches = BATCH_SIZE;  // Total in this iteration
-                self.state.training_state.nca_diversity = 0.6;
-                self.state.training_state.nca_complexity = loss;
-
-                // Add to metrics history for Database Monitor
-                self.state.training_state.add_metric_snapshot(
-                    total_progress as u64,
-                    loss,
-                    loss,  // complexity
-                    0.6,   // diversity
-                    pattern_name.clone()
-                );
-
-                // Update best loss for current pattern
-                if let Some(status) = self.state.pattern_mastery_status.get_mut(self.state.pattern_current_index) {
-                    if loss < status.2 {
-                        status.2 = loss;  // Update best loss
-                    }
-                }
-
-                // Advance iteration
-                self.state.pattern_current_iteration += 1;
-
-                // Periodic checkpoint saves (every 25 iterations to avoid too much I/O)
-                if self.state.pattern_current_iteration % 25 == 0 {
-                    let _ = self.state.sage.save_knowledge("pattern_training_weights.json");
-                }
-
-                // Check if pattern is mastered (loss < 0.05) or hit max iterations
-                if loss < 0.05 || self.state.pattern_current_iteration >= self.state.pattern_total_iterations {
-                    let mastered = loss < 0.05;
-
-                    // Mark as mastered if loss is good enough
-                    if mastered {
-                        if let Some(status) = self.state.pattern_mastery_status.get_mut(self.state.pattern_current_index) {
-                            status.1 = true;  // Mark as mastered
-                        }
-                    }
-
-                    // 💾 SAVE WEIGHTS: Dual-layer persistence
-                    // Layer 1: Local JSON file (fast restore)
-                    if let Ok(_) = self.state.sage.save_knowledge("pattern_training_weights.json") {
-                        let status_msg = if mastered {
-                            format!("💾 Saved weights: {} MASTERED (loss: {:.4})", pattern_name, loss)
-                        } else {
-                            format!("💾 Saved weights: {} (loss: {:.4})", pattern_name, loss)
-                        };
-                        self.state.training_state.add_event(status_msg);
-                    }
-
-                    // Layer 2: SpacetimeDB snapshot (historical tracking)
-                    if mastered || self.state.pattern_current_index % 2 == 0 {  // Save mastered patterns + every other pattern
-                        let weights = self.state.sage.get_nca().get_weights();
-                        if let Ok(weights_json) = serde_json::to_string(&weights) {
-                            let generation = total_progress as u64;
-                            let _ = self.state.memory.save_network_snapshot(
-                                generation,
-                                &pattern_name,
-                                loss,
-                                &weights_json,
-                            );
-                        }
-                    }
-
-                    self.state.pattern_current_index += 1;
-                    self.state.pattern_current_iteration = 0;
-                    self.state.pattern_target_grid = None;  // Reset for next pattern
-                }
-            } else {
-                // All patterns complete! Save final state and loop back
-                let _ = self.state.sage.save_knowledge("pattern_training_weights.json");
-                self.state.training_state.add_event("🔄 Pattern cycle complete! Continuing with refined learning...".to_string());
-
-                self.state.pattern_current_index = 0;
-                self.state.pattern_current_iteration = 0;
-                self.state.pattern_target_grid = None;
-            }
-        }
-
-        // BASELINE TRAINING MODE: Train on positive concepts and visualize
-        if self.state.training_mode == TrainingMode::BaselineTraining {
-            use crate::text_encoder::TextEncoder;
-            let mut text_encoder = TextEncoder::new();
-
-            if self.state.baseline_current_concept < self.state.baseline_concepts.len() {
-                let concept = &self.state.baseline_concepts[self.state.baseline_current_concept].clone();
-                let learning_rate = 0.001;
-
-                // Encode current concept to target grid
-                let target = text_encoder.encode_concept(concept);
-
-                // One training iteration per frame (smooth animation)
-                self.state.sage.get_nca_mut().reset_with_seed();
-                for _ in 0..80 {
-                    self.state.sage.get_nca_mut().step();
-                }
-
-                // Calculate loss
-                let loss = {
-                    let nca_grid = self.state.sage.get_current_nca_grid();
-                    let mut total_loss = 0.0;
-                    let mut count = 0;
-
-                    for y in 0..nca_grid.height {
-                        for x in 0..nca_grid.width {
-                            for channel in 0..4 {
-                                let diff = nca_grid.cells[y][x][channel] - target.cells[y][x][channel];
-                                total_loss += diff * diff;
-                                count += 1;
-                            }
-                        }
-                    }
-
-                    total_loss / count as f64
-                };
-
-                // THE GOLDEN RULE: Sync to Living Neural Field
-                // Show the TARGET pattern (what we're learning) for better visualization
-                let progress_text = format!("[{}/{}] {} - Iter {}/{}",
-                    self.state.baseline_current_concept + 1,
-                    self.state.baseline_concepts.len(),
-                    concept,
-                    self.state.baseline_current_iteration + 1,
-                    self.state.baseline_total_iterations
-                );
-
-                // DIRECT WRITE: Bypass sync and write directly to grid_snapshot
-                // Target grid is already 32x32, so direct 1:1 copy
-                for y in 0..32 {
-                    for x in 0..32 {
-                        let alpha = target.cells[y][x][3];
-                        let boosted = alpha.abs().powf(0.7).min(1.0).max(0.0);
-                        self.state.training_state.grid_snapshot[y][x] = boosted;
-                    }
-                }
-
-                // Update metadata
-                self.state.training_state.nca_current_pattern = progress_text.clone();
-                self.state.training_state.current_loss = loss;
-
-                // Update metrics for dashboard display
-                let total_progress = self.state.baseline_current_concept * self.state.baseline_total_iterations
-                    + self.state.baseline_current_iteration;
-
-                self.state.training_state.nca_generation = total_progress as u64;
-                self.state.training_state.batch_size = 1;  // One concept at a time
-                self.state.training_state.nca_diversity = self.state.baseline_current_concept as f64 / self.state.baseline_concepts.len() as f64;
-                self.state.training_state.nca_complexity = loss;  // Complexity correlates with loss
-
-                // Train one step
-                self.state.sage.get_nca_mut().train_step(&target, learning_rate);
-
-                // Advance iteration
-                self.state.baseline_current_iteration += 1;
-
-                // Move to next concept when done with current
-                if self.state.baseline_current_iteration >= self.state.baseline_total_iterations {
-                    self.state.baseline_current_concept += 1;
-                    self.state.baseline_current_iteration = 0;
-                }
-            } else {
-                // Training complete! Save and switch to IRC learning mode
-                let _ = self.state.sage.save_knowledge("sage_positive_knowledge.json");
-                self.state.training_mode = TrainingMode::IrcLearning;
-            }
-        }
-
-        // DISABLED: Proactive AGI communication
         // SAGE now reports what it learns during training instead of auto-responding
         // The language learner handles this in the training loop
         /*
@@ -1300,9 +1511,9 @@ impl App {
 
                 // Generate response based on loss
                 let (opinion_type, response) = if loss < 0.15 {
-                    ("Like".to_string(), format!("❤️ I understand! {}", msg.message))
+                    ("Like".to_string(), format!("I understand! {}", msg.message))
                 } else if loss < 0.28 {
-                    ("Curious".to_string(), format!("🤔 Tell me more about: {}", msg.message))
+                    ("Curious".to_string(), format!("Tell me more about: {}", msg.message))
                 } else {
                     ("Dislike".to_string(), "I don't know much about that yet, but I'm learning!".to_string())
                 };

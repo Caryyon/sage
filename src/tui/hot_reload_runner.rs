@@ -23,7 +23,7 @@ impl HotReloadRunner {
             // Initialize
             {
                 let mut state = app_state.lock().unwrap();
-                state.training_state.add_event("🔥 Hot-reload training engine starting...".to_string());
+                state.training_state.add_event("Hot-reload training engine starting...".to_string());
             }
 
             // Load engine
@@ -47,7 +47,7 @@ impl HotReloadRunner {
 
             {
                 let mut state = app_state.lock().unwrap();
-                state.training_state.add_event(format!("✅ Engine loaded! Version: {}", loader.version()));
+                state.training_state.add_event(format!("[OK] Engine loaded! Version: {}", loader.version()));
             }
 
             // Initialize SpacetimeDB
@@ -70,12 +70,12 @@ impl HotReloadRunner {
                 // Check for hot-reload
                 if loader.check_for_reload() {
                     let mut state = app_state.lock().unwrap();
-                    state.training_state.add_event("🔄 LIBRARY CHANGED! Hot-reloading...".to_string());
+                    state.training_state.add_event("[SYNC] LIBRARY CHANGED! Hot-reloading...".to_string());
 
                     // Save checkpoint
                     match engine.save_checkpoint() {
                         Ok(checkpoint) => {
-                            state.training_state.add_event(format!("   💾 Checkpoint saved: Gen {}", checkpoint.generation));
+                            state.training_state.add_event(format!("   Checkpoint saved: Gen {}", checkpoint.generation));
 
                             // Reload engine
                             match loader.load() {
@@ -86,10 +86,10 @@ impl HotReloadRunner {
                                     // Restore checkpoint
                                     match engine.load_checkpoint(checkpoint) {
                                         Ok(_) => {
-                                            state.training_state.add_event("   ✅ HOT RELOAD COMPLETE!".to_string());
+                                            state.training_state.add_event("   [OK] HOT RELOAD COMPLETE!".to_string());
                                         }
                                         Err(e) => {
-                                            state.training_state.add_event(format!("   ⚠️  Checkpoint restore failed: {}", e));
+                                            state.training_state.add_event(format!("   [WARN]  Checkpoint restore failed: {}", e));
                                         }
                                     }
                                 }
@@ -122,7 +122,7 @@ impl HotReloadRunner {
                     state.training_state.nca_diversity = update.diversity;
                     state.training_state.nca_current_pattern = update.current_pattern.clone();
                     state.training_state.grid_snapshot = update.grid_snapshot.clone();
-                    state.training_state.total_patterns = update.total_patterns;  // 🔄 Updates dynamically with hot-reload
+                    state.training_state.total_patterns = update.total_patterns;  // [SYNC] Updates dynamically with hot-reload
 
                     // Add events from engine
                     for event in update.events {

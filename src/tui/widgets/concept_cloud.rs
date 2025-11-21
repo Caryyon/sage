@@ -46,7 +46,7 @@ impl ConceptCloud {
 
         if concepts.is_empty() {
             let empty_block = Block::default()
-                .title("🧠 Concept Cloud (Mentioned in Chat)")
+                .title("Concept Cloud (Mentioned in Chat)")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::DarkGray));
             frame.render_widget(empty_block, area);
@@ -62,7 +62,7 @@ impl ConceptCloud {
         let chart = BarChart::default()
             .block(
                 Block::default()
-                    .title("🧠 Concept Cloud (Mentioned in Chat)")
+                    .title("Concept Cloud (Mentioned in Chat)")
                     .borders(Borders::ALL)
             )
             .data(&bar_data)

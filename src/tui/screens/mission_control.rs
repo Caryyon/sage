@@ -76,9 +76,9 @@ fn render_neural_ct_scan(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Title with scan indicator
     let scan_indicator = if state.training_mode == TrainingMode::BaselineTraining {
-        "⚡ SCANNING"
+        " SCANNING"
     } else if state.training_mode == TrainingMode::IrcLearning {
-        "💬 IRC LEARNING"
+        "IRC LEARNING"
     } else {
         "IDLE"
     };
@@ -92,7 +92,7 @@ fn render_neural_ct_scan(frame: &mut Frame, area: Rect, state: &AppState) {
     let pattern_text = format!("  │  Pattern: {}", pattern_name);
 
     lines.push(Line::from(vec![
-        Span::styled("🧠 NEURAL CT SCAN  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("NEURAL CT SCAN  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::styled(scan_indicator, Style::default().fg(
             if state.training_mode != crate::tui::app::TrainingMode::Idle { Color::Green } else { Color::DarkGray }
         )),
@@ -143,7 +143,7 @@ fn render_metrics(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let metrics_text = vec![
         Line::from(vec![
-            Span::styled("📊 METRICS", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("METRICS", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -188,7 +188,7 @@ fn render_irc_feed(frame: &mut Frame, area: Rect, _state: &AppState) {
 
     // Title
     feed_items.push(ListItem::new(Line::from(vec![
-        Span::styled("💬 IRC FEED", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled("IRC FEED", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
     ])));
 
     // Read live messages from IrcSync (shared file between IRC bot and TUI)
@@ -227,7 +227,7 @@ fn render_irc_feed(frame: &mut Frame, area: Rect, _state: &AppState) {
                 let concepts_str = msg.concepts_mentioned.join(", ");
                 feed_items.push(ListItem::new(Line::from(vec![
                     Span::raw("         "),
-                    Span::styled("🧠 ", Style::default().fg(Color::Magenta)),
+                    Span::styled("", Style::default().fg(Color::Magenta)),
                     Span::styled(concepts_str, Style::default().fg(Color::Magenta)),
                 ])));
             }
@@ -247,7 +247,7 @@ fn render_emotional_state(frame: &mut Frame, area: Rect, state: &AppState) {
     let (mood_emoji, mood_text) = if state.training_state.current_loss < 0.05 {
         ("😊", "Confident & Clear")
     } else if state.training_state.current_loss < 0.15 {
-        ("🤔", "Learning & Growing")
+        ("", "Learning & Growing")
     } else {
         ("🔍", "Curious & Exploring")
     };

@@ -107,7 +107,7 @@ fn render_pattern_performance(frame: &mut Frame, area: Rect, _state: &AppState) 
     .header(header)
     .block(
         Block::default()
-            .title("📊 Pattern Performance Comparison")
+            .title("Pattern Performance Comparison")
             .borders(Borders::ALL)
     );
 
@@ -139,7 +139,7 @@ fn render_milestones(frame: &mut Frame, area: Rect, state: &AppState) {
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("Gen 2200  ", Style::default().fg(Color::Cyan)),
-            Span::styled("✓ ", Style::default().fg(Color::Green)),
+            Span::styled("*", Style::default().fg(Color::Green)),
             Span::raw("Circle revisited - Mastery maintained at 97%"),
         ])),
         ListItem::new(Line::from(vec![
@@ -149,12 +149,12 @@ fn render_milestones(frame: &mut Frame, area: Rect, state: &AppState) {
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("Gen 1500  ", Style::default().fg(Color::Cyan)),
-            Span::styled("✓ ", Style::default().fg(Color::Green)),
+            Span::styled("*", Style::default().fg(Color::Green)),
             Span::raw("Cross mastered - 89% final score"),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("Gen 1000  ", Style::default().fg(Color::Cyan)),
-            Span::styled("✓ ", Style::default().fg(Color::Green)),
+            Span::styled("*", Style::default().fg(Color::Green)),
             Span::raw("Square mastered - 65% after 98 attempts"),
         ])),
     ];
@@ -181,9 +181,9 @@ fn render_live_feed(frame: &mut Frame, area: Rect) {
     } else {
         for msg in messages.iter().rev() {
             let icon = if !msg.sage_response.is_empty() {
-                "💬"
+                ""
             } else {
-                "📊"
+                ""
             };
 
             items.push(ListItem::new(Line::from(vec![
