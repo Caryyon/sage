@@ -30,6 +30,7 @@ pub mod concept_associations;  // Creative connections between concepts
 pub mod curiosity;  // Proactive curiosity and question asking
 pub mod self_modification;  // Performance introspection and self-optimization
 pub mod emergent_goals;  // Goal formation and autonomous objectives
+pub mod goal_hierarchy;  // Multi-step goal decomposition and planning
 pub mod tool_system;  // Real-world interaction tools
 pub mod irc_manager;  // IRC bot integrated with TUI
 pub mod llm_client;  // LLM integration for conversational AI

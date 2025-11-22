@@ -402,7 +402,7 @@ Need:
 ### Medium-Term (Next Quarter)
 - [x] Language grounding - DONE (word-pattern mapper, emotion modulation, 57.9% learning)
 - [x] Intrinsic motivation - DONE (novelty detection, curiosity tracking, strategy suggestion)
-- [ ] Goal hierarchy and planning
+- [x] Goal hierarchy - DONE (decomposition, action plans, tree visualization, progress tracking)
 
 ### Long-Term (Next 6 Months)
 - [ ] Meta-learning (SAGE improves its own learning)
