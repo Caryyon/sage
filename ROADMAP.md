@@ -400,8 +400,8 @@ Need:
 - [x] Vision → NCA pipeline - DONE (81% improvement, frame_to_grid, visual learning test)
 
 ### Medium-Term (Next Quarter)
-- [ ] Language grounding (words ↔ patterns)
-- [ ] Intrinsic motivation system
+- [x] Language grounding - DONE (word-pattern mapper, emotion modulation, 57.9% learning)
+- [x] Intrinsic motivation - DONE (novelty detection, curiosity tracking, strategy suggestion)
 - [ ] Goal hierarchy and planning
 
 ### Long-Term (Next 6 Months)

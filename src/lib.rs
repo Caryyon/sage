@@ -18,6 +18,7 @@ pub mod learning;  // New scalable learning system
 pub mod communication;  // SAGE communication system
 pub mod spacetime_client;  // SpacetimeDB integration
 pub mod text_encoder;  // Text → NCA grid encoding
+pub mod word_pattern_mapper;  // Word ↔ NCA pattern grounding (language grounding)
 pub mod preferences;  // Opinion formation & personality
 pub mod emotional_gradients;  // Sophisticated emotional modeling (PAD model)
 pub mod episodic_memory;  // Narrative conversation memory
