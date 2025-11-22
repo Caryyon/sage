@@ -77,14 +77,8 @@ fn render_full_layout(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(area);
 
-    let top_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(rows[0]);
-
+    // Top row: Combined metrics chart (full width)
+    // Middle row: Learning dynamics + Pattern mastery
     let middle_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -102,10 +96,9 @@ fn render_full_layout(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(rows[2]);
 
-    render_loss_convergence_chart(frame, top_cols[0], state);
-    render_learning_dynamics_chart(frame, top_cols[1], state);
-    render_per_pattern_losses(frame, middle_cols[0], state);
-    render_complexity_diversity_chart(frame, middle_cols[1]);
+    render_combined_metrics_chart(frame, rows[0], state);
+    render_learning_dynamics_chart(frame, middle_cols[0], state);
+    render_pattern_mastery_panel(frame, middle_cols[1], state);
     render_training_stats(frame, bottom_cols[0], state);
     render_hyperparameter_panel(frame, bottom_cols[1], state);
     render_eta_panel(frame, bottom_cols[2], state);
@@ -160,6 +153,150 @@ fn render_narrow_layout(frame: &mut Frame, area: Rect, state: &AppState) {
     render_loss_convergence_chart(frame, chunks[0], state);
     render_learning_dynamics_chart(frame, chunks[1], state);
     render_training_stats(frame, chunks[2], state);
+}
+
+/// Combined chart showing Loss, Complexity, and Diversity on normalized scales
+fn render_combined_metrics_chart(frame: &mut Frame, area: Rect, state: &AppState) {
+    let metrics = &state.training_state.metrics_history;
+
+    if metrics.is_empty() {
+        let placeholder = Paragraph::new("Waiting for training data...")
+            .block(Block::default()
+                .title("Training Metrics")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)));
+        frame.render_widget(placeholder, area);
+        return;
+    }
+
+    // Use last 200 points for the chart
+    let recent: Vec<&crate::tui::training::MetricSnapshot> = metrics.iter().rev().take(200).rev().collect();
+    let len = recent.len();
+
+    // Prepare data - normalize all values to 0-1 range for comparison
+    let loss_data: Vec<(f64, f64)> = recent.iter()
+        .enumerate()
+        .map(|(i, m)| (i as f64, m.loss.min(1.0)))  // Loss already ~0-1
+        .collect();
+
+    let complexity_data: Vec<(f64, f64)> = recent.iter()
+        .enumerate()
+        .map(|(i, m)| (i as f64, m.complexity.min(1.0)))
+        .collect();
+
+    let diversity_data: Vec<(f64, f64)> = recent.iter()
+        .enumerate()
+        .map(|(i, m)| (i as f64, m.diversity.min(1.0)))
+        .collect();
+
+    // Get current values for legend
+    let current_loss = recent.last().map(|m| m.loss).unwrap_or(0.0);
+    let current_complexity = recent.last().map(|m| m.complexity).unwrap_or(0.0);
+    let current_diversity = recent.last().map(|m| m.diversity).unwrap_or(0.0);
+
+    let datasets = vec![
+        Dataset::default()
+            .name(format!("Loss: {:.4}", current_loss))
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Cyan))
+            .data(&loss_data),
+        Dataset::default()
+            .name(format!("Complexity: {:.3}", current_complexity))
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Magenta))
+            .data(&complexity_data),
+        Dataset::default()
+            .name(format!("Diversity: {:.3}", current_diversity))
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Yellow))
+            .data(&diversity_data),
+    ];
+
+    let first_gen = recent.first().map(|m| m.generation).unwrap_or(0);
+    let last_gen = recent.last().map(|m| m.generation).unwrap_or(0);
+
+    let chart = Chart::new(datasets)
+        .block(Block::default()
+            .title(Line::from(vec![
+                Span::styled("Training Metrics ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("(Gen {}-{}, {} pts)", first_gen, last_gen, len), Style::default().fg(Color::Gray)),
+            ]))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)))
+        .x_axis(
+            Axis::default()
+                .title("Generation")
+                .style(Style::default().fg(Color::Gray))
+                .bounds([0.0, (len.max(1) - 1) as f64])
+                .labels(vec![
+                    Span::raw(format!("{}", first_gen)),
+                    Span::raw(format!("{}", (first_gen + last_gen) / 2)),
+                    Span::raw(format!("{}", last_gen)),
+                ]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Value")
+                .style(Style::default().fg(Color::Gray))
+                .bounds([0.0, 1.0])
+                .labels(vec![
+                    Span::styled("0.0", Style::default().fg(Color::Green)),
+                    Span::styled("0.5", Style::default().fg(Color::Yellow)),
+                    Span::styled("1.0", Style::default().fg(Color::Red)),
+                ]),
+        );
+
+    frame.render_widget(chart, area);
+}
+
+/// Pattern mastery status panel
+fn render_pattern_mastery_panel(frame: &mut Frame, area: Rect, state: &AppState) {
+    let mastery = &state.pattern_mastery_status;
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("Pattern Mastery Status", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+    ];
+
+    if mastery.is_empty() {
+        lines.push(Line::from(Span::styled("No patterns yet...", Style::default().fg(Color::DarkGray))));
+    } else {
+        for (name, is_mastered, best_loss) in mastery {
+            let (status, color) = if *is_mastered {
+                ("*MASTERED", Color::Green)
+            } else if *best_loss < 0.1 {
+                ("Learning", Color::Yellow)
+            } else {
+                ("Pending", Color::DarkGray)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("{:<12}", name), Style::default().fg(Color::White)),
+                Span::styled(format!("{:<10}", status), Style::default().fg(color)),
+                Span::styled(format!("Best: {:.4}", best_loss), Style::default().fg(Color::Gray)),
+            ]));
+        }
+
+        // Summary
+        let mastered_count = mastery.iter().filter(|(_, m, _)| *m).count();
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Progress: ", Style::default().fg(Color::Cyan)),
+            Span::styled(format!("{}/{} patterns mastered", mastered_count, mastery.len()),
+                Style::default().fg(if mastered_count == mastery.len() { Color::Green } else { Color::Yellow })),
+        ]));
+    }
+
+    let panel = Paragraph::new(lines)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)));
+    frame.render_widget(panel, area);
 }
 
 fn render_loss_convergence_chart(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -236,8 +373,9 @@ fn render_loss_convergence_chart(frame: &mut Frame, area: Rect, state: &AppState
     frame.render_widget(chart, area);
 }
 
-fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
-    let metrics = query_recent_metrics(50);
+#[allow(dead_code)]
+fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect, state: &AppState) {
+    let metrics = &state.training_state.metrics_history;
 
     if metrics.is_empty() {
         let placeholder = Paragraph::new("No training data yet...")
@@ -249,17 +387,20 @@ fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
         return;
     }
 
-    let complexity_data: Vec<(f64, f64)> = metrics.iter()
+    // Use last 100 metrics for chart
+    let recent_metrics: Vec<&crate::tui::training::MetricSnapshot> = metrics.iter().rev().take(100).rev().collect();
+
+    let complexity_data: Vec<(f64, f64)> = recent_metrics.iter()
         .enumerate()
         .map(|(i, m)| (i as f64, m.complexity))
         .collect();
 
-    let diversity_data: Vec<(f64, f64)> = metrics.iter()
+    let diversity_data: Vec<(f64, f64)> = recent_metrics.iter()
         .enumerate()
         .map(|(i, m)| (i as f64, m.diversity))
         .collect();
 
-    let max_val = metrics.iter()
+    let max_val = recent_metrics.iter()
         .map(|m| m.complexity.max(m.diversity))
         .fold(0.0, f64::max)
         .max(0.1);
@@ -282,8 +423,8 @@ fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
     let chart = Chart::new(datasets)
         .block(Block::default()
             .title(Line::from(vec![
-                Span::styled("", Style::default().fg(Color::Cyan)),
-                Span::styled("System Dynamics", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("System Dynamics ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("(Last {} gens)", recent_metrics.len()), Style::default().fg(Color::Gray)),
             ]))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan)))
@@ -291,11 +432,11 @@ fn render_complexity_diversity_chart(frame: &mut Frame, area: Rect) {
             Axis::default()
                 .title("Generation")
                 .style(Style::default().fg(Color::Gray))
-                .bounds([0.0, (metrics.len() - 1) as f64])
+                .bounds([0.0, (recent_metrics.len().max(1) - 1) as f64])
                 .labels(vec![
                     Span::raw("0"),
-                    Span::raw(format!("{}", metrics.len() / 2)),
-                    Span::raw(format!("{}", metrics.len())),
+                    Span::raw(format!("{}", recent_metrics.len() / 2)),
+                    Span::raw(format!("{}", recent_metrics.len())),
                 ]),
         )
         .y_axis(
@@ -409,6 +550,7 @@ fn render_learning_dynamics_chart(frame: &mut Frame, area: Rect, state: &AppStat
     frame.render_widget(block, area);
 }
 
+#[allow(dead_code)]
 fn render_per_pattern_losses(frame: &mut Frame, area: Rect, state: &AppState) {
     // Display loss for each pattern type - critical for understanding curriculum progress
     let per_pattern = &state.training_state.per_pattern_losses;

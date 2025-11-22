@@ -162,6 +162,17 @@ pub struct TrainingSnapshot {
     pub is_damage_phase: bool,
     pub mastery_status: Vec<(String, bool, f64)>,  // (name, mastered, best_loss)
     pub events: Vec<String>,           // Recent training events
+    pub metrics_history: Vec<MetricPoint>,  // Last 250 data points for charts
+}
+
+/// Single data point for training history charts
+#[derive(Clone, Debug)]
+pub struct MetricPoint {
+    pub generation: u64,
+    pub loss: f64,
+    pub diversity: f64,
+    pub complexity: f64,
+    pub pattern: String,
 }
 
 impl Default for TrainingSnapshot {
@@ -179,6 +190,7 @@ impl Default for TrainingSnapshot {
             is_damage_phase: false,
             mastery_status: vec![],
             events: vec![],
+            metrics_history: Vec::with_capacity(250),
         }
     }
 }
@@ -558,7 +570,10 @@ impl App {
             }
 
             let pattern_name = patterns[pattern_index];
-            let damage_phase = iteration >= 50;
+            // Start damage resistance earlier for better regeneration training
+            // Phase 1 (0-29): Pure formation
+            // Phase 2 (30-99): Damage + regeneration (70 iterations of damage training)
+            let damage_phase = iteration >= 30;
 
             // Learning rate based on pattern difficulty
             let learning_rate = match pattern_name {
@@ -609,7 +624,8 @@ impl App {
                 // Damage phase
                 if damage_phase {
                     sage.get_nca_mut().apply_damage();
-                    let recovery_steps = rng.gen_range(32..=48);
+                    // More recovery steps to give network time to regenerate
+                    let recovery_steps = rng.gen_range(48..=80);
 
                     for step in 0..recovery_steps {
                         sage.get_nca_mut().step();
@@ -647,7 +663,40 @@ impl App {
 
             let current_loss = batch_loss / batch_size as f64;
 
-            // Final snapshot update with loss
+            // Calculate diversity (std dev of alive cells)
+            let nca_grid = sage.get_current_nca_grid();
+            let alive_values: Vec<f64> = nca_grid.cells.iter()
+                .flatten()
+                .map(|cell| cell[3])
+                .filter(|&alpha| alpha > 0.1)
+                .collect();
+            let diversity = if alive_values.len() > 1 {
+                let mean = alive_values.iter().sum::<f64>() / alive_values.len() as f64;
+                let variance = alive_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / alive_values.len() as f64;
+                variance.sqrt()
+            } else {
+                0.0
+            };
+
+            // Calculate complexity (neighbor differences)
+            let mut complexity = 0.0;
+            let mut count = 0;
+            for y in 1..31 {
+                for x in 1..31 {
+                    let center = nca_grid.cells[y][x][3];
+                    let neighbors = [
+                        nca_grid.cells[y-1][x][3], nca_grid.cells[y+1][x][3],
+                        nca_grid.cells[y][x-1][3], nca_grid.cells[y][x+1][3],
+                    ];
+                    for n in neighbors {
+                        complexity += (center - n).abs();
+                        count += 1;
+                    }
+                }
+            }
+            complexity = if count > 0 { complexity / count as f64 } else { 0.0 };
+
+            // Final snapshot update with loss and metrics history
             {
                 let mut snap = snapshot.lock().unwrap();
                 snap.loss = current_loss;
@@ -657,6 +706,18 @@ impl App {
                     mastery_status[pattern_index].2 = current_loss;
                 }
                 snap.mastery_status = mastery_status.clone();
+
+                // Add to metrics history (keep last 250 points)
+                snap.metrics_history.push(MetricPoint {
+                    generation,
+                    loss: current_loss,
+                    diversity,
+                    complexity,
+                    pattern: pattern_name.to_string(),
+                });
+                if snap.metrics_history.len() > 250 {
+                    snap.metrics_history.remove(0);
+                }
             }
 
             let loss = current_loss;
@@ -1161,6 +1222,17 @@ impl App {
                     self.state.training_state.add_event(event.clone());
                 }
             }
+
+            // Sync metrics history for charts
+            self.state.training_state.metrics_history = snap.metrics_history.iter()
+                .map(|mp| crate::tui::training::MetricSnapshot {
+                    generation: mp.generation,
+                    loss: mp.loss,
+                    complexity: mp.complexity,
+                    diversity: mp.diversity,
+                    pattern: mp.pattern.clone(),
+                })
+                .collect();
         }
     }
 

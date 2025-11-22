@@ -587,9 +587,10 @@ impl NCA {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
-        let center_x = rng.gen_range(0..self.grid.width);
-        let center_y = rng.gen_range(0..self.grid.height);
-        let radius = rng.gen_range(3..8);
+        // Damage center biased toward pattern center (where cells are more likely to exist)
+        let center_x = rng.gen_range(8..24);  // Bias toward center
+        let center_y = rng.gen_range(8..24);
+        let radius = rng.gen_range(4..9);  // Moderate damage - challenging but learnable
 
         for y in 0..self.grid.height {
             for x in 0..self.grid.width {
