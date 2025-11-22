@@ -29,6 +29,12 @@ nca_results.txt
 nca_multipattern_results.txt
 sage_results.txt
 
+# Generated HTML visualization files
+NCA_FLOW.html
+SAGE_ARCHITECTURE.html
+SAGE_WORKFLOW.html
+sage-dashboard.html
+
 # Environment variables (NEVER commit tokens!)
 .env
 .env.local

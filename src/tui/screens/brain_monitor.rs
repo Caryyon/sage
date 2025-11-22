@@ -1,6 +1,6 @@
-// SAGE Brain Monitor - Enhanced with Vision and Autonomous Consciousness
-// Dual-view: Camera feed + NCA grid processing
-// Shows what SAGE sees and how it processes visual + conversational input
+// SAGE Dashboard - Primary training visualization
+// Shows NCA grid, training metrics, and meta-learning status
+// Renamed from Brain Monitor to be the main dashboard
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect, Alignment},
@@ -50,22 +50,322 @@ fn render_minimal_mode(frame: &mut Frame, area: Rect, state: &AppState) {
     render_compact_status(frame, chunks[2], state);
 }
 
-/// Full mode with dual-view camera + NCA grid
+/// Full mode with NCA grid + training metrics
 fn render_full_mode(frame: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),       // Title banner
-            Constraint::Min(15),         // Dual view: Camera + NCA Grid
-            Constraint::Length(6),       // Autonomous Activity Feed
-            Constraint::Length(5),       // Visual Memories & Status
+            Constraint::Min(12),         // Main content: NCA Grid + Training Metrics
+            Constraint::Length(8),       // Training progress + Events
         ])
         .split(area);
 
     render_title_banner(frame, chunks[0], state);
-    render_dual_view(frame, chunks[1], state);
-    render_autonomous_activity(frame, chunks[2], state);
-    render_visual_memories_status(frame, chunks[3], state);
+    render_main_content(frame, chunks[1], state);
+    render_training_progress(frame, chunks[2], state);
+}
+
+/// Main content: NCA grid on left, training metrics on right
+fn render_main_content(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(55),  // NCA Grid (larger)
+            Constraint::Percentage(45),  // Training Metrics
+        ])
+        .split(area);
+
+    render_nca_grid(frame, chunks[0], state);
+    render_training_metrics(frame, chunks[1], state);
+}
+
+/// Training metrics panel showing generation, loss, pattern, meta-learning
+fn render_training_metrics(frame: &mut Frame, area: Rect, state: &AppState) {
+    // Split into: Target Pattern (top) + Metrics (bottom)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(9),   // Target pattern ASCII art (needs more space)
+            Constraint::Min(7),      // Metrics
+        ])
+        .split(area);
+
+    render_target_pattern(frame, chunks[0], state);
+    render_metrics_content(frame, chunks[1], state);
+}
+
+/// ASCII art of the target pattern SAGE is learning
+fn render_target_pattern(frame: &mut Frame, area: Rect, state: &AppState) {
+    let ts = &state.training_state;
+    let pattern_name = &ts.nca_current_pattern;
+
+    // Extract just the pattern type from the full name (e.g., "Circle" from "(1/9) Circle [1] FORM...")
+    let simple_name = extract_pattern_name(pattern_name);
+
+    // Get pattern ASCII art and color
+    let (art, pattern_color) = get_pattern_art(&simple_name);
+
+    // Build display with pattern art
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("TARGET ", Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD)),
+            Span::styled(&simple_name, Style::default().fg(pattern_color).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),  // Spacer
+    ];
+
+    for art_line in art {
+        lines.push(Line::from(Span::styled(art_line, Style::default().fg(pattern_color))));
+    }
+
+    let panel = Paragraph::new(lines)
+        .alignment(Alignment::Center)
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(0, 255, 0))));
+
+    frame.render_widget(panel, area);
+}
+
+/// Extract the simple pattern name from complex training strings
+fn extract_pattern_name(full_name: &str) -> String {
+    let lower = full_name.to_lowercase();
+    if lower.contains("circle") {
+        "Circle".to_string()
+    } else if lower.contains("square") {
+        "Square".to_string()
+    } else if lower.contains("cross") {
+        "Cross".to_string()
+    } else if lower.contains("spiral") {
+        "Spiral".to_string()
+    } else if full_name.is_empty() {
+        "Initializing...".to_string()
+    } else {
+        // Return first word or truncated version
+        full_name.split_whitespace().next().unwrap_or("Unknown").to_string()
+    }
+}
+
+/// Get ASCII art for each pattern type
+fn get_pattern_art(pattern_name: &str) -> (Vec<&'static str>, Color) {
+    match pattern_name.to_lowercase().as_str() {
+        s if s.contains("circle") => (vec![
+            "   ████   ",
+            " ██    ██ ",
+            "██      ██",
+            " ██    ██ ",
+            "   ████   ",
+        ], Color::Rgb(0, 255, 136)),  // eerie_green
+
+        s if s.contains("square") => (vec![
+            "██████████",
+            "██      ██",
+            "██      ██",
+            "██      ██",
+            "██████████",
+        ], Color::Rgb(255, 136, 0)),  // ember_orange
+
+        s if s.contains("cross") => (vec![
+            "    ██    ",
+            "    ██    ",
+            "██████████",
+            "    ██    ",
+            "    ██    ",
+        ], Color::Rgb(255, 0, 0)),  // fire_red
+
+        s if s.contains("spiral") => (vec![
+            "  ██████  ",
+            " ██    ██ ",
+            "██  ██  ██",
+            " ██  ██   ",
+            "  ████    ",
+        ], Color::Rgb(136, 255, 0)),  // bright_green
+
+        _ => (vec![
+            "    ??    ",
+            "   ????   ",
+            "  ??????  ",
+            "   ????   ",
+            "    ??    ",
+        ], Color::Gray),
+    }
+}
+
+/// The actual metrics content with visual bars
+fn render_metrics_content(frame: &mut Frame, area: Rect, state: &AppState) {
+    let ts = &state.training_state;
+
+    // Loss bar visualization (inverted - lower is better)
+    let loss_ratio = (1.0 - ts.current_loss.min(1.0)).max(0.0);
+    let loss_bar_width = 15;
+    let filled = (loss_ratio * loss_bar_width as f64) as usize;
+    let loss_bar: String = format!("[{}{}]",
+        "█".repeat(filled),
+        "░".repeat(loss_bar_width - filled)
+    );
+
+    let loss_color = if ts.current_loss < 0.05 {
+        Color::Rgb(0, 255, 0)  // gmork_green
+    } else if ts.current_loss < 0.15 {
+        Color::Rgb(136, 255, 0)  // bright_green
+    } else if ts.current_loss < 0.3 {
+        Color::Rgb(255, 136, 0)  // ember_orange
+    } else {
+        Color::Rgb(255, 0, 0)  // fire_red
+    };
+
+    // Mastery progress bar
+    let mastery_ratio = (ts.low_loss_streak as f64 / 50.0).min(1.0);
+    let mastery_filled = (mastery_ratio * 10.0) as usize;
+    let mastery_bar: String = format!("[{}{}]",
+        "█".repeat(mastery_filled),
+        "░".repeat(10 - mastery_filled)
+    );
+
+    let lines = vec![
+        // Generation with large number
+        Line::from(vec![
+            Span::styled("Gen ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{}", ts.nca_generation), Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD)),
+            Span::raw("  "),
+            Span::styled("LR ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{:.5}", ts.learning_rate), Style::default().fg(Color::White)),
+        ]),
+        // Loss with visual bar
+        Line::from(vec![
+            Span::styled("Loss ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{:.4} ", ts.current_loss), Style::default().fg(loss_color).add_modifier(Modifier::BOLD)),
+            Span::styled(&loss_bar, Style::default().fg(loss_color)),
+        ]),
+        // Mastery progress
+        Line::from(vec![
+            Span::styled("Mastery ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{}/50 ", ts.low_loss_streak.min(50)), Style::default().fg(
+                if ts.low_loss_streak >= 50 { Color::Rgb(0, 255, 0) } else { Color::Rgb(255, 136, 0) }
+            )),
+            Span::styled(&mastery_bar, Style::default().fg(
+                if ts.low_loss_streak >= 50 { Color::Rgb(0, 255, 0) } else { Color::Rgb(255, 136, 0) }
+            )),
+        ]),
+        // Strategy
+        Line::from(vec![
+            Span::styled("Strategy ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(&ts.meta_learning_strategy, Style::default().fg(Color::Rgb(0, 255, 136)).add_modifier(Modifier::BOLD)),
+        ]),
+        // Metrics row
+        Line::from(vec![
+            Span::styled("Complexity ", Style::default().fg(Color::Rgb(0, 120, 0))),
+            Span::styled(format!("{:.2}", ts.nca_complexity), Style::default().fg(Color::White)),
+            Span::raw(" "),
+            Span::styled("Diversity ", Style::default().fg(Color::Rgb(0, 120, 0))),
+            Span::styled(format!("{:.2}", ts.nca_diversity), Style::default().fg(Color::White)),
+        ]),
+    ];
+
+    let panel = Paragraph::new(lines)
+        .block(Block::default()
+            .title(" Metrics ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(0, 255, 0))));
+
+    frame.render_widget(panel, area);
+}
+
+/// Training progress: mastery gauge + recent events
+fn render_training_progress(frame: &mut Frame, area: Rect, state: &AppState) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(35),  // Progress bars
+            Constraint::Percentage(65),  // Recent events
+        ])
+        .split(area);
+
+    render_progress_bars(frame, chunks[0], state);
+    render_recent_events(frame, chunks[1], state);
+}
+
+/// Progress bars with gmork theme
+fn render_progress_bars(frame: &mut Frame, area: Rect, state: &AppState) {
+    let ts = &state.training_state;
+
+    // Build custom ASCII progress bars
+    let mastery_ratio = (ts.low_loss_streak as f64 / 50.0).min(1.0);
+    let mastery_filled = (mastery_ratio * 20.0) as usize;
+    let mastery_bar = format!("[{}{}]", "█".repeat(mastery_filled), "░".repeat(20 - mastery_filled));
+    let mastery_color = if mastery_ratio >= 1.0 { Color::Rgb(0, 255, 0) } else { Color::Rgb(0, 255, 136) };
+
+    let attempts_ratio = (ts.pattern_attempts as f64 / 100.0).min(1.0);
+    let attempts_filled = (attempts_ratio * 20.0) as usize;
+    let attempts_bar = format!("[{}{}]", "█".repeat(attempts_filled), "░".repeat(20 - attempts_filled));
+    let attempts_color = if attempts_ratio >= 1.0 { Color::Rgb(255, 0, 0) } else { Color::Rgb(255, 136, 0) };
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Mastery ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{}/50", ts.low_loss_streak.min(50)), Style::default().fg(mastery_color).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(Span::styled(&mastery_bar, Style::default().fg(mastery_color))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Attempts ", Style::default().fg(Color::Rgb(0, 180, 0))),
+            Span::styled(format!("{}/100", ts.pattern_attempts.min(100)), Style::default().fg(attempts_color).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(Span::styled(&attempts_bar, Style::default().fg(attempts_color))),
+    ];
+
+    let panel = Paragraph::new(lines)
+        .block(Block::default()
+            .title(" Progress ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(0, 255, 0))));
+
+    frame.render_widget(panel, area);
+}
+
+/// Recent training events with gmork colors
+fn render_recent_events(frame: &mut Frame, area: Rect, state: &AppState) {
+    let ts = &state.training_state;
+
+    let mut lines: Vec<Line> = ts.recent_events.iter()
+        .rev()
+        .take(5)
+        .map(|event| {
+            let (icon, color) = if event.contains("[OK]") || event.contains("mastered") {
+                ("✓", Color::Rgb(0, 255, 0))  // gmork_green
+            } else if event.contains("[SYNC]") || event.contains("Strategy") {
+                ("⟳", Color::Rgb(0, 255, 136))  // eerie_green
+            } else if event.contains("[TARGET]") || event.contains("Pattern") {
+                ("◎", Color::Rgb(136, 255, 0))  // bright_green
+            } else if event.contains("LR") || event.contains("learning") {
+                ("λ", Color::Rgb(255, 136, 0))  // ember_orange
+            } else if event.contains("error") || event.contains("fail") {
+                ("✗", Color::Rgb(255, 0, 0))  // fire_red
+            } else {
+                ("•", Color::Rgb(0, 180, 0))  // dim green
+            };
+            Line::from(vec![
+                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(event.chars().take(50).collect::<String>(), Style::default().fg(Color::Rgb(0, 200, 0))),
+            ])
+        })
+        .collect();
+
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Waiting for training events...",
+            Style::default().fg(Color::Rgb(0, 100, 0))
+        )));
+    }
+
+    let panel = Paragraph::new(lines)
+        .block(Block::default()
+            .title(" Events ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(0, 255, 0))));
+
+    frame.render_widget(panel, area);
 }
 
 fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -122,7 +422,7 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let title = Paragraph::new(Line::from(vec![
         Span::styled("", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::styled("SAGE BRAIN MONITOR", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled("SAGE DASHBOARD", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw("  │  "),
         Span::styled(format!("{} Experiences", total_exp), Style::default().fg(Color::Yellow)),
         Span::raw("  │  "),
@@ -143,86 +443,7 @@ fn render_title_banner(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(title, area);
 }
 
-/// Render dual-view: Camera feed on left, NCA processing on right
-fn render_dual_view(frame: &mut Frame, area: Rect, state: &AppState) {
-    let dual_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),  // Camera view
-            Constraint::Percentage(50),  // NCA grid
-        ])
-        .split(area);
-
-    render_camera_view(frame, dual_chunks[0], state);
-    render_nca_grid(frame, dual_chunks[1], state);
-}
-
-/// Render camera view showing what SAGE sees
-fn render_camera_view(frame: &mut Frame, area: Rect, state: &AppState) {
-    if let Some(ref camera_frame) = state.camera_frame {
-        // Render the camera frame as colored blocks
-        let height = camera_frame.len().min((area.height as usize).saturating_sub(2));
-        let width = camera_frame.get(0).map(|r| r.len()).unwrap_or(0).min((area.width as usize / 2).saturating_sub(2));
-
-        let mut camera_lines = Vec::new();
-        for y in 0..height {
-            let mut row_spans = Vec::new();
-            for x in 0..width {
-                if let Some(row) = camera_frame.get(y) {
-                    if let Some(&(r, g, b)) = row.get(x) {
-                        row_spans.push(Span::styled(
-                            "██",
-                            Style::default().fg(Color::Rgb(r, g, b))
-                        ));
-                    }
-                }
-            }
-            camera_lines.push(Line::from(row_spans));
-        }
-
-        // Add visual concepts below the camera view
-        if !state.visual_concepts.is_empty() {
-            camera_lines.push(Line::from(""));
-            camera_lines.push(Line::from(Span::styled(
-                format!("Concepts: {}", state.visual_concepts.join(", ")),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC)
-            )));
-        }
-
-        let camera_widget = Paragraph::new(camera_lines)
-            .block(
-                Block::default()
-                    .title(" Camera View (What SAGE Sees)")
-                    .borders(Borders::ALL)
-                    .style(Style::default().fg(Color::Cyan))
-            )
-            .alignment(Alignment::Center);
-
-        frame.render_widget(camera_widget, area);
-    } else {
-        // No camera data - show placeholder
-        let placeholder = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled(" Vision Standby",
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))),
-            Line::from(""),
-            Line::from(Span::styled("Waiting for !see command on IRC...",
-                Style::default().fg(Color::Gray))),
-        ])
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .title(" Camera View")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::DarkGray))
-        );
-
-        frame.render_widget(placeholder, area);
-    }
-}
-
-/// Render NCA grid showing neural processing
+/// Render NCA grid showing neural processing with inline legend
 fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
     let grid_snapshot = IrcSync::get_nca_grid();
 
@@ -257,6 +478,21 @@ fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
             grid_text.push(Line::from(row_spans));
         }
 
+        // Add inline legend at the bottom - VIBRANT gmork neon colors
+        grid_text.push(Line::from("")); // Spacer
+        grid_text.push(Line::from(vec![
+            Span::styled("░░", Style::default().fg(Color::Rgb(0, 60, 0))),
+            Span::styled(" Dead ", Style::default().fg(Color::Rgb(0, 255, 0))),
+            Span::styled("▓▓", Style::default().fg(Color::Rgb(0, 120, 30))),
+            Span::styled(" Low ", Style::default().fg(Color::Rgb(0, 255, 0))),
+            Span::styled("██", Style::default().fg(Color::Rgb(0, 255, 0))),
+            Span::styled(" Active ", Style::default().fg(Color::Rgb(0, 255, 0))),
+            Span::styled("██", Style::default().fg(Color::Rgb(255, 136, 0))),
+            Span::styled(" Firing ", Style::default().fg(Color::Rgb(0, 255, 0))),
+            Span::styled("██", Style::default().fg(Color::Rgb(255, 0, 0))),
+            Span::styled(" Max", Style::default().fg(Color::Rgb(0, 255, 0))),
+        ]));
+
         // Show active concepts
         let concepts_display = if !snapshot.active_concepts.is_empty() {
             format!("Active: {}", snapshot.active_concepts.join(", "))
@@ -272,148 +508,44 @@ fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
                 Block::default()
                     .title(block_title)
                     .borders(Borders::ALL)
-                    .style(Style::default().fg(Color::Green))
+                    .style(Style::default().fg(Color::Rgb(0, 255, 0))) // gmork_green border
             )
             .alignment(Alignment::Center);
 
         frame.render_widget(grid, area);
     } else {
+        // Show legend even when waiting - VIBRANT gmork colors
         let waiting = Paragraph::new(vec![
             Line::from(""),
-            Line::from(""),
             Line::from(Span::styled("⏳ Waiting for neural activity...",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+                Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD))),
             Line::from(""),
             Line::from(Span::styled("Start a conversation on IRC to see SAGE's brain form patterns!",
-                Style::default().fg(Color::Gray))),
+                Style::default().fg(Color::Rgb(0, 180, 0)))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("░░", Style::default().fg(Color::Rgb(0, 60, 0))),
+                Span::styled(" Dead ", Style::default().fg(Color::Rgb(0, 255, 0))),
+                Span::styled("▓▓", Style::default().fg(Color::Rgb(0, 120, 30))),
+                Span::styled(" Low ", Style::default().fg(Color::Rgb(0, 255, 0))),
+                Span::styled("██", Style::default().fg(Color::Rgb(0, 255, 0))),
+                Span::styled(" Active ", Style::default().fg(Color::Rgb(0, 255, 0))),
+                Span::styled("██", Style::default().fg(Color::Rgb(255, 136, 0))),
+                Span::styled(" Firing ", Style::default().fg(Color::Rgb(0, 255, 0))),
+                Span::styled("██", Style::default().fg(Color::Rgb(255, 0, 0))),
+                Span::styled(" Max", Style::default().fg(Color::Rgb(0, 255, 0))),
+            ]),
         ])
         .alignment(Alignment::Center)
         .block(
             Block::default()
                 .title("NCA Processing 32×32")
                 .borders(Borders::ALL)
-                .style(Style::default().fg(Color::DarkGray))
+                .style(Style::default().fg(Color::Rgb(0, 255, 0)))
         );
 
         frame.render_widget(waiting, area);
     }
-}
-
-/// Render autonomous activity feed (dreams & curiosity)
-fn render_autonomous_activity(frame: &mut Frame, area: Rect, state: &AppState) {
-    let mut activity_lines = Vec::new();
-
-    // Show last 5 autonomous activities
-    let recent_activities: Vec<_> = state.autonomous_activities
-        .iter()
-        .rev()
-        .take(5)
-        .collect();
-
-    if recent_activities.is_empty() {
-        activity_lines.push(Line::from(Span::styled(
-            "No autonomous activity yet - waiting for idle time...",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
-        )));
-    } else {
-        for (timestamp, activity_type, description) in recent_activities {
-            let elapsed = state.uptime_seconds.saturating_sub(*timestamp);
-            let mins = elapsed / 60;
-            let secs = elapsed % 60;
-
-            let (emoji, color) = match activity_type.as_str() {
-                "dream" => ("", Color::Magenta),
-                "curiosity" => ("🔍", Color::Yellow),
-                _ => ("", Color::Cyan),
-            };
-
-            activity_lines.push(Line::from(vec![
-                Span::styled(format!("[{}m {}s ago] ", mins, secs), Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{} ", emoji), Style::default().fg(color)),
-                Span::styled(activity_type.to_uppercase(), Style::default().fg(color).add_modifier(Modifier::BOLD)),
-                Span::raw(": "),
-                Span::raw(description.chars().take(80).collect::<String>()),
-            ]));
-        }
-    }
-
-    let activity_widget = Paragraph::new(activity_lines)
-        .block(
-            Block::default()
-                .title(" Autonomous Activity (Dreams & Curiosity)")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Magenta))
-        );
-
-    frame.render_widget(activity_widget, area);
-}
-
-/// Render visual memories and status bar
-fn render_visual_memories_status(frame: &mut Frame, area: Rect, state: &AppState) {
-    let idle_mins = state.idle_seconds / 60;
-    let idle_secs = state.idle_seconds % 60;
-
-    let mut status_lines = Vec::new();
-
-    // Consciousness state
-    let consciousness_info = match state.consciousness_state {
-        crate::tui::app::ConsciousnessState::Active => {
-            format!(" Active learning │ Idle: {}m {}s", idle_mins, idle_secs)
-        },
-        crate::tui::app::ConsciousnessState::Dreaming => {
-            format!(" Consolidating memories │ Idle: {}m {}s", idle_mins, idle_secs)
-        },
-        crate::tui::app::ConsciousnessState::Curious => {
-            format!("🔍 Exploring autonomous goals │ Idle: {}m {}s", idle_mins, idle_secs)
-        },
-    };
-
-    status_lines.push(Line::from(vec![
-        Span::styled("Consciousness: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(consciousness_info),
-    ]));
-
-    // Grid stats
-    let grid_snapshot = IrcSync::get_nca_grid();
-    if let Some(snapshot) = grid_snapshot {
-        let avg_activity = snapshot.alpha_values.iter().sum::<f64>() / snapshot.alpha_values.len() as f64;
-        let alive_cells = snapshot.alpha_values.iter().filter(|&&a| a > 0.1).count();
-
-        status_lines.push(Line::from(vec![
-            Span::styled("Grid Stats: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("Avg: {:.3} │ Alive: {}/1024", avg_activity, alive_cells)),
-        ]));
-    }
-
-    // Visual concepts
-    if !state.visual_concepts.is_empty() {
-        status_lines.push(Line::from(vec![
-            Span::styled("Visual Concepts: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw(state.visual_concepts.join(", ")),
-        ]));
-    }
-
-    // Latest conversation
-    let recent_messages = IrcSync::get_recent(1);
-    if let Some(msg) = recent_messages.last() {
-        status_lines.push(Line::from(vec![
-            Span::styled("Latest: ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-            Span::raw(format!("{}: {} -> {}",
-                msg.sender,
-                msg.message.chars().take(20).collect::<String>(),
-                msg.sage_response.chars().take(30).collect::<String>())),
-        ]));
-    }
-
-    let status = Paragraph::new(status_lines)
-        .block(
-            Block::default()
-                .title("System Status")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Cyan))
-        );
-
-    frame.render_widget(status, area);
 }
 
 /// Compact status for minimal mode
@@ -447,31 +579,56 @@ fn render_compact_status(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 /// Map alpha value to visual character and color with neural firing effects
+/// Uses gmork neovim theme colors - VIBRANT neon aesthetic
+/// Legend: Dead → Low → Active → Firing → Max
 fn alpha_to_style_animated(alpha: f64, cell_phase: f64, activity_boost: f64) -> (&'static str, Color) {
-    let pulse = (cell_phase.sin() * 0.12 + 1.0).max(0.85);
-    let shimmer = (cell_phase * 3.7).sin() * 0.05;
+    // Gmork theme - FULL VIBRANCY:
+    // void = #0d0d0d (13,13,13) - true black
+    // toxic_green = #00ff44 (0,255,68) - neon green
+    // gmork_green = #00ff00 (0,255,0) - PURE electric green
+    // eerie_green = #00ff88 (0,255,136) - cyan-green
+    // bright_green = #88ff00 (136,255,0) - lime
+    // ember_orange = #ff8800 (255,136,0)
+    // fire_red = #ff0000 (255,0,0)
+    // bone_white = #ffffff (255,255,255)
+
+    let pulse = (cell_phase.sin() * 0.15 + 1.0).max(0.85);
+    let shimmer = (cell_phase * 3.7).sin() * 0.08;
     let adjusted_alpha = ((alpha * pulse) + shimmer + (activity_boost * 0.4)).clamp(0.0, 1.0);
     let firing_intensity = activity_boost;
 
+    // Priority 1: Firing states (activity boost overrides alpha)
     if firing_intensity > 0.5 {
+        // Max firing - bone_white with glow
         ("█", Color::Rgb(255, 255, 255))
     } else if firing_intensity > 0.2 {
-        ("█", Color::Rgb(255, 180, 100))
-    } else if adjusted_alpha < 0.05 {
-        ("░", Color::Rgb(20, 10, 30))
-    } else if adjusted_alpha < 0.15 {
-        ("▒", Color::Rgb(30, 30, 80))
-    } else if adjusted_alpha < 0.3 {
-        ("▓", Color::Rgb(50, 80, 150))
+        // Firing - ember_orange BRIGHT
+        ("█", Color::Rgb(255, 136, 0))
+    }
+    // Priority 2: Alpha-based gradient - ALL NEON GREENS
+    else if adjusted_alpha < 0.08 {
+        // Dead - void black
+        ("░", Color::Rgb(13, 13, 13))
+    } else if adjusted_alpha < 0.2 {
+        // Dim - very dark green (not gray!)
+        ("▒", Color::Rgb(0, 60, 0))
+    } else if adjusted_alpha < 0.35 {
+        // Low - dark toxic green
+        ("▓", Color::Rgb(0, 120, 30))
     } else if adjusted_alpha < 0.5 {
-        ("█", Color::Rgb(80, 180, 200))
+        // Emerging - toxic_green
+        ("█", Color::Rgb(0, 255, 68))
     } else if adjusted_alpha < 0.65 {
-        ("█", Color::Rgb(180, 220, 100))
+        // Active - PURE gmork_green (the signature color!)
+        ("█", Color::Rgb(0, 255, 0))
     } else if adjusted_alpha < 0.8 {
-        ("█", Color::Rgb(255, 230, 80))
-    } else if adjusted_alpha < 0.9 {
-        ("█", Color::Rgb(255, 160, 50))
+        // High - eerie_green (cyan tint)
+        ("█", Color::Rgb(0, 255, 136))
+    } else if adjusted_alpha < 0.92 {
+        // Very high - bright_green (lime)
+        ("█", Color::Rgb(136, 255, 0))
     } else {
-        ("█", Color::Rgb(255, 80, 40))
+        // Maximum - fire_red
+        ("█", Color::Rgb(255, 0, 0))
     }
 }
