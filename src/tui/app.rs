@@ -163,6 +163,8 @@ pub struct TrainingSnapshot {
     pub mastery_status: Vec<(String, bool, f64)>,  // (name, mastered, best_loss)
     pub events: Vec<String>,           // Recent training events
     pub metrics_history: Vec<MetricPoint>,  // Last 250 data points for charts
+    pub low_loss_streak: usize,        // Consecutive iterations with loss below threshold
+    pub pattern_attempts: usize,       // Total attempts on current pattern
 }
 
 /// Single data point for training history charts
@@ -192,6 +194,8 @@ impl Default for TrainingSnapshot {
             mastery_status: vec![],
             events: vec![],
             metrics_history: Vec::with_capacity(250),
+            low_loss_streak: 0,
+            pattern_attempts: 0,
         }
     }
 }
@@ -286,7 +290,7 @@ impl AppState {
         ].iter().map(|s| s.to_string()).collect();
 
         Self {
-            current_screen: ScreenType::UnifiedDashboard,  // Start with pattern training visualization
+            current_screen: ScreenType::BrainMonitor,  // Start with primary training visualization
             current_phase: Phase::Idle,
             health_status: HealthStatus::Healthy,
             panels: PanelState::new(),
@@ -560,6 +564,10 @@ impl App {
             .collect();
         let mut rng = rand::thread_rng();
 
+        // Progress tracking for gauges
+        let mut low_loss_streak: usize = 0;
+        let mut pattern_attempts: usize = 0;
+
         // Generate initial target pattern
         let mut target_grid = Self::generate_pattern(&patterns[pattern_index]);
 
@@ -767,6 +775,8 @@ impl App {
                     mastery_status[pattern_index].2 = current_loss;
                 }
                 snap.mastery_status = mastery_status.clone();
+                snap.low_loss_streak = low_loss_streak;
+                snap.pattern_attempts = pattern_attempts;
 
                 // Add to metrics history (keep last 250 points)
                 snap.metrics_history.push(MetricPoint {
@@ -785,6 +795,14 @@ impl App {
             let loss = current_loss;
             iteration += 1;
             generation += 1;
+
+            // Update progress tracking for gauges
+            pattern_attempts += 1;
+            if loss < 0.1 {
+                low_loss_streak += 1;
+            } else {
+                low_loss_streak = 0;
+            }
 
             // Check for pattern completion
             if loss < 0.05 || iteration >= total_iterations {
@@ -812,6 +830,10 @@ impl App {
                 pattern_index = (pattern_index + 1) % patterns.len();
                 iteration = 0;
                 target_grid = Self::generate_pattern(&patterns[pattern_index]);
+
+                // Reset progress tracking for new pattern
+                low_loss_streak = 0;
+                pattern_attempts = 0;
             }
 
             // No sleep - run as fast as possible for real-time feel
@@ -1284,6 +1306,10 @@ impl App {
                     self.state.training_state.add_event(event.clone());
                 }
             }
+
+            // Sync progress tracking for gauges
+            self.state.training_state.low_loss_streak = snap.low_loss_streak;
+            self.state.training_state.pattern_attempts = snap.pattern_attempts;
 
             // Sync metrics history for charts
             self.state.training_state.metrics_history = snap.metrics_history.iter()

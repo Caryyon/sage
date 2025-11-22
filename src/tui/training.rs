@@ -5,6 +5,7 @@ use std::thread;
 use super::app::Phase;
 use crate::spacetime_client::SageDbClient;
 use crate::learning::meta_learning::MetaLearner;
+use crate::learning::meta_learning_manager::{MetaLearningManager, MetaLearningConfig, MetaLearningEvent};
 
 /// Target patterns for NCA to learn
 #[derive(Clone, Copy)]
@@ -196,6 +197,23 @@ pub struct TrainingState {
 
     // Training history buffer (for Database Monitor charts)
     pub metrics_history: Vec<MetricSnapshot>,  // Last 200 training iterations
+
+    // Meta-Learning Dashboard fields (Phase A-F integration)
+    pub meta_learning_strategy: String,      // Current strategy name
+    pub strategy_confidence: f64,            // Confidence in strategy selection
+    pub strategy_reasoning: String,          // Why this strategy was chosen
+    pub warmup_complete: bool,               // Phase A: warmup done?
+    pub lr_cycle_progress: f64,              // Phase A: cosine cycle progress 0-1
+    pub reptile_meta_steps: usize,           // Phase B: meta-steps completed
+    pub reptile_avg_loss: f64,               // Phase B: average loss across tasks
+    pub pbt_population_size: usize,          // Phase C: population size
+    pub pbt_evolutions: usize,               // Phase C: evolution count
+    pub pbt_best_score: f64,                 // Phase C: best score found
+    pub pbt_best_lr: f64,                    // Phase C: best learning rate
+    pub arch_neurons: usize,                 // Phase E: hidden neuron count
+    pub arch_modifications: usize,           // Phase E: modification count
+    pub arch_rollbacks: usize,               // Phase E: rollback count
+    pub meta_learning_events: Vec<String>,   // Recent meta-learning events
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +284,23 @@ impl TrainingState {
 
             // Initialize training history
             metrics_history: Vec::new(),
+
+            // Initialize meta-learning fields
+            meta_learning_strategy: "Standard".to_string(),
+            strategy_confidence: 0.5,
+            strategy_reasoning: "Initial strategy".to_string(),
+            warmup_complete: false,
+            lr_cycle_progress: 0.0,
+            reptile_meta_steps: 0,
+            reptile_avg_loss: 1.0,
+            pbt_population_size: 6,
+            pbt_evolutions: 0,
+            pbt_best_score: 0.0,
+            pbt_best_lr: 0.0001,
+            arch_neurons: 16,
+            arch_modifications: 0,
+            arch_rollbacks: 0,
+            meta_learning_events: Vec::new(),
         }
     }
 
@@ -497,6 +532,26 @@ impl TrainingRunner {
             let base_lr = 0.00005;  // Base learning rate for meta-learner
             let mut meta_learner = MetaLearner::new(base_lr);
 
+            // META-LEARNING MANAGER: Coordinates all 6 meta-learning phases
+            let mut meta_manager = MetaLearningManager::new(MetaLearningConfig {
+                base_lr,
+                enable_reptile: true,
+                enable_pbt: true,
+                enable_architecture_mod: true,
+                pbt_population_size: 6,
+                pbt_evolution_interval: 100,
+                architecture_check_interval: 200,
+            });
+
+            // Initialize meta-learning manager with NCA
+            {
+                let nca_lock = nca.lock().unwrap();
+                meta_manager.initialize(&nca_lock);
+            }
+
+            // Start first pattern with meta-manager
+            let _ = meta_manager.start_pattern("Circle", &[]);
+
             // Spiral curriculum: track patterns to revisit
             let mut curriculum_progress = vec![
                 (TargetPattern::Circle, false),     // Pattern, is_mastered
@@ -616,6 +671,14 @@ impl TrainingRunner {
                 let pseudo_accuracy = 1.0 / (1.0 + loss);  // 0.5 at loss=1.0, approaches 1.0 as loss→0
                 meta_learner.record_step(step_count as usize, loss, pseudo_accuracy);
 
+                // META-LEARNING MANAGER: Update with current loss and record result
+                let gradient_magnitude = loss.abs() * 0.1;  // Approximate gradient from loss
+                let _manager_lr = meta_manager.get_learning_rate(loss, gradient_magnitude);
+                {
+                    let nca_lock = nca.lock().unwrap();
+                    meta_manager.record_result(loss, &nca_lock);
+                }
+
                 // OPTIMIZATION: Only calculate expensive metrics every 10 steps for speed
                 let should_update_metrics = step_count % 10 == 0;
                 let (grid_data, diversity, complexity) = if should_update_metrics {
@@ -693,6 +756,49 @@ impl TrainingRunner {
                         TargetPattern::Cross => "➕ Cross",
                         TargetPattern::Spiral => "Spiral",
                     }.to_string();
+
+                    // Update meta-learning stats from manager
+                    let meta_stats = meta_manager.get_stats();
+                    s.meta_learning_strategy = meta_stats.current_strategy;
+                    s.strategy_confidence = meta_stats.strategy_confidence;
+                    s.strategy_reasoning = meta_stats.strategy_reasoning;
+                    s.learning_rate = meta_stats.current_lr;
+                    s.warmup_complete = meta_stats.warmup_complete;
+                    s.lr_cycle_progress = meta_stats.lr_cycle_progress;
+                    s.reptile_meta_steps = meta_stats.reptile_meta_steps;
+                    s.reptile_avg_loss = meta_stats.avg_loss;
+                    s.pbt_evolutions = meta_stats.pbt_generations;
+                    s.pbt_best_score = meta_stats.pbt_best_score;
+                    s.pbt_best_lr = meta_stats.pbt_best_lr;
+                    s.arch_neurons = meta_stats.architecture_neurons;
+                    s.arch_modifications = meta_stats.architecture_modifications;
+                    s.arch_rollbacks = meta_stats.architecture_rollbacks;
+
+                    // Drain and add meta-learning events
+                    for event in meta_manager.drain_events() {
+                        let event_str = match event {
+                            MetaLearningEvent::StrategySelected { strategy, reason } =>
+                                format!("[Strategy] {} - {}", strategy, reason),
+                            MetaLearningEvent::LearningRateAdjusted { old_lr, new_lr, reason } =>
+                                format!("[LR] {:.6} → {:.6}: {}", old_lr, new_lr, reason),
+                            MetaLearningEvent::ReptileMetaStep { avg_loss, tasks } =>
+                                format!("[Reptile] Meta-step: {} tasks, avg loss {:.4}", tasks, avg_loss),
+                            MetaLearningEvent::PBTEvolution { generation, best_score } =>
+                                format!("[PBT] Gen {}: best score {:.4}", generation, best_score),
+                            MetaLearningEvent::ArchitectureChange { description, applied } =>
+                                format!("[Arch] {}{}", if applied { "✓ " } else { "? " }, description),
+                            MetaLearningEvent::CurriculumAdvanced { pattern, difficulty } =>
+                                format!("[Curriculum] {} (difficulty: {:.2})", pattern, difficulty),
+                            MetaLearningEvent::Milestone { message } =>
+                                format!("[Milestone] {}", message),
+                        };
+                        s.meta_learning_events.push(event_str.clone());
+                        s.add_event(event_str);
+                    }
+                    // Keep meta_learning_events bounded
+                    while s.meta_learning_events.len() > 20 {
+                        s.meta_learning_events.remove(0);
+                    }
 
                     // Update SpacetimeDB every generation (real-time sync)
                     let _ = db_client.update_sage_state(
@@ -859,6 +965,10 @@ impl TrainingRunner {
                             TargetPattern::Cross => "➕ Cross",
                             TargetPattern::Spiral => "Spiral",
                         };
+
+                        // META-LEARNING MANAGER: Start new pattern
+                        let loss_history: Vec<f64> = batch_losses.iter().copied().collect();
+                        let _ = meta_manager.start_pattern(new_pattern_name, &loss_history);
 
                         let mut s = state.lock().unwrap();
                         if curriculum_cycle > 0 {
@@ -1137,6 +1247,23 @@ impl Clone for TrainingState {
 
             // Clone training history
             metrics_history: self.metrics_history.clone(),
+
+            // Clone meta-learning fields
+            meta_learning_strategy: self.meta_learning_strategy.clone(),
+            strategy_confidence: self.strategy_confidence,
+            strategy_reasoning: self.strategy_reasoning.clone(),
+            warmup_complete: self.warmup_complete,
+            lr_cycle_progress: self.lr_cycle_progress,
+            reptile_meta_steps: self.reptile_meta_steps,
+            reptile_avg_loss: self.reptile_avg_loss,
+            pbt_population_size: self.pbt_population_size,
+            pbt_evolutions: self.pbt_evolutions,
+            pbt_best_score: self.pbt_best_score,
+            pbt_best_lr: self.pbt_best_lr,
+            arch_neurons: self.arch_neurons,
+            arch_modifications: self.arch_modifications,
+            arch_rollbacks: self.arch_rollbacks,
+            meta_learning_events: self.meta_learning_events.clone(),
         }
     }
 }

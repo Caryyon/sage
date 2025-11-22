@@ -1,15 +1,20 @@
 // Screen trait and implementations
+//
+// MINIMAL CORE SCREENS (3 total):
+// 1. BrainMonitor - Primary training view (NCA grid, camera, status)
+// 2. Analytics - Charts and historical data (was DatabaseMonitor)
+// 3. MetaLearning - All 6 meta-learning phases
 
-// New UX-designed screens
-pub mod brain_monitor;           // Live NCA grid visualization
+pub mod brain_monitor;           // Primary: NCA grid + camera + training status
+pub mod database_monitor;        // Analytics: Charts, metrics history
+pub mod meta_learning_dashboard; // Meta-learning: All 6 phases
+
+// Legacy screens (kept for backwards compatibility, not in main cycle)
+pub mod unified_dashboard;
 pub mod social_mind;
 pub mod neural_observatory;
 pub mod evolution_timeline;
-pub mod control_center;          // SAGE instance management
-
-// Legacy screens (kept for reference)
-pub mod unified_dashboard;
-pub mod database_monitor;
+pub mod control_center;
 pub mod chat;
 pub mod mission_control;
 
@@ -21,15 +26,17 @@ use crate::tui::app::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScreenType {
-    // New designs
-    BrainMonitor,         // Live NCA grid visualization (NEW - primary screen)
+    // Core screens (Tab cycles through these 3)
+    BrainMonitor,    // Primary training visualization
+    Analytics,       // Charts and metrics (was DatabaseMonitor)
+    MetaLearning,    // Meta-learning phases
+
+    // Legacy (accessible but not in main Tab cycle)
+    UnifiedDashboard,
     SocialMind,
     NeuralObservatory,
     EvolutionTimeline,
-    ControlCenter,        // SAGE instance management
-    // Legacy (deprecated)
-    UnifiedDashboard,
-    DatabaseMonitor,
+    ControlCenter,
     Chat,
     MissionControl,
 }
@@ -37,28 +44,32 @@ pub enum ScreenType {
 impl ScreenType {
     pub fn next(&self) -> Self {
         match self {
-            Self::BrainMonitor => Self::SocialMind,
-            Self::SocialMind => Self::NeuralObservatory,
-            Self::NeuralObservatory => Self::EvolutionTimeline,
-            Self::EvolutionTimeline => Self::ControlCenter,
+            // Core 3-screen cycle
+            Self::BrainMonitor => Self::Analytics,
+            Self::Analytics => Self::MetaLearning,
+            Self::MetaLearning => Self::BrainMonitor,
+
+            // Legacy screens jump to core cycle
+            Self::UnifiedDashboard => Self::BrainMonitor,
+            Self::SocialMind => Self::BrainMonitor,
+            Self::NeuralObservatory => Self::BrainMonitor,
+            Self::EvolutionTimeline => Self::BrainMonitor,
             Self::ControlCenter => Self::BrainMonitor,
-            // Legacy screens cycle among themselves
-            Self::UnifiedDashboard => Self::DatabaseMonitor,
-            Self::DatabaseMonitor => Self::MissionControl,
-            Self::Chat => Self::MissionControl,  // Skip Chat - go straight to MissionControl
-            Self::MissionControl => Self::UnifiedDashboard,
+            Self::Chat => Self::BrainMonitor,
+            Self::MissionControl => Self::BrainMonitor,
         }
     }
 
     pub fn name(&self) -> &'static str {
         match self {
-            Self::BrainMonitor => "Brain Monitor",
+            Self::BrainMonitor => "Dashboard",
+            Self::Analytics => "Analytics",
+            Self::MetaLearning => "Meta-Learning",
+            Self::UnifiedDashboard => "Unified Dashboard",
             Self::SocialMind => "Social Mind",
             Self::NeuralObservatory => "Neural Observatory",
             Self::EvolutionTimeline => "Evolution Timeline",
             Self::ControlCenter => "Control Center",
-            Self::UnifiedDashboard => "Unified Dashboard",
-            Self::DatabaseMonitor => "Database Monitor",
             Self::Chat => "Chat",
             Self::MissionControl => "Mission Control",
         }
@@ -74,13 +85,16 @@ pub struct Screen;
 impl Screen {
     pub fn get_screen(screen_type: ScreenType) -> Box<dyn ScreenTrait> {
         match screen_type {
+            // Core screens
             ScreenType::BrainMonitor => Box::new(brain_monitor::BrainMonitorScreen::new()),
+            ScreenType::Analytics => Box::new(database_monitor::DatabaseMonitorScreen),
+            ScreenType::MetaLearning => Box::new(meta_learning_dashboard::MetaLearningDashboard::new()),
+            // Legacy screens (still accessible)
+            ScreenType::UnifiedDashboard => Box::new(unified_dashboard::UnifiedDashboardScreen),
             ScreenType::SocialMind => Box::new(social_mind::SocialMindScreen::new()),
             ScreenType::NeuralObservatory => Box::new(neural_observatory::NeuralObservatoryScreen::new()),
             ScreenType::EvolutionTimeline => Box::new(evolution_timeline::EvolutionTimelineScreen::new()),
             ScreenType::ControlCenter => Box::new(control_center::ControlCenterScreen),
-            ScreenType::UnifiedDashboard => Box::new(unified_dashboard::UnifiedDashboardScreen),
-            ScreenType::DatabaseMonitor => Box::new(database_monitor::DatabaseMonitorScreen),
             ScreenType::Chat => Box::new(chat::ChatScreen),
             ScreenType::MissionControl => Box::new(mission_control::MissionControlScreen),
         }
