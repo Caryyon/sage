@@ -172,6 +172,7 @@ pub struct MetricPoint {
     pub loss: f64,
     pub diversity: f64,
     pub complexity: f64,
+    pub stability: f64,  // Drift during stability phase (lower = more stable)
     pub pattern: String,
 }
 
@@ -582,25 +583,61 @@ impl App {
                 _ => 0.0001,
             };
 
-            // Fast training with periodic snapshot updates for smooth 60fps visualization
-            // Training runs at full speed, we just update the display periodically
+            // STABILITY TRAINING: Extended evolution with sample pool
+            // Growing CA paper approach: train from both seeds AND intermediate states
+            // This teaches the network to maintain patterns as stable attractors
+            //
+            // Phase 1 (steps 0-100): Pattern formation
+            // Phase 2 (steps 100-250): Stability phase - pattern should persist
 
             let batch_size = 4;
             let mut batch_loss = 0.0;
+            let mut batch_stability = 0.0;
             let mut last_snapshot_time = std::time::Instant::now();
             let snapshot_interval = Duration::from_millis(16); // 60fps updates
 
             for batch_idx in 0..batch_size {
-                sage.get_nca_mut().reset_with_seed();
-                let evolution_steps = rng.gen_range(64..=96);
+                // SAMPLE POOL: 30% of batches start from pool (intermediate states)
+                // This is key to stability training - learn to maintain pattern from any state
+                let use_pool = iteration > 10 && rng.gen::<f64>() < 0.3 && sage.get_nca().pool_size() > 0;
+                if use_pool {
+                    let pool_grid = sage.get_nca_mut().sample_from_pool();
+                    sage.get_nca_mut().grid = pool_grid;
+                } else {
+                    sage.get_nca_mut().reset_with_seed();
+                }
+
+                // Set pattern conditioning (one-hot encoding for first 4 patterns)
+                // This teaches the network to produce different patterns based on input
+                if pattern_index < 4 {
+                    sage.get_nca_mut().grid.set_pattern_condition(pattern_index);
+                }
+
+                // EXTENDED EVOLUTION: 150-250 steps (was 64-96)
+                // Longer evolution ensures patterns become stable attractors
+                let evolution_steps = rng.gen_range(150..=250);
+
+                // STABILITY TRACKING: Capture state at step 100 for drift measurement
+                let mut checkpoint_alpha: Option<Vec<Vec<f64>>> = None;
 
                 // Evolve - update snapshot periodically for smooth visualization
                 for step in 0..evolution_steps {
                     sage.get_nca_mut().step();
 
+                    // Capture checkpoint at step 100 (start of stability phase)
+                    if step == 100 {
+                        let grid = sage.get_current_nca_grid();
+                        checkpoint_alpha = Some(
+                            grid.cells.iter()
+                                .map(|row| row.iter().map(|cell| cell[3]).collect())
+                                .collect()
+                        );
+                    }
+
                     // Update snapshot at 60fps intervals (non-blocking)
                     if last_snapshot_time.elapsed() >= snapshot_interval {
                         let current_grid = sage.get_current_nca_grid();
+                        let phase_name = if step < 100 { "FORM" } else { "STABLE" };
                         if let Ok(mut snap) = snapshot.try_lock() {
                             for y in 0..32 {
                                 for x in 0..32 {
@@ -609,7 +646,7 @@ impl App {
                                 }
                             }
                             snap.generation = generation;
-                            snap.pattern_name = format!("{} [{}] step {}", pattern_name, batch_idx + 1, step + 1);
+                            snap.pattern_name = format!("{} [{}] {} {}", pattern_name, batch_idx + 1, phase_name, step + 1);
                             snap.pattern_index = pattern_index;
                             snap.pattern_total = patterns.len();
                             snap.iteration = iteration;
@@ -620,6 +657,23 @@ impl App {
                         last_snapshot_time = std::time::Instant::now();
                     }
                 }
+
+                // Calculate stability: how much did pattern change from step 100 to final?
+                // Lower is better - pattern should be a stable attractor
+                let stability = if let Some(ref checkpoint) = checkpoint_alpha {
+                    let final_grid = sage.get_current_nca_grid();
+                    let mut drift = 0.0;
+                    for y in 0..GRID_SIZE {
+                        for x in 0..GRID_SIZE {
+                            let diff = final_grid.cells[y][x][3] - checkpoint[y][x];
+                            drift += diff * diff;
+                        }
+                    }
+                    drift / (GRID_SIZE * GRID_SIZE) as f64
+                } else {
+                    0.0
+                };
+                batch_stability += stability;
 
                 // Damage phase
                 if damage_phase {
@@ -648,20 +702,27 @@ impl App {
 
                 // Calculate loss for this sample
                 let nca_grid = sage.get_current_nca_grid();
-                let mut loss = 0.0;
+                let mut pattern_loss = 0.0;
                 for y in 0..GRID_SIZE {
                     for x in 0..GRID_SIZE {
                         let diff = nca_grid.cells[y][x][3] - target_grid.cells[y][x][3];
-                        loss += diff * diff;
+                        pattern_loss += diff * diff;
                     }
                 }
-                batch_loss += loss / (GRID_SIZE * GRID_SIZE) as f64;
+                batch_loss += pattern_loss / (GRID_SIZE * GRID_SIZE) as f64;
 
-                // Train
+                // Train with combined loss (pattern matching)
+                // Stability is implicitly trained via pool sampling and extended evolution
                 sage.get_nca_mut().train_step(&target_grid, learning_rate);
+
+                // ADD TO SAMPLE POOL: Store intermediate states for future training
+                // This is essential for stability - network learns to maintain pattern from any state
+                let grid_for_pool = sage.get_current_nca_grid().clone();
+                sage.get_nca_mut().add_to_pool(grid_for_pool, pattern_loss);
             }
 
             let current_loss = batch_loss / batch_size as f64;
+            let avg_stability = batch_stability / batch_size as f64;
 
             // Calculate diversity (std dev of alive cells)
             let nca_grid = sage.get_current_nca_grid();
@@ -713,6 +774,7 @@ impl App {
                     loss: current_loss,
                     diversity,
                     complexity,
+                    stability: avg_stability,  // Track pattern drift during stability phase
                     pattern: pattern_name.to_string(),
                 });
                 if snap.metrics_history.len() > 250 {

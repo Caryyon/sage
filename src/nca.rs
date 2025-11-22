@@ -559,6 +559,11 @@ impl NCA {
         self.sample_pool[idx].clone()
     }
 
+    /// Returns the current number of samples in the pool
+    pub fn pool_size(&self) -> usize {
+        self.sample_pool.len()
+    }
+
     pub fn add_to_pool(&mut self, grid: Grid, _loss: f64) {
         if self.sample_pool.len() < self.pool_size {
             self.sample_pool.push(grid);

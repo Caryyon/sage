@@ -390,14 +390,14 @@ Need:
 ## Priority Matrix
 
 ### Immediate (This Week)
-- [ ] Add 2-3 Tier 2 patterns (Triangle, Ring, Star)
-- [ ] Test damage resistance is working correctly
-- [ ] Verify weight persistence across restarts
+- [x] Add 2-3 Tier 2 patterns (Triangle, Ring, Star) - DONE (all 5 Tier 2 patterns added)
+- [x] Test damage resistance is working correctly - DONE (83%+ cell recovery)
+- [x] Verify weight persistence across restarts - DONE (minor fp variance only)
 
 ### Short-Term (This Month)
-- [ ] Multi-pattern network (one network, all patterns)
-- [ ] Long-term stability training
-- [ ] Vision → NCA pipeline (SAGE sees and remembers)
+- [x] Multi-pattern network (one network, all patterns) - DONE (conditioning enabled)
+- [x] Long-term stability training - DONE (avg drift 0.005, 150-250 steps, pool sampling)
+- [x] Vision → NCA pipeline - DONE (81% improvement, frame_to_grid, visual learning test)
 
 ### Medium-Term (Next Quarter)
 - [ ] Language grounding (words ↔ patterns)

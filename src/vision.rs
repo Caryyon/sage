@@ -3,6 +3,7 @@ use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
 use nokhwa::Camera;
 use image::{RgbaImage, DynamicImage};
 use std::sync::{Arc, Mutex};
+use crate::grid::Grid;
 
 /// SAGE Vision System - Gives SAGE the ability to see and perceive the visual world
 pub struct SageVision {
@@ -95,6 +96,45 @@ impl SageVision {
         }
 
         grid
+    }
+
+    /// Convert an RGBA image to a Grid target for NCA training
+    /// This is the key method for visual learning - SAGE learns to recreate what it sees
+    pub fn frame_to_grid(&self, img: &RgbaImage) -> Grid {
+        let size = self.grid_size as usize;
+        let mut grid = Grid::new(size, size);
+
+        // Resize image if needed (should already be grid_size x grid_size from capture)
+        let resized = if img.width() != self.grid_size || img.height() != self.grid_size {
+            image::imageops::resize(img, self.grid_size, self.grid_size, image::imageops::FilterType::Lanczos3)
+        } else {
+            img.clone()
+        };
+
+        for y in 0..size {
+            for x in 0..size {
+                let pixel = resized.get_pixel(x as u32, y as u32);
+
+                // Set RGBA channels (0-3)
+                grid.cells[y][x][0] = pixel[0] as f64 / 255.0;  // R
+                grid.cells[y][x][1] = pixel[1] as f64 / 255.0;  // G
+                grid.cells[y][x][2] = pixel[2] as f64 / 255.0;  // B
+                grid.cells[y][x][3] = pixel[3] as f64 / 255.0;  // A (1.0 = alive)
+
+                // Hidden channels (4-15) initialized to 0
+                // Pattern condition channels (16-19) left at 0 for visual learning
+                // Environmental channels (20-21) left at 0
+            }
+        }
+
+        grid
+    }
+
+    /// Capture a frame and convert directly to Grid target
+    /// Convenience method for visual learning pipeline
+    pub fn capture_as_grid(&self) -> Result<Grid, String> {
+        let frame = self.capture_frame()?;
+        Ok(self.frame_to_grid(&frame))
     }
 
     /// Extract visual features from an image for concept association
