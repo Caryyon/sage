@@ -207,6 +207,91 @@ pub struct VisualMemory {
     pub timestamp: Timestamp,
 }
 
+// ============================================================================
+// META-LEARNING SYSTEM TABLES
+// ============================================================================
+
+/// Meta-learning strategy decisions - tracks when/why SAGE switches strategies
+#[spacetimedb::table(name = meta_strategy_history, public)]
+pub struct MetaStrategyHistory {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub generation: u64,
+    pub strategy_name: String,        // "aggressive", "conservative", "exploratory", etc.
+    pub reason: String,               // Why this strategy was chosen
+    pub performance_before: f64,      // Loss before strategy change
+    pub performance_after: Option<f64>, // Loss after (filled in later)
+    pub duration_generations: Option<u64>, // How long this strategy was used
+    pub timestamp: Timestamp,
+}
+
+/// Hyperparameter evolution from Population-Based Training (PBT)
+#[spacetimedb::table(name = hyperparameter_evolution, public)]
+pub struct HyperparameterEvolution {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub generation: u64,
+    pub learning_rate: f64,
+    pub batch_size: u32,
+    pub evolution_steps: u32,
+    pub mutation_rate: f64,
+    pub fitness_score: f64,           // How well these params performed
+    pub parent_id: Option<u64>,       // Which config this mutated from
+    pub is_elite: bool,               // Was this config in the top performers?
+    pub timestamp: Timestamp,
+}
+
+/// Architecture self-modification history
+#[spacetimedb::table(name = architecture_changes, public)]
+pub struct ArchitectureChange {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub generation: u64,
+    pub change_type: String,          // "grow", "prune", "restructure"
+    pub layer_affected: String,       // Which layer changed
+    pub old_size: u32,
+    pub new_size: u32,
+    pub trigger: String,              // "performance_plateau", "complexity_increase", etc.
+    pub loss_before: f64,
+    pub loss_after: Option<f64>,
+    pub timestamp: Timestamp,
+}
+
+/// Few-shot adaptation results from Reptile meta-learning
+#[spacetimedb::table(name = few_shot_adaptations, public)]
+pub struct FewShotAdaptation {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub generation: u64,
+    pub task_name: String,            // Pattern or task adapted to
+    pub shots_used: u32,              // How many examples
+    pub adaptation_steps: u32,
+    pub loss_before: f64,
+    pub loss_after: f64,
+    pub transfer_source: String,      // What prior knowledge helped
+    pub adaptation_time_ms: u64,      // How long adaptation took
+    pub timestamp: Timestamp,
+}
+
+/// Learned optimizer state snapshots (L2O)
+#[spacetimedb::table(name = optimizer_snapshots, public)]
+pub struct OptimizerSnapshot {
+    #[primary_key]
+    #[auto_inc]
+    pub id: u64,
+    pub generation: u64,
+    pub optimizer_type: String,       // "adam", "learned", "reptile", etc.
+    pub optimizer_weights_json: String,  // Serialized L2O parameters
+    pub avg_update_magnitude: f64,
+    pub convergence_speed: f64,       // Generations to reach threshold
+    pub stability_score: f64,         // How stable the updates are
+    pub timestamp: Timestamp,
+}
+
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     // Initialize SAGE state
@@ -864,4 +949,180 @@ pub fn delete_user_fact(
     } else {
         Err(format!("Fact not found: {} for user {}", fact_key, user_id))
     }
+}
+
+// ============================================================================
+// META-LEARNING REDUCERS
+// ============================================================================
+
+/// Record a meta-learning strategy change
+#[spacetimedb::reducer]
+pub fn record_strategy_change(
+    ctx: &ReducerContext,
+    generation: u64,
+    strategy_name: String,
+    reason: String,
+    performance_before: f64,
+) {
+    ctx.db.meta_strategy_history().insert(MetaStrategyHistory {
+        id: 0,
+        generation,
+        strategy_name: strategy_name.clone(),
+        reason: reason.clone(),
+        performance_before,
+        performance_after: None,
+        duration_generations: None,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🎯 Strategy change at gen {}: {} (reason: {})", generation, strategy_name, reason);
+}
+
+/// Update strategy outcome after it completes
+#[spacetimedb::reducer]
+pub fn update_strategy_outcome(
+    ctx: &ReducerContext,
+    strategy_id: u64,
+    performance_after: f64,
+    duration_generations: u64,
+) {
+    if let Some(old) = ctx.db.meta_strategy_history().iter().find(|s| s.id == strategy_id) {
+        let strategy_name = old.strategy_name.clone();
+        let reason = old.reason.clone();
+        let performance_before = old.performance_before;
+        let timestamp = old.timestamp;
+        let generation = old.generation;
+
+        ctx.db.meta_strategy_history().delete(old);
+        ctx.db.meta_strategy_history().insert(MetaStrategyHistory {
+            id: strategy_id,
+            generation,
+            strategy_name,
+            reason,
+            performance_before,
+            performance_after: Some(performance_after),
+            duration_generations: Some(duration_generations),
+            timestamp,
+        });
+
+        log::info!("📊 Strategy {} outcome: {:.4} -> {:.4} over {} gens",
+            strategy_id, performance_before, performance_after, duration_generations);
+    }
+}
+
+/// Record hyperparameter configuration from PBT
+#[spacetimedb::reducer]
+pub fn record_hyperparameters(
+    ctx: &ReducerContext,
+    generation: u64,
+    learning_rate: f64,
+    batch_size: u32,
+    evolution_steps: u32,
+    mutation_rate: f64,
+    fitness_score: f64,
+    parent_id: Option<u64>,
+    is_elite: bool,
+) {
+    ctx.db.hyperparameter_evolution().insert(HyperparameterEvolution {
+        id: 0,
+        generation,
+        learning_rate,
+        batch_size,
+        evolution_steps,
+        mutation_rate,
+        fitness_score,
+        parent_id,
+        is_elite,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🧬 Hyperparams recorded: LR={:.6}, batch={}, steps={}, fitness={:.4}{}",
+        learning_rate, batch_size, evolution_steps, fitness_score,
+        if is_elite { " [ELITE]" } else { "" });
+}
+
+/// Record architecture modification
+#[spacetimedb::reducer]
+pub fn record_architecture_change(
+    ctx: &ReducerContext,
+    generation: u64,
+    change_type: String,
+    layer_affected: String,
+    old_size: u32,
+    new_size: u32,
+    trigger: String,
+    loss_before: f64,
+) {
+    ctx.db.architecture_changes().insert(ArchitectureChange {
+        id: 0,
+        generation,
+        change_type: change_type.clone(),
+        layer_affected: layer_affected.clone(),
+        old_size,
+        new_size,
+        trigger: trigger.clone(),
+        loss_before,
+        loss_after: None,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("🏗️  Architecture {}: {} {} -> {} (trigger: {})",
+        change_type, layer_affected, old_size, new_size, trigger);
+}
+
+/// Record few-shot adaptation result
+#[spacetimedb::reducer]
+pub fn record_few_shot_adaptation(
+    ctx: &ReducerContext,
+    generation: u64,
+    task_name: String,
+    shots_used: u32,
+    adaptation_steps: u32,
+    loss_before: f64,
+    loss_after: f64,
+    transfer_source: String,
+    adaptation_time_ms: u64,
+) {
+    ctx.db.few_shot_adaptations().insert(FewShotAdaptation {
+        id: 0,
+        generation,
+        task_name: task_name.clone(),
+        shots_used,
+        adaptation_steps,
+        loss_before,
+        loss_after,
+        transfer_source: transfer_source.clone(),
+        adaptation_time_ms,
+        timestamp: ctx.timestamp,
+    });
+
+    let improvement = ((loss_before - loss_after) / loss_before * 100.0).max(0.0);
+    log::info!("🎓 Few-shot adaptation to {}: {:.4} -> {:.4} ({:.1}% improvement) in {}ms",
+        task_name, loss_before, loss_after, improvement, adaptation_time_ms);
+}
+
+/// Save optimizer snapshot
+#[spacetimedb::reducer]
+pub fn save_optimizer_snapshot(
+    ctx: &ReducerContext,
+    generation: u64,
+    optimizer_type: String,
+    optimizer_weights_json: String,
+    avg_update_magnitude: f64,
+    convergence_speed: f64,
+    stability_score: f64,
+) {
+    ctx.db.optimizer_snapshots().insert(OptimizerSnapshot {
+        id: 0,
+        generation,
+        optimizer_type: optimizer_type.clone(),
+        optimizer_weights_json,
+        avg_update_magnitude,
+        convergence_speed,
+        stability_score,
+        timestamp: ctx.timestamp,
+    });
+
+    log::info!("💾 Optimizer snapshot: {} at gen {} (stability: {:.3})",
+        optimizer_type, generation, stability_score);
 }

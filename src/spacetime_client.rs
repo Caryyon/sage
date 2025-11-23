@@ -652,6 +652,203 @@ impl SageDbClient {
             Err(_) => false,
         }
     }
+
+    // ============================================================================
+    // META-LEARNING PERSISTENCE METHODS
+    // ============================================================================
+
+    /// Record a meta-learning strategy change
+    pub fn record_strategy_change(
+        &self,
+        generation: u64,
+        strategy_name: &str,
+        reason: &str,
+        performance_before: f64,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "record_strategy_change",
+                &generation.to_string(),
+                strategy_name,
+                reason,
+                &performance_before.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Record hyperparameter configuration from PBT
+    pub fn record_hyperparameters(
+        &self,
+        generation: u64,
+        learning_rate: f64,
+        batch_size: u32,
+        evolution_steps: u32,
+        mutation_rate: f64,
+        fitness_score: f64,
+        parent_id: Option<u64>,
+        is_elite: bool,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let parent_str = parent_id.map(|id| id.to_string()).unwrap_or_default();
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "record_hyperparameters",
+                &generation.to_string(),
+                &learning_rate.to_string(),
+                &batch_size.to_string(),
+                &evolution_steps.to_string(),
+                &mutation_rate.to_string(),
+                &fitness_score.to_string(),
+                &parent_str,
+                &is_elite.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Record architecture modification
+    pub fn record_architecture_change(
+        &self,
+        generation: u64,
+        change_type: &str,
+        layer_affected: &str,
+        old_size: u32,
+        new_size: u32,
+        trigger: &str,
+        loss_before: f64,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "record_architecture_change",
+                &generation.to_string(),
+                change_type,
+                layer_affected,
+                &old_size.to_string(),
+                &new_size.to_string(),
+                trigger,
+                &loss_before.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Record few-shot adaptation result
+    pub fn record_few_shot_adaptation(
+        &self,
+        generation: u64,
+        task_name: &str,
+        shots_used: u32,
+        adaptation_steps: u32,
+        loss_before: f64,
+        loss_after: f64,
+        transfer_source: &str,
+        adaptation_time_ms: u64,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "record_few_shot_adaptation",
+                &generation.to_string(),
+                task_name,
+                &shots_used.to_string(),
+                &adaptation_steps.to_string(),
+                &loss_before.to_string(),
+                &loss_after.to_string(),
+                transfer_source,
+                &adaptation_time_ms.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Save optimizer snapshot
+    pub fn save_optimizer_snapshot(
+        &self,
+        generation: u64,
+        optimizer_type: &str,
+        optimizer_weights_json: &str,
+        avg_update_magnitude: f64,
+        convergence_speed: f64,
+        stability_score: f64,
+    ) -> Result<(), String> {
+        if !*self.connected.lock().unwrap() {
+            return Err("Not connected to SpacetimeDB".to_string());
+        }
+
+        let status = std::process::Command::new("spacetime")
+            .args(&[
+                "call",
+                &self.db_name,
+                "save_optimizer_snapshot",
+                &generation.to_string(),
+                optimizer_type,
+                optimizer_weights_json,
+                &avg_update_magnitude.to_string(),
+                &convergence_speed.to_string(),
+                &stability_score.to_string(),
+            ])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("Failed to call reducer: {}", e))?;
+
+        if !status.success() {
+            return Err("Reducer call failed".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for SageDbClient {
