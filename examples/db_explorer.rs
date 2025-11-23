@@ -692,9 +692,11 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated: String = chars[..max_len.saturating_sub(3)].iter().collect();
+        format!("{}...", truncated)
     }
 }
