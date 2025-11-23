@@ -546,9 +546,9 @@ mod tests {
 
         assert_eq!(pbt.population_size(), 8);
 
-        // Check diversity
-        let lrs: Vec<f64> = pbt.get_population().iter()
-            .map(|m| m.hyperparams.learning_rate)
+        // Check diversity - use string representation since f64 doesn't impl Hash
+        let lrs: Vec<String> = pbt.get_population().iter()
+            .map(|m| format!("{:.10}", m.hyperparams.learning_rate))
             .collect();
         let unique_count = lrs.iter().collect::<std::collections::HashSet<_>>().len();
         assert!(unique_count > 1, "Population should have diverse hyperparams");

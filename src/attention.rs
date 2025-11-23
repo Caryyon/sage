@@ -332,13 +332,15 @@ mod tests {
         let mut attention = AttentionSystem::new();
 
         // Add more targets than capacity
+        // Need score >= 0.6 for focal attention. Score = e*0.3 + g*0.3 + s*0.2 + n*0.2
+        // Using (1.0, 1.0, 0.0, 0.0) gives score = 0.6
         for i in 0..10 {
-            let salience = Salience::new(0.9, 0.9, 0.0, 0.0);  // High salience
+            let salience = Salience::new(1.0, 1.0, 0.0, 0.0);  // Score = 0.6 (threshold)
             attention.attend(
                 format!("target_{}", i),
                 format!("Target {}", i),
                 salience,
-                i,
+                i as u64,
             );
         }
 
@@ -391,8 +393,9 @@ mod tests {
     fn test_attention_decay() {
         let mut attention = AttentionSystem::new();
 
-        let salience = Salience::new(0.9, 0.0, 0.0, 0.0);
-        attention.attend("old".to_string(), "Old target".to_string(), salience, 0);
+        // Need score >= 0.6 for focal attention
+        let salience = Salience::new(1.0, 1.0, 0.0, 0.0);  // Score = 0.6
+        attention.attend("old".to_string(), "Old target".to_string(), salience.clone(), 0);
         attention.attend("new".to_string(), "New target".to_string(), salience, 1000);
 
         // Decay old targets

@@ -365,8 +365,9 @@ mod tests {
         manager.add_assistant_message("charlie", "I'm SAGE!".to_string());
 
         let context = manager.format_context("charlie");
-        assert!(context.contains("charlie: What's your name?"));
-        assert!(context.contains("SAGE: I'm SAGE!"));
+        // Format is "User (username): message" and "Assistant (SAGE): message"
+        assert!(context.contains("User (charlie): What's your name?"));
+        assert!(context.contains("Assistant (SAGE): I'm SAGE!"));
     }
 
     #[test]

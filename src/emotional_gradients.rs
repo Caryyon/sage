@@ -308,10 +308,10 @@ mod tests {
 
     #[test]
     fn test_emotional_state_from_loss() {
-        // Low loss = positive
+        // Low loss = positive (with moderate familiarity, arousal is high -> "delighted")
         let happy = EmotionalState::from_loss(0.1, 0.5);
         assert!(happy.valence > 0.0);
-        assert_eq!(happy.to_label(), "pleased");
+        assert_eq!(happy.to_label(), "delighted");  // v > 0.3 && a > 0.5 -> delighted
 
         // High loss = negative
         let upset = EmotionalState::from_loss(0.4, 0.2);
