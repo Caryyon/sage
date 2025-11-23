@@ -2,15 +2,16 @@
 //!
 //! Usage: cargo run --release --example db_explorer
 //!
-//! Keyboard:
-//!   Tab        - Switch between tables/content/query panels
-//!   Up/Down    - Navigate lists
-//!   PgUp/PgDn  - Page through content
-//!   Enter      - Execute query (in query mode)
-//!   e          - Edit selected row (TODO)
-//!   d          - Delete selected row (TODO)
-//!   r          - Refresh data
-//!   q          - Quit
+//! Keyboard (vim-style):
+//!   j/k or Up/Down  - Navigate lists
+//!   h/l or Tab      - Switch panels (Tables -> Content -> Query)
+//!   g/G             - Jump to top/bottom
+//!   Ctrl+d/u        - Half-page scroll
+//!   Ctrl+f/b        - Full page scroll
+//!   PgUp/PgDn       - Page through database results
+//!   Enter           - Execute query (in query mode) / Enter content panel
+//!   r               - Refresh data
+//!   q               - Quit
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -122,15 +123,15 @@ impl App {
 
     fn get_row_count(&self, table: &str) -> usize {
         let output = Command::new("spacetime")
-            .args(["sql", &self.db_name, &format!("SELECT COUNT(*) FROM {}", table)])
+            .args(["sql", &self.db_name, &format!("SELECT COUNT(*) as cnt FROM {}", table)])
             .output();
 
         match output {
             Ok(out) => {
                 let text = String::from_utf8_lossy(&out.stdout);
-                // Parse count from output (format varies)
+                // Parse count from output - look for numeric line after header
                 text.lines()
-                    .filter(|l| !l.trim().is_empty() && !l.contains("COUNT") && !l.contains("---"))
+                    .filter(|l| !l.trim().is_empty() && !l.contains("cnt") && !l.contains("---") && !l.contains("WARNING"))
                     .next()
                     .and_then(|l| l.trim().parse().ok())
                     .unwrap_or(0)
@@ -327,6 +328,58 @@ impl App {
             Panel::Query => Panel::Tables,
         };
     }
+
+    fn cycle_panel_back(&mut self) {
+        self.current_panel = match self.current_panel {
+            Panel::Tables => Panel::Query,
+            Panel::Content => Panel::Tables,
+            Panel::Query => Panel::Content,
+        };
+    }
+
+    fn goto_top(&mut self) {
+        if self.current_panel == Panel::Tables {
+            self.table_state.select(Some(0));
+            self.current_page = 0;
+            self.load_table_content(0);
+        } else {
+            self.content_state.select(Some(0));
+        }
+    }
+
+    fn goto_bottom(&mut self) {
+        if self.current_panel == Panel::Tables {
+            let last = self.tables.len().saturating_sub(1);
+            self.table_state.select(Some(last));
+            self.current_page = 0;
+            self.load_table_content(last);
+        } else {
+            let last = self.content_rows.len().saturating_sub(1);
+            self.content_state.select(Some(last));
+        }
+    }
+
+    fn half_page_down(&mut self) {
+        let half = self.page_size / 2;
+        for _ in 0..half {
+            if self.current_panel == Panel::Tables {
+                self.next_table();
+            } else {
+                self.next_row();
+            }
+        }
+    }
+
+    fn half_page_up(&mut self) {
+        let half = self.page_size / 2;
+        for _ in 0..half {
+            if self.current_panel == Panel::Tables {
+                self.prev_table();
+            } else {
+                self.prev_row();
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), io::Error> {
@@ -363,26 +416,54 @@ fn main() -> Result<(), io::Error> {
                     }
                     _ => {
                         match key.code {
+                            // Quit
                             KeyCode::Char('q') => break,
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+
+                            // Refresh
                             KeyCode::Char('r') => app.refresh_tables(),
+
+                            // Panel navigation (vim: h/l, also Tab/Shift+Tab)
                             KeyCode::Tab => app.cycle_panel(),
-                            KeyCode::Up => {
+                            KeyCode::BackTab => app.cycle_panel_back(),
+                            KeyCode::Char('l') => app.cycle_panel(),
+                            KeyCode::Char('h') => app.cycle_panel_back(),
+
+                            // Vertical navigation (vim: j/k, also arrows)
+                            KeyCode::Up | KeyCode::Char('k') => {
                                 if app.current_panel == Panel::Tables {
                                     app.prev_table();
                                 } else {
                                     app.prev_row();
                                 }
                             }
-                            KeyCode::Down => {
+                            KeyCode::Down | KeyCode::Char('j') => {
                                 if app.current_panel == Panel::Tables {
                                     app.next_table();
                                 } else {
                                     app.next_row();
                                 }
                             }
+
+                            // Page navigation (vim: Ctrl+d/u, also PgUp/PgDn)
                             KeyCode::PageUp => app.prev_page(),
                             KeyCode::PageDown => app.next_page(),
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => break,
+                            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_up(),
+                            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_down(),
+                            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => app.prev_page(),
+                            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => app.next_page(),
+
+                            // Jump to top/bottom (vim: g/G)
+                            KeyCode::Char('g') => app.goto_top(),
+                            KeyCode::Char('G') => app.goto_bottom(),
+
+                            // Enter content panel from tables
+                            KeyCode::Enter => {
+                                if app.current_panel == Panel::Tables {
+                                    app.current_panel = Panel::Content;
+                                }
+                            }
+
                             _ => {}
                         }
                     }
@@ -609,7 +690,7 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(&app.status_message, Style::default().fg(Color::Gray)),
         Span::raw(" | "),
         Span::styled(
-            "Tab:Switch  r:Refresh  q:Quit  PgUp/PgDn:Pages",
+            "j/k:Nav  h/l:Panels  g/G:Top/Bot  ^d/^u:Scroll  r:Refresh  q:Quit",
             Style::default().fg(Color::DarkGray),
         ),
     ]);
