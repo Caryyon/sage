@@ -146,15 +146,12 @@ impl App {
         }
 
         let table_name = &self.tables[table_idx].name;
-        let offset = self.current_page * self.page_size;
 
-        let query = format!(
-            "SELECT * FROM {} LIMIT {} OFFSET {}",
-            table_name, self.page_size, offset
-        );
+        // SpacetimeDB doesn't support LIMIT/OFFSET, so fetch all rows
+        let query = format!("SELECT * FROM {}", table_name);
 
         self.execute_query_internal(&query, true);
-        self.total_rows = self.tables[table_idx].row_count;
+        self.total_rows = self.content_rows.len();
         self.content_state.select(Some(0));
     }
 
@@ -578,12 +575,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|t| t.name.as_str())
         .unwrap_or("(none)");
 
-    let page_info = format!(
-        "Page {}/{} ({} rows)",
-        app.current_page + 1,
-        (app.total_rows / app.page_size).max(1),
-        app.total_rows
-    );
+    let page_info = format!("{} rows", app.total_rows);
 
     let title = format!(" {} - {} ", selected_table, page_info);
 
