@@ -533,7 +533,10 @@ impl App {
             // Try to load saved weights (silently - TUI will show status)
             let _ = sage.get_nca_mut().load_weights_from_file("pattern_training_weights.json");
 
-            Self::training_thread_loop(snapshot, running, paused, sage);
+            // Create DB client for persistence
+            let db_client = crate::spacetime_client::SageDbClient::new("sage-db");
+
+            Self::training_thread_loop(snapshot, running, paused, sage, db_client);
         });
 
         self.training_thread = Some(handle);
@@ -545,6 +548,7 @@ impl App {
         running: Arc<AtomicBool>,
         paused: Arc<AtomicBool>,
         mut sage: SageExperience,
+        db_client: crate::spacetime_client::SageDbClient,
     ) {
         use crate::grid::GRID_SIZE;
         use rand::Rng;
@@ -796,6 +800,17 @@ impl App {
             iteration += 1;
             generation += 1;
 
+            // Persist to SpacetimeDB every 10 generations
+            if generation % 10 == 0 {
+                let _ = db_client.update_sage_state(
+                    generation,
+                    loss,
+                    pattern_name,
+                    complexity,
+                    diversity,
+                );
+            }
+
             // Update progress tracking for gauges
             pattern_attempts += 1;
             if loss < 0.1 {
@@ -825,6 +840,15 @@ impl App {
                         snap.events.remove(0);
                     }
                 }
+
+                // Log to SpacetimeDB
+                let event_type = if mastered { "pattern_mastered" } else { "pattern_completed" };
+                let description = format!("{} (loss: {:.4})", pattern_name, loss);
+                let _ = db_client.log_training_event(
+                    generation,
+                    event_type,
+                    &description,
+                );
 
                 // Move to next pattern
                 pattern_index = (pattern_index + 1) % patterns.len();
