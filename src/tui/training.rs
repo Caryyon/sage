@@ -1,8 +1,9 @@
 // Training runner - executes training phases in background
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use super::app::Phase;
+use super::app::{Phase, TrainingSnapshot, MetricPoint};
 use crate::spacetime_client::SageDbClient;
 use crate::learning::meta_learning::MetaLearner;
 use crate::learning::meta_learning_manager::{MetaLearningManager, MetaLearningConfig, MetaLearningEvent};
@@ -448,6 +449,21 @@ impl TrainingRunner {
             language_learner: Arc::new(Mutex::new(lang_learner)),
             nca: Arc::new(Mutex::new(nca)),
         }
+    }
+
+    /// Start training with TUI snapshot support
+    /// This method syncs training state to the TrainingSnapshot for TUI display
+    pub fn start_training_with_tui(
+        &self,
+        snapshot: Arc<Mutex<TrainingSnapshot>>,
+        running: Arc<AtomicBool>,
+    ) {
+        let state = Arc::clone(&self.state);
+        let nca = Arc::clone(&self.nca);
+
+        thread::spawn(move || {
+            Self::training_loop_with_tui(state, nca, snapshot, running);
+        });
     }
 
     pub fn start_training(&self) {
@@ -1187,6 +1203,365 @@ impl TrainingRunner {
 
     pub fn get_state(&self) -> TrainingState {
         self.state.lock().unwrap().clone()
+    }
+
+    /// Training loop that syncs to TUI TrainingSnapshot
+    fn training_loop_with_tui(
+        state: Arc<Mutex<TrainingState>>,
+        nca: Arc<Mutex<crate::nca::NCA>>,
+        snapshot: Arc<Mutex<TrainingSnapshot>>,
+        running: Arc<AtomicBool>,
+    ) {
+        use crate::grid::GRID_SIZE;
+
+        // Initialize
+        {
+            let mut s = state.lock().unwrap();
+            s.is_running = true;
+            s.add_event("🧬 NCA evolution started (TUI mode)".to_string());
+        }
+
+        // Initialize SpacetimeDB
+        let mut db_client = SageDbClient::new("sage-db");
+        let _ = db_client.connect();
+
+        // Try to load saved weights
+        {
+            let mut nca_lock = nca.lock().unwrap();
+            let _ = nca_lock.load_weights_from_file("pattern_training_weights.json");
+        }
+
+        // Pattern curriculum
+        let patterns = ["Circle", "Square", "Cross", "Spiral"];
+        let mut pattern_index = 0;
+        let mut generation: u64 = 0;
+        let mut low_loss_streak: u64 = 0;
+        let mut pattern_attempts: u64 = 0;
+
+        // Mastery tracking: (name, mastered, best_loss)
+        let mut mastery_status: Vec<(String, bool, f64)> = patterns
+            .iter()
+            .map(|p| (p.to_string(), false, 1.0))
+            .collect();
+
+        // Meta-learning
+        let base_lr = 0.00005;
+        let mut meta_learner = MetaLearner::new(base_lr);
+        let mut meta_manager = MetaLearningManager::new(MetaLearningConfig {
+            base_lr,
+            enable_reptile: true,
+            enable_pbt: true,
+            enable_architecture_mod: true,
+            pbt_population_size: 6,
+            pbt_evolution_interval: 100,
+            architecture_check_interval: 200,
+        });
+
+        // Initialize with NCA
+        {
+            let nca_lock = nca.lock().unwrap();
+            meta_manager.initialize(&nca_lock);
+        }
+        let _ = meta_manager.start_pattern(patterns[pattern_index], &[]);
+
+        // Generate initial target
+        let mut target_grid = generate_target_pattern(match pattern_index {
+            0 => TargetPattern::Circle,
+            1 => TargetPattern::Square,
+            2 => TargetPattern::Cross,
+            _ => TargetPattern::Spiral,
+        });
+
+        let _ = db_client.log_training_event(0, "pattern_start", &format!("Starting with {}", patterns[pattern_index]));
+
+        // Main training loop
+        while running.load(Ordering::Relaxed) {
+            let pattern_name = patterns[pattern_index];
+            let current_pattern_type = match pattern_index {
+                0 => TargetPattern::Circle,
+                1 => TargetPattern::Square,
+                2 => TargetPattern::Cross,
+                _ => TargetPattern::Spiral,
+            };
+
+            // Adaptive learning rate from meta-learner with pattern-specific scaling
+            let base_rate = meta_learner.get_learning_rate();
+            let learning_rate = match current_pattern_type {
+                TargetPattern::Circle => base_rate,
+                TargetPattern::Square => base_rate * 2.0,
+                TargetPattern::Cross => base_rate * 1.6,
+                TargetPattern::Spiral => base_rate * 1.2,
+            };
+
+            // Damage phase after iteration 30
+            let damage_phase = pattern_attempts >= 30;
+
+            // Evolution steps based on pattern
+            let num_steps = match current_pattern_type {
+                TargetPattern::Circle => 24 + (rand::random::<usize>() % 9),
+                TargetPattern::Square => 32 + (rand::random::<usize>() % 13),
+                TargetPattern::Cross => 28 + (rand::random::<usize>() % 11),
+                TargetPattern::Spiral => 36 + (rand::random::<usize>() % 17),
+            };
+
+            // Batch training
+            let batch_size = 5;
+            let mut batch_loss = 0.0;
+
+            for _ in 0..batch_size {
+                // Reset with seed
+                {
+                    let mut nca_lock = nca.lock().unwrap();
+                    nca_lock.reset_with_seed();
+                    if pattern_index < 4 {
+                        nca_lock.grid.set_pattern_condition(pattern_index);
+                    }
+                }
+
+                // Evolve
+                for _ in 0..num_steps {
+                    let mut nca_lock = nca.lock().unwrap();
+                    nca_lock.step();
+                }
+
+                // Damage + recover if in damage phase
+                if damage_phase {
+                    {
+                        let mut nca_lock = nca.lock().unwrap();
+                        nca_lock.apply_damage();
+                    }
+                    let recovery_steps = 32 + (rand::random::<usize>() % 17);
+                    for _ in 0..recovery_steps {
+                        let mut nca_lock = nca.lock().unwrap();
+                        nca_lock.step();
+                    }
+                }
+
+                // Calculate loss
+                let nca_lock = nca.lock().unwrap();
+                let mut loss = 0.0;
+                for y in 0..GRID_SIZE {
+                    for x in 0..GRID_SIZE {
+                        let diff = nca_lock.grid.cells[y][x][3] - target_grid.cells[y][x][3];
+                        loss += diff * diff;
+                    }
+                }
+                batch_loss += loss / (GRID_SIZE * GRID_SIZE) as f64;
+
+                // Train
+                drop(nca_lock);
+                {
+                    let mut nca_lock = nca.lock().unwrap();
+                    nca_lock.train_step(&target_grid, learning_rate);
+                }
+            }
+
+            let current_loss = batch_loss / batch_size as f64;
+
+            // Calculate metrics
+            let (diversity, complexity) = {
+                let nca_lock = nca.lock().unwrap();
+                let alive_values: Vec<f64> = nca_lock.grid.cells.iter()
+                    .flatten()
+                    .map(|cell| cell[3])
+                    .filter(|&alpha| alpha > 0.1)
+                    .collect();
+
+                let diversity = if alive_values.len() > 1 {
+                    let mean = alive_values.iter().sum::<f64>() / alive_values.len() as f64;
+                    let variance = alive_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / alive_values.len() as f64;
+                    variance.sqrt()
+                } else {
+                    0.0
+                };
+
+                let mut complexity = 0.0;
+                let mut count = 0;
+                for y in 1..31 {
+                    for x in 1..31 {
+                        let center = nca_lock.grid.cells[y][x][3];
+                        for (dy, dx) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                            let ny = (y as i32 + dy) as usize;
+                            let nx = (x as i32 + dx) as usize;
+                            complexity += (center - nca_lock.grid.cells[ny][nx][3]).abs();
+                            count += 1;
+                        }
+                    }
+                }
+                (diversity, if count > 0 { complexity / count as f64 } else { 0.0 })
+            };
+
+            // Update meta-learner
+            meta_learner.record_step(generation as usize, current_loss, 1.0 - current_loss);
+
+            // Update TUI snapshot
+            {
+                let nca_lock = nca.lock().unwrap();
+                let mut snap = snapshot.lock().unwrap();
+
+                // Copy grid
+                for y in 0..GRID_SIZE.min(32) {
+                    for x in 0..GRID_SIZE.min(32) {
+                        snap.grid[y][x] = nca_lock.grid.cells[y][x][3];
+                        snap.target_grid[y][x] = target_grid.cells[y][x][3];
+                    }
+                }
+
+                snap.loss = current_loss;
+                snap.generation = generation;
+                snap.pattern_name = pattern_name.to_string();
+                snap.pattern_index = pattern_index;
+                snap.pattern_total = patterns.len();
+                snap.iteration = pattern_attempts as usize;
+                snap.total_iterations = 100;
+                snap.is_damage_phase = damage_phase;
+                snap.low_loss_streak = low_loss_streak as usize;
+                snap.pattern_attempts = pattern_attempts as usize;
+
+                // Update mastery status
+                if current_loss < mastery_status[pattern_index].2 {
+                    mastery_status[pattern_index].2 = current_loss;
+                }
+                snap.mastery_status = mastery_status.clone();
+
+                // Add to metrics history
+                snap.metrics_history.push(MetricPoint {
+                    generation,
+                    loss: current_loss,
+                    diversity,
+                    complexity,
+                    stability: 0.0,
+                    pattern: pattern_name.to_string(),
+                });
+                if snap.metrics_history.len() > 250 {
+                    snap.metrics_history.remove(0);
+                }
+            }
+
+            // Update internal state
+            {
+                let mut s = state.lock().unwrap();
+                s.current_loss = current_loss;
+                s.nca_generation = generation;
+                s.nca_current_pattern = pattern_name.to_string();
+
+                // Record result and process meta-learning events
+                {
+                    let nca_lock = nca.lock().unwrap();
+                    meta_manager.record_result(current_loss, &nca_lock);
+                }
+                let events = meta_manager.drain_events();
+                for event in events {
+                    let msg = match event {
+                        MetaLearningEvent::StrategySelected { strategy, reason } =>
+                            format!("[Strategy] {} - {}", strategy, reason),
+                        MetaLearningEvent::LearningRateAdjusted { old_lr, new_lr, reason } =>
+                            format!("[LR] {:.6} → {:.6}: {}", old_lr, new_lr, reason),
+                        MetaLearningEvent::ReptileMetaStep { avg_loss, tasks } =>
+                            format!("[Reptile] {} tasks, avg loss {:.4}", tasks, avg_loss),
+                        MetaLearningEvent::PBTEvolution { generation, best_score } =>
+                            format!("[PBT] Gen {}: best {:.4}", generation, best_score),
+                        MetaLearningEvent::ArchitectureChange { description, applied } =>
+                            format!("[Arch] {}{}", if applied { "✓ " } else { "" }, description),
+                        MetaLearningEvent::CurriculumAdvanced { pattern, difficulty } =>
+                            format!("[Curriculum] {} (diff: {:.2})", pattern, difficulty),
+                        MetaLearningEvent::Milestone { message } =>
+                            format!("[Milestone] {}", message),
+                    };
+                    s.add_event(msg);
+                }
+            }
+
+            // Persist to SpacetimeDB every 10 generations
+            if generation % 10 == 0 {
+                let _ = db_client.update_sage_state(generation, current_loss, pattern_name, complexity, diversity);
+            }
+
+            // Milestone events
+            if generation == 1 {
+                let _ = db_client.log_training_event(generation, "milestone", "🌱 NCA initialized");
+            } else if generation % 100 == 0 {
+                let _ = db_client.log_training_event(generation, "milestone", &format!("Gen {} - loss: {:.4}", generation, current_loss));
+
+                // Save checkpoint
+                {
+                    let nca_lock = nca.lock().unwrap();
+                    let _ = nca_lock.save_weights_to_file("pattern_training_weights.json");
+                }
+                let _ = db_client.save_network_snapshot(generation, pattern_name, current_loss, "{}");
+            }
+
+            // Track progress
+            generation += 1;
+            pattern_attempts += 1;
+
+            if current_loss < 0.1 {
+                low_loss_streak += batch_size as u64;
+            } else {
+                low_loss_streak = 0;
+            }
+
+            // Pattern progression: mastery (50 streak) or timeout (100 attempts)
+            let should_progress = low_loss_streak >= 50 || pattern_attempts >= 100;
+
+            if should_progress {
+                let mastered = low_loss_streak >= 50;
+                mastery_status[pattern_index].1 = mastered;
+
+                // Log event
+                let event_type = if mastered { "pattern_mastered" } else { "pattern_completed" };
+                let description = format!("{} (loss: {:.4})", pattern_name, current_loss);
+                let _ = db_client.log_training_event(generation, event_type, &description);
+
+                if mastered {
+                    let _ = db_client.master_pattern(pattern_name, generation, current_loss);
+                }
+
+                // Save weights
+                {
+                    let nca_lock = nca.lock().unwrap();
+                    let _ = nca_lock.save_weights_to_file("pattern_training_weights.json");
+                }
+
+                // Add event to snapshot
+                {
+                    let mut snap = snapshot.lock().unwrap();
+                    let msg = if mastered {
+                        format!("✓ {} MASTERED (loss: {:.4})", pattern_name, current_loss)
+                    } else {
+                        format!("{} completed (loss: {:.4})", pattern_name, current_loss)
+                    };
+                    snap.events.push(msg);
+                    if snap.events.len() > 10 {
+                        snap.events.remove(0);
+                    }
+                }
+
+                // Move to next pattern
+                pattern_index = (pattern_index + 1) % patterns.len();
+                pattern_attempts = 0;
+                low_loss_streak = 0;
+
+                target_grid = generate_target_pattern(match pattern_index {
+                    0 => TargetPattern::Circle,
+                    1 => TargetPattern::Square,
+                    2 => TargetPattern::Cross,
+                    _ => TargetPattern::Spiral,
+                });
+
+                let _ = meta_manager.start_pattern(patterns[pattern_index], &[]);
+            }
+
+            // Small sleep to prevent CPU spinning
+            thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Cleanup
+        {
+            let mut s = state.lock().unwrap();
+            s.is_running = false;
+            s.add_event("🛑 Training stopped".to_string());
+        }
     }
 }
 
