@@ -370,8 +370,8 @@ impl MetaLearningManager {
                 let _ = db.record_few_shot_adaptation(
                     self.generation,
                     &task.name,
-                    task.examples.len() as u32,
-                    result.adaptation_steps as u32,
+                    1, // shots_used (single task)
+                    result.steps_taken as u32,
                     result.initial_loss,
                     result.final_loss,
                     "meta_weights", // transfer source
@@ -388,30 +388,40 @@ impl MetaLearningManager {
     /// Check and potentially apply architecture modification
     fn check_architecture_modification(&mut self) {
         let result = self.arch_modifier.try_modification();
-        let arch_state = self.arch_modifier.state();
+        let hidden_neurons = self.arch_modifier.state().hidden_neurons;
 
         match result {
             ModificationResult::Applied { modification, reason, .. } => {
+                // Calculate sizes before mutable borrow
+                let (change_type, old_size, new_size) = match &modification {
+                    crate::learning::architecture_modification::ModificationType::AddNeurons { count, .. } => {
+                        ("add_neurons", hidden_neurons as u32 - *count as u32, hidden_neurons as u32)
+                    }
+                    crate::learning::architecture_modification::ModificationType::RemoveNeurons { count, .. } => {
+                        ("remove_neurons", hidden_neurons as u32 + *count as u32, hidden_neurons as u32)
+                    }
+                    crate::learning::architecture_modification::ModificationType::ScaleActivation { .. } => {
+                        ("scale_activation", hidden_neurons as u32, hidden_neurons as u32)
+                    }
+                    crate::learning::architecture_modification::ModificationType::AdjustDropout { .. } => {
+                        ("adjust_dropout", hidden_neurons as u32, hidden_neurons as u32)
+                    }
+                    crate::learning::architecture_modification::ModificationType::None => {
+                        ("none", hidden_neurons as u32, hidden_neurons as u32)
+                    }
+                };
+                let description = format!("{}: {}", modification.description(), reason);
+
                 self.add_event(MetaLearningEvent::ArchitectureChange {
-                    description: format!("{}: {}", modification.description(), reason),
+                    description,
                     applied: true,
                 });
 
                 // Persist architecture change to DB
                 if let Some(db) = &self.db_client {
-                    let (old_size, new_size) = match &modification {
-                        crate::learning::architecture_modification::ArchitectureModification::GrowHidden { new_neurons, .. } => {
-                            (arch_state.hidden_neurons as u32 - *new_neurons as u32, arch_state.hidden_neurons as u32)
-                        }
-                        crate::learning::architecture_modification::ArchitectureModification::PruneHidden { target_neurons, .. } => {
-                            (arch_state.hidden_neurons as u32, *target_neurons as u32)
-                        }
-                        _ => (arch_state.hidden_neurons as u32, arch_state.hidden_neurons as u32),
-                    };
-
                     let _ = db.record_architecture_change(
                         self.generation,
-                        modification.description(),
+                        change_type,
                         "hidden_layer",
                         old_size,
                         new_size,
