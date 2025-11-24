@@ -234,7 +234,7 @@ mod tests {
     #[ignore] // Only run when library is built
     fn test_load_engine() {
         let mut loader = EngineLoader::new().unwrap();
-        let engine = loader.load().unwrap();
+        let _engine = loader.load().unwrap();
         println!("Engine version: {}", loader.version());
     }
 }

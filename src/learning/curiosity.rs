@@ -385,7 +385,7 @@ mod tests {
                 grid2[i][j] = 1.0;  // Quarter filled
             }
         }
-        let novelty2 = detector.calculate_novelty(&grid2);
+        let _novelty2 = detector.calculate_novelty(&grid2);
 
         // Grid3 is same as grid1 - should be less novel since grid1 is in history
         let grid3 = vec![vec![0.5; 32]; 32];

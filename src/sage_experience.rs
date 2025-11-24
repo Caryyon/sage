@@ -1695,7 +1695,7 @@ mod tests {
     #[test]
     fn test_experience_text() {
         let mut sage = SageExperience::new();
-        let (opinion, response) = sage.experience_text("hello world");
+        let (_opinion, response) = sage.experience_text("hello world");
 
         // Should have formed some opinion
         assert!(!response.is_empty());
