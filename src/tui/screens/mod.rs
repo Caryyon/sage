@@ -1,13 +1,15 @@
 // Screen trait and implementations
 //
-// MINIMAL CORE SCREENS (3 total):
+// CORE SCREENS (4 total):
 // 1. BrainMonitor - Primary training view (NCA grid, camera, status)
 // 2. Analytics - Charts and historical data (was DatabaseMonitor)
 // 3. MetaLearning - All 6 meta-learning phases
+// 4. VisionMonitor - High-res Braille camera feed and visual learning
 
 pub mod brain_monitor;           // Primary: NCA grid + camera + training status
 pub mod database_monitor;        // Analytics: Charts, metrics history
 pub mod meta_learning_dashboard; // Meta-learning: All 6 phases
+pub mod vision_monitor;          // Vision: Braille camera feed + visual learning
 
 // Legacy screens (kept for backwards compatibility, not in main cycle)
 pub mod unified_dashboard;
@@ -26,10 +28,11 @@ use crate::tui::app::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScreenType {
-    // Core screens (Tab cycles through these 3)
+    // Core screens (Tab cycles through these 4)
     BrainMonitor,    // Primary training visualization
     Analytics,       // Charts and metrics (was DatabaseMonitor)
     MetaLearning,    // Meta-learning phases
+    VisionMonitor,   // High-res Braille camera feed
 
     // Legacy (accessible but not in main Tab cycle)
     UnifiedDashboard,
@@ -44,10 +47,11 @@ pub enum ScreenType {
 impl ScreenType {
     pub fn next(&self) -> Self {
         match self {
-            // Core 3-screen cycle
+            // Core 4-screen cycle
             Self::BrainMonitor => Self::Analytics,
             Self::Analytics => Self::MetaLearning,
-            Self::MetaLearning => Self::BrainMonitor,
+            Self::MetaLearning => Self::VisionMonitor,
+            Self::VisionMonitor => Self::BrainMonitor,
 
             // Legacy screens jump to core cycle
             Self::UnifiedDashboard => Self::BrainMonitor,
@@ -65,6 +69,7 @@ impl ScreenType {
             Self::BrainMonitor => "Dashboard",
             Self::Analytics => "Analytics",
             Self::MetaLearning => "Meta-Learning",
+            Self::VisionMonitor => "Vision",
             Self::UnifiedDashboard => "Unified Dashboard",
             Self::SocialMind => "Social Mind",
             Self::NeuralObservatory => "Neural Observatory",
@@ -89,6 +94,7 @@ impl Screen {
             ScreenType::BrainMonitor => Box::new(brain_monitor::BrainMonitorScreen::new()),
             ScreenType::Analytics => Box::new(database_monitor::DatabaseMonitorScreen),
             ScreenType::MetaLearning => Box::new(meta_learning_dashboard::MetaLearningDashboard::new()),
+            ScreenType::VisionMonitor => Box::new(vision_monitor::VisionMonitor::new()),
             // Legacy screens (still accessible)
             ScreenType::UnifiedDashboard => Box::new(unified_dashboard::UnifiedDashboardScreen),
             ScreenType::SocialMind => Box::new(social_mind::SocialMindScreen::new()),

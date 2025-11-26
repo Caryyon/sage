@@ -50,6 +50,11 @@ impl SageExperience {
         }
     }
 
+    /// Get reference to the NCA grid for visualization
+    pub fn get_grid(&self) -> &Grid {
+        &self.nca.grid
+    }
+
     /// Let SAGE experience text and form an opinion
     pub fn experience_text(&mut self, text: &str) -> (Opinion, String) {
         // Encode text into NCA grid
