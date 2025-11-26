@@ -58,18 +58,45 @@ impl VisionMonitor {
         // Access the NCA grid from SAGE's neural substrate
         let grid = state.sage.get_grid();
 
+        // Check if grid is mostly empty (< 5% cells active)
+        let active_count: usize = grid.cells.iter()
+            .flatten()
+            .filter(|cell| cell[3] > 0.3)
+            .count();
+        let total_cells = grid.cells.len() * grid.cells[0].len();
+        let is_mostly_empty = (active_count as f64 / total_cells as f64) < 0.05;
+
+        // If empty, create a demo pattern to showcase Braille rendering
+        let demo_grid;
+        let display_grid = if is_mostly_empty {
+            demo_grid = create_demo_pattern();
+            &demo_grid
+        } else {
+            grid
+        };
+
         // Convert grid to Braille
-        let braille_lines = grid_to_braille(grid);
+        let braille_lines = grid_to_braille(display_grid);
 
         // Create colored text with visual features
         let mut text_lines = Vec::new();
 
         // Header
+        let header_suffix = if is_mostly_empty {
+            " [Demo Pattern]"
+        } else {
+            " [Live NCA]"
+        };
+
         text_lines.push(Line::from(vec![
             Span::styled("👁️  SAGE Vision Feed ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("({}×{} → Braille)", grid.cells.len(), grid.cells[0].len()),
+                format!("({}×{} → Braille)", display_grid.cells.len(), display_grid.cells[0].len()),
                 Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                header_suffix,
+                Style::default().fg(if is_mostly_empty { Color::Yellow } else { Color::Green }),
             ),
         ]));
         text_lines.push(Line::from(""));
@@ -139,6 +166,34 @@ impl Default for VisionMonitor {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Create a demo pattern to showcase Braille rendering
+fn create_demo_pattern() -> crate::grid::Grid {
+    use crate::grid::Grid;
+
+    let mut grid = Grid::new(32, 32);
+
+    // Create a circle pattern in the center
+    let center_x = 16.0;
+    let center_y = 16.0;
+    let radius = 10.0;
+
+    for y in 0..32 {
+        for x in 0..32 {
+            let dx = x as f64 - center_x;
+            let dy = y as f64 - center_y;
+            let distance = (dx * dx + dy * dy).sqrt();
+
+            if distance < radius {
+                // Inside circle - set alpha channel
+                let intensity = 1.0 - (distance / radius).powi(2);
+                grid.cells[y][x][3] = intensity;  // Alpha
+            }
+        }
+    }
+
+    grid
 }
 
 /// Convert a 32×32 grid to Braille characters (16×8 output)
