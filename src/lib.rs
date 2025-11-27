@@ -33,9 +33,9 @@ pub mod self_modification;  // Performance introspection and self-optimization
 pub mod emergent_goals;  // Goal formation and autonomous objectives
 pub mod goal_hierarchy;  // Multi-step goal decomposition and planning
 pub mod tool_system;  // Real-world interaction tools
-pub mod irc_manager;  // IRC bot integrated with TUI
+pub mod irc_manager;  // IRC manager (stub - disabled)
 pub mod llm_client;  // LLM integration for conversational AI
-pub mod irc_sync;  // IRC message synchronization between bot and TUI
+pub mod irc_sync;  // IRC sync (stub - disabled)
 pub mod ab_test;  // A/B testing framework for NCA validation
 pub mod introspection;  // Phenomenological self-awareness and subjective experience
 pub mod vision;  // Camera capture and visual perception
@@ -47,7 +47,7 @@ pub mod conversation_context;  // Per-user conversation history and context mana
 pub mod fact_memory;  // Structured fact extraction and storage for user memory
 pub mod sage_control;  // Unified instance management and control
 pub mod cli;  // Command-line interface and subsystem configuration
-pub mod irc;  // IRC bot integration (basic + autonomous)
+pub mod irc;  // IRC module (stub - disabled)
 pub mod inner_thoughts;  // Autonomous thought evaluation and classification
 pub mod proactive_communication;  // AGI-level proactive conversation initiation
 pub mod response_pipeline;  // Multi-stage LLM pipeline for grounded responses

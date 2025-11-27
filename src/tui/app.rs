@@ -1210,6 +1210,7 @@ impl App {
                 // Send response back to IRC
                 use crate::irc_manager::IrcResponse;
                 let _ = irc_manager.send_response(IrcResponse {
+                    channel: String::new(),
                     message: response,
                     opinion_type,
                     loss,

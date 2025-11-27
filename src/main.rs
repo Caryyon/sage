@@ -15,7 +15,7 @@ use clap::Parser;
 
 use sage::tui::App;
 use sage::cli::Cli;
-use sage::irc::{IrcConfig, IrcState};
+// IRC disabled - use sage::irc::{IrcConfig, IrcState};
 use sage::sage_experience::SageExperience;
 use sage::llm_client::LlmClient;
 use sage::spacetime_client::SageDbClient;
@@ -54,30 +54,10 @@ fn main() -> Result<(), io::Error> {
         None
     };
 
-    // Launch IRC bot if enabled
-    let _irc_handle = if args.should_enable_irc() {
-        // println!("\n📡 Launching IRC bot...");
-
-        let irc_config = IrcConfig {
-            server: std::env::var("IRC_SERVER").unwrap_or_else(|_| "irc.libera.chat".to_string()),
-            channel: std::env::var("IRC_CHANNEL").unwrap_or_else(|_| "#sage-ai".to_string()),
-            nick: "SAGE".to_string(),
-            enable_vision: args.should_enable_vision(),
-            enable_autonomous: args.should_enable_autonomous(),
-            enable_llm: llm_client.is_some(),
-        };
-
-        let irc_state = IrcState {
-            sage: Arc::clone(&sage),
-            llm: llm_client.clone(),
-            visual_memory: visual_memory.clone(),
-            db_client: db_client.clone(),
-        };
-
-        Some(sage::irc::start_irc_bot(irc_config, irc_state))
-    } else {
-        None
-    };
+    // IRC is disabled - stub out the handle
+    let _irc_handle: Option<std::thread::JoinHandle<()>> = None;
+    // Suppress unused variable warnings
+    let _ = (&args, &sage, &llm_client, &visual_memory, &db_client);
 
     // Display subsystem status (suppressed for clean TUI)
     // println!("\n📊 Active subsystems:");
