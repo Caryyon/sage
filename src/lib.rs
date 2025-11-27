@@ -1,6 +1,7 @@
 // Library modules
 
 pub mod grid;
+pub mod language;  // Grounded reservoir language model
 pub mod nca;
 pub mod terrain;
 pub mod display;

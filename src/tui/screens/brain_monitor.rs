@@ -11,6 +11,7 @@ use ratatui::{
 };
 use crate::tui::app::AppState;
 use crate::irc_sync::IrcSync;
+use crate::tui::braille_canvas;  // High-res Braille rendering
 use super::ScreenTrait;
 
 pub struct BrainMonitorScreen;
@@ -449,49 +450,20 @@ fn render_nca_grid(frame: &mut Frame, area: Rect, state: &AppState) {
 
     if let Some(snapshot) = grid_snapshot {
         let grid_size = snapshot.grid_size;
-        let alpha_values = &snapshot.alpha_values;
 
-        // Build grid visualization
-        let mut grid_text = Vec::new();
+        // Get SAGE's actual grid for Braille rendering
+        let grid = state.sage.get_grid();
 
-        for y in 0..grid_size {
-            let mut row_spans = Vec::new();
+        // Use Braille rendering with activity highlighting
+        let mut grid_text = braille_canvas::grid_to_braille_colored(
+            grid,
+            Some(&state.brain_activity_map),
+            Some(state.brain_pulse_phase),
+        );
 
-            for x in 0..grid_size {
-                let idx = y * grid_size + x;
-                let alpha = if idx < alpha_values.len() {
-                    alpha_values[idx]
-                } else {
-                    0.0
-                };
-
-                let cell_phase = state.brain_pulse_phase + state.brain_cell_offsets.get(idx).unwrap_or(&0.0);
-                let activity_boost = state.brain_activity_map.get(idx).unwrap_or(&0.0);
-                let (ch, color) = alpha_to_style_animated(alpha, cell_phase, *activity_boost);
-
-                row_spans.push(Span::styled(
-                    format!("{}{}", ch, ch),
-                    Style::default().fg(color)
-                ));
-            }
-
-            grid_text.push(Line::from(row_spans));
-        }
-
-        // Add inline legend at the bottom - VIBRANT gmork neon colors
+        // Add inline legend at the bottom - Braille style
         grid_text.push(Line::from("")); // Spacer
-        grid_text.push(Line::from(vec![
-            Span::styled("░░", Style::default().fg(Color::Rgb(0, 60, 0))),
-            Span::styled(" Dead ", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::styled("▓▓", Style::default().fg(Color::Rgb(0, 120, 30))),
-            Span::styled(" Low ", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::styled("██", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::styled(" Active ", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::styled("██", Style::default().fg(Color::Rgb(255, 136, 0))),
-            Span::styled(" Firing ", Style::default().fg(Color::Rgb(0, 255, 0))),
-            Span::styled("██", Style::default().fg(Color::Rgb(255, 0, 0))),
-            Span::styled(" Max", Style::default().fg(Color::Rgb(0, 255, 0))),
-        ]));
+        grid_text.push(braille_canvas::create_activity_legend());
 
         // Show active concepts
         let concepts_display = if !snapshot.active_concepts.is_empty() {
@@ -576,59 +548,4 @@ fn render_compact_status(frame: &mut Frame, area: Rect, state: &AppState) {
         );
 
     frame.render_widget(status, area);
-}
-
-/// Map alpha value to visual character and color with neural firing effects
-/// Uses gmork neovim theme colors - VIBRANT neon aesthetic
-/// Legend: Dead → Low → Active → Firing → Max
-fn alpha_to_style_animated(alpha: f64, cell_phase: f64, activity_boost: f64) -> (&'static str, Color) {
-    // Gmork theme - FULL VIBRANCY:
-    // void = #0d0d0d (13,13,13) - true black
-    // toxic_green = #00ff44 (0,255,68) - neon green
-    // gmork_green = #00ff00 (0,255,0) - PURE electric green
-    // eerie_green = #00ff88 (0,255,136) - cyan-green
-    // bright_green = #88ff00 (136,255,0) - lime
-    // ember_orange = #ff8800 (255,136,0)
-    // fire_red = #ff0000 (255,0,0)
-    // bone_white = #ffffff (255,255,255)
-
-    let pulse = (cell_phase.sin() * 0.15 + 1.0).max(0.85);
-    let shimmer = (cell_phase * 3.7).sin() * 0.08;
-    let adjusted_alpha = ((alpha * pulse) + shimmer + (activity_boost * 0.4)).clamp(0.0, 1.0);
-    let firing_intensity = activity_boost;
-
-    // Priority 1: Firing states (activity boost overrides alpha)
-    if firing_intensity > 0.5 {
-        // Max firing - bone_white with glow
-        ("█", Color::Rgb(255, 255, 255))
-    } else if firing_intensity > 0.2 {
-        // Firing - ember_orange BRIGHT
-        ("█", Color::Rgb(255, 136, 0))
-    }
-    // Priority 2: Alpha-based gradient - ALL NEON GREENS
-    else if adjusted_alpha < 0.08 {
-        // Dead - void black
-        ("░", Color::Rgb(13, 13, 13))
-    } else if adjusted_alpha < 0.2 {
-        // Dim - very dark green (not gray!)
-        ("▒", Color::Rgb(0, 60, 0))
-    } else if adjusted_alpha < 0.35 {
-        // Low - dark toxic green
-        ("▓", Color::Rgb(0, 120, 30))
-    } else if adjusted_alpha < 0.5 {
-        // Emerging - toxic_green
-        ("█", Color::Rgb(0, 255, 68))
-    } else if adjusted_alpha < 0.65 {
-        // Active - PURE gmork_green (the signature color!)
-        ("█", Color::Rgb(0, 255, 0))
-    } else if adjusted_alpha < 0.8 {
-        // High - eerie_green (cyan tint)
-        ("█", Color::Rgb(0, 255, 136))
-    } else if adjusted_alpha < 0.92 {
-        // Very high - bright_green (lime)
-        ("█", Color::Rgb(136, 255, 0))
-    } else {
-        // Maximum - fire_red
-        ("█", Color::Rgb(255, 0, 0))
-    }
 }

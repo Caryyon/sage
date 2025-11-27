@@ -7,6 +7,7 @@ pub mod training;
 pub mod engine_loader;  // Hot-reload support
 pub mod hot_reload_runner;  // Hot-reload training runner
 pub mod widgets;  // Custom widgets for new screen designs
+pub mod braille_canvas;  // High-res Braille grid rendering
 
 pub use app::{App, AppState};
 pub use screens::Screen;
