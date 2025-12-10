@@ -122,6 +122,156 @@ impl Default for EmbeddingEngine {
     }
 }
 
+/// A conversation stored with its embedding for semantic search
+#[derive(Clone, Serialize, Deserialize)]
+pub struct EmbeddedConversation {
+    pub username: String,
+    pub user_message: String,
+    pub sage_response: String,
+    pub embedding: Vec<f64>,
+    pub timestamp: u64,
+}
+
+/// Semantic memory - stores conversations with embeddings for RAG
+pub struct SemanticMemory {
+    conversations: Vec<EmbeddedConversation>,
+    engine: EmbeddingEngine,
+}
+
+impl SemanticMemory {
+    pub fn new() -> Self {
+        Self {
+            conversations: Vec::new(),
+            engine: EmbeddingEngine::default(),
+        }
+    }
+
+    /// Add a conversation to memory (generates embedding automatically)
+    pub async fn add(
+        &mut self,
+        username: &str,
+        user_message: &str,
+        sage_response: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        // Embed the combined message for better semantic matching
+        let text_to_embed = format!("{}: {}", username, user_message);
+        let embedding = self.engine.embed(&text_to_embed).await?;
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        self.conversations.push(EmbeddedConversation {
+            username: username.to_string(),
+            user_message: user_message.to_string(),
+            sage_response: sage_response.to_string(),
+            embedding,
+            timestamp,
+        });
+
+        println!("🧠 Stored memory #{} for {}", self.conversations.len(), username);
+        Ok(())
+    }
+
+    /// Find relevant past conversations for a query
+    /// Returns conversations sorted by relevance (most relevant first)
+    pub async fn find_relevant(
+        &self,
+        query: &str,
+        username: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<&EmbeddedConversation>, Box<dyn Error>> {
+        if self.conversations.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Embed the query
+        let query_embedding = self.engine.embed(query).await?;
+
+        // Score all conversations
+        let mut scored: Vec<(f64, &EmbeddedConversation)> = self.conversations
+            .iter()
+            .filter(|conv| username.map_or(true, |u| conv.username == u))
+            .map(|conv| {
+                let score = self.engine.cosine_similarity(&query_embedding, &conv.embedding);
+                (score, conv)
+            })
+            .collect();
+
+        // Sort by score (highest first)
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Return top results
+        Ok(scored.into_iter().take(limit).map(|(_, conv)| conv).collect())
+    }
+
+    /// Format relevant memories as context for the LLM
+    pub async fn get_context(
+        &self,
+        query: &str,
+        username: Option<&str>,
+        limit: usize,
+    ) -> Result<String, Box<dyn Error>> {
+        let relevant = self.find_relevant(query, username, limit).await?;
+
+        if relevant.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut context = String::from("=== RELEVANT MEMORIES ===\n");
+        for conv in relevant {
+            context.push_str(&format!(
+                "{} said: \"{}\"\nSAGE replied: \"{}\"\n\n",
+                conv.username, conv.user_message, conv.sage_response
+            ));
+        }
+
+        Ok(context)
+    }
+
+    pub fn len(&self) -> usize {
+        self.conversations.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.conversations.is_empty()
+    }
+
+    /// Save memories to file
+    pub fn save(&self, path: &str) -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string_pretty(&self.conversations)?;
+        std::fs::write(path, json)?;
+        println!("💾 Saved {} memories to {}", self.conversations.len(), path);
+        Ok(())
+    }
+
+    /// Load memories from file
+    pub fn load(path: &str) -> Result<Self, Box<dyn Error>> {
+        let json = std::fs::read_to_string(path)?;
+        let conversations: Vec<EmbeddedConversation> = serde_json::from_str(&json)?;
+        println!("📚 Loaded {} memories from {}", conversations.len(), path);
+        Ok(Self {
+            conversations,
+            engine: EmbeddingEngine::default(),
+        })
+    }
+
+    /// Load or create new
+    pub fn load_or_new(path: &str) -> Self {
+        Self::load(path).unwrap_or_else(|_| {
+            println!("📝 Starting fresh semantic memory");
+            Self::new()
+        })
+    }
+}
+
+impl Default for SemanticMemory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

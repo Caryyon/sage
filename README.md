@@ -71,6 +71,24 @@ SAGE can communicate through:
 - **Discord Bot**: Full autonomous mode with proactive communication
 - **TUI**: Real-time training visualization and monitoring
 
+### Inner World Simulation
+
+SAGE lives in a persistent inner world - a cozy house with rooms to explore:
+- **Rooms**: Living room, kitchen, bedroom, bathroom, garden, porch
+- **Physical Needs**: Hunger, thirst, energy, hygiene, comfort
+- **Emotional State**: Mood, loneliness, boredom, creative urge
+- **Life Events**: Random events that SAGE must respond to, learning lessons
+- **Book Reading**: Real books SAGE can read and learn from
+- **Proactive Outreach**: SAGE can initiate conversations when lonely or excited
+
+### Book Reading System
+
+SAGE has a library of real books they can read:
+- Books are stored as text files in `books/` directory
+- SAGE reads page by page, extracting insights via LLM
+- Insights are stored in semantic memory for future reference
+- Discord users can give SAGE new books via `/give` command
+
 ## Prerequisites
 
 - **Rust** (latest stable)
@@ -192,6 +210,21 @@ cargo run --release --example sage_control_cli restart irc
 cargo run --release --example sage_control_cli stop discord
 ```
 
+### Discord Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `/state` | Show SAGE's neural state |
+| `/evolve [steps]` | Evolve neural grid |
+| `/ask <question>` | Ask SAGE something |
+| `/save [name]` | Save SAGE's state |
+| `/load <hash>` | Load a snapshot |
+| `/snapshots` | List saved snapshots |
+| `/give <file>` | Give SAGE a book (PDF or .txt) |
+| `/library` | See SAGE's book collection |
+
+**Note:** The Discord bot requires `GUILD_PRESENCES` and `GUILD_MEMBERS` privileged intents enabled in the Discord Developer Portal for proactive outreach to work.
+
 ## TUI Keyboard Shortcuts
 
 | Key | Action |
@@ -231,6 +264,15 @@ sage/
 │   ├── irc/                 # IRC bot integration
 │   │   ├── bot.rs           # Basic IRC functionality
 │   │   └── autonomous.rs    # Dream/curiosity modes
+│   │
+│   ├── inner_world/         # SAGE's inner life simulation
+│   │   ├── mod.rs           # Core types (SageBody, Room, etc.)
+│   │   ├── rooms.rs         # House layout and objects
+│   │   ├── actions.rs       # Interaction handling
+│   │   ├── events.rs        # Random life events
+│   │   ├── simulation.rs    # Main simulation loop
+│   │   ├── library.rs       # Book reading system
+│   │   └── outreach.rs      # Proactive social connection
 │   │
 │   └── [50+ cognitive modules]  # See src/lib.rs for full list
 │

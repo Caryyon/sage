@@ -667,4 +667,19 @@ impl NCA {
 
         Ok(())
     }
+
+    /// Export weights as JSON string (for snapshot system)
+    pub fn export_weights_json(&self) -> Result<String, String> {
+        let snapshot = self.get_weights();
+        serde_json::to_string(&snapshot)
+            .map_err(|e| format!("Serialization error: {}", e))
+    }
+
+    /// Import weights from JSON string (for snapshot system)
+    pub fn import_weights_json(&mut self, json: &str) -> Result<(), String> {
+        let snapshot: WeightSnapshot = serde_json::from_str(json)
+            .map_err(|e| format!("Deserialization error: {}", e))?;
+        self.load_weights(&snapshot);
+        Ok(())
+    }
 }

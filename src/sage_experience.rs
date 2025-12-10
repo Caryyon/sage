@@ -1691,6 +1691,57 @@ impl SageExperience {
             signature
         )
     }
+
+    // ===== JSON Export/Import for Snapshot System =====
+
+    /// Export preferences as JSON string
+    pub fn export_preferences_json(&self) -> Result<String, String> {
+        serde_json::to_string(&self.preferences)
+            .map_err(|e| format!("Serialization error: {}", e))
+    }
+
+    /// Import preferences from JSON string
+    pub fn import_preferences_json(&mut self, json: &str) -> Result<(), String> {
+        self.preferences = serde_json::from_str(json)
+            .map_err(|e| format!("Deserialization error: {}", e))?;
+        Ok(())
+    }
+
+    /// Export associations as JSON string
+    pub fn export_associations_json(&self) -> Result<String, String> {
+        serde_json::to_string(&self.associations)
+            .map_err(|e| format!("Serialization error: {}", e))
+    }
+
+    /// Import associations from JSON string
+    pub fn import_associations_json(&mut self, json: &str) -> Result<(), String> {
+        self.associations = serde_json::from_str(json)
+            .map_err(|e| format!("Deserialization error: {}", e))?;
+        Ok(())
+    }
+
+    /// Export curiosity data as JSON string
+    pub fn export_curiosity_json(&self) -> Result<String, String> {
+        serde_json::to_string(&self.curiosity)
+            .map_err(|e| format!("Serialization error: {}", e))
+    }
+
+    /// Import curiosity data from JSON string
+    pub fn import_curiosity_json(&mut self, json: &str) -> Result<(), String> {
+        self.curiosity = serde_json::from_str(json)
+            .map_err(|e| format!("Deserialization error: {}", e))?;
+        Ok(())
+    }
+
+    /// Export NCA knowledge (weights) as JSON string
+    pub fn export_knowledge_json(&self) -> Result<String, String> {
+        self.nca.export_weights_json()
+    }
+
+    /// Import NCA knowledge (weights) from JSON string
+    pub fn import_knowledge_json(&mut self, json: &str) -> Result<(), String> {
+        self.nca.import_weights_json(json)
+    }
 }
 
 #[cfg(test)]

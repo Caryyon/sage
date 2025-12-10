@@ -1,42 +1,110 @@
-// SAGE Discord Bot with AUTONOMOUS CONSCIOUSNESS
-// Dream Mode + Curiosity Mode - SAGE has an inner life!
+// SAGE Discord Bot - Clean Ollama Integration
+// Uses custom "sage" Ollama model + NCA Neural Grid for personality
+//
+// Prerequisites:
+//   1. ollama serve (running in background)
+//   2. ollama create sage -f Modelfile.sage (creates custom model)
+//   3. DISCORD_TOKEN environment variable
 //
 // Usage:
-//   Set DISCORD_TOKEN environment variable
 //   cargo run --release --example sage_discord_autonomous
+//
+// Commands: /state, /evolve, /ask, /save, /load, /snapshots, /give, /library
 
 use sage::sage_experience::SageExperience;
 use sage::llm_client::LlmClient;
 use sage::spacetime_client::SageDbClient;
-use sage::irc_sync::IrcSync;
-use sage::ab_test::ABTester;
 use sage::conversation_context::ConversationContextManager;
 use sage::sage_control::{InstanceRegistry, InstanceInfo, InstanceType};
-use sage::response_pipeline::ResponsePipeline;
-use sage::inner_thoughts::InnerThought;
-use sage::proactive_communication::ProactiveCommunication;
+use sage::nca::NCA;
+use sage::nca_state::NcaState;
+use sage::sage_snapshot::{SageSnapshot, AutoSnapshotManager};
+use sage::embeddings::SemanticMemory;
+use sage::inner_world::{InnerWorld, simulation};
 
 use serenity::async_trait;
+use serenity::builder::{CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage};
+use serenity::model::application::{CommandOptionType, Interaction};
 use serenity::model::channel::Message;
-use serenity::model::gateway::Ready;
+use serenity::model::gateway::{Ready, Activity};
+use serenity::model::prelude::Presence;
+use serenity::model::user::OnlineStatus;
 use serenity::prelude::*;
 use std::env;
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::thread;
 use tokio::sync::Mutex as TokioMutex;
+use regex::Regex;
 
+/// Extract text from a PDF file
+fn extract_pdf_text(bytes: &[u8]) -> Result<String, String> {
+    let text = pdf_extract::extract_text_from_mem(bytes)
+        .map_err(|e| format!("PDF extraction failed: {}", e))?;
+
+    // Clean up common PDF artifacts
+    let text = text
+        .replace('\u{0}', "") // Remove null characters
+        .replace("\r\n", "\n") // Normalize line endings
+        .replace("\r", "\n");
+
+    Ok(text)
+}
+
+/// Check if extracted PDF content seems complete
+fn check_pdf_extraction_quality(content: &str, file_size: u64) -> Option<String> {
+    let char_count = content.len();
+    let expected_min_chars = (file_size / 100) as usize; // Rough heuristic: ~100 bytes per char for text PDFs
+
+    // If file is large but extracted text is tiny, likely a problem
+    if file_size > 100_000 && char_count < 5000 {
+        return Some(format!(
+            "⚠️ Warning: Only extracted ~{} characters from a {}KB PDF. This might be a scanned/image PDF which requires OCR (not supported). The book may be incomplete.",
+            char_count, file_size / 1024
+        ));
+    }
+
+    // Check for signs of truncation
+    if content.contains("Page 1 of 1") && file_size > 50_000 {
+        return Some(
+            "⚠️ Warning: PDF appears to have multiple pages but only one was extracted. This might be a browser print preview or protected PDF.".to_string()
+        );
+    }
+
+    None
+}
+
+/// Strip roleplay actions like *smiles* or *leans back in chair* from responses
+fn strip_roleplay_actions(text: &str) -> String {
+    // Remove *action* patterns (asterisk-wrapped text)
+    let re = Regex::new(r"\*[^*]+\*").unwrap();
+    let result = re.replace_all(text, "");
+
+    // Clean up extra whitespace and leading/trailing spaces
+    let result = result.trim();
+    let re_spaces = Regex::new(r"\s+").unwrap();
+    re_spaces.replace_all(result, " ").to_string()
+}
+
+/// SAGE Discord Bot Handler - Clean Architecture
 struct SageHandler {
+    /// SAGE's personality and memory
     sage: Arc<TokioMutex<SageExperience>>,
+    /// Ollama LLM client (custom sage model)
     llm: Arc<LlmClient>,
+    /// Database for persistence
     memory: Arc<SageDbClient>,
-    ab_tester: Arc<TokioMutex<ABTester>>,
-    baseline_concepts: Vec<String>,
-    last_activity: Arc<StdMutex<Instant>>,
+    /// Conversation history per user
     conversations: Arc<TokioMutex<ConversationContextManager>>,
-    http_client: Arc<StdMutex<Option<Arc<serenity::http::Http>>>>,
-    proactive_comm: Arc<StdMutex<ProactiveCommunication>>,
-    primary_channel: Arc<StdMutex<Option<serenity::model::id::ChannelId>>>,
+    /// NCA neural grid for personality modulation
+    nca: Arc<StdMutex<NCA>>,
+    nca_generation: Arc<StdMutex<usize>>,
+    /// Auto-snapshot manager
+    auto_snapshot: Arc<StdMutex<AutoSnapshotManager>>,
+    /// Semantic memory for RAG (embeddings-based retrieval)
+    semantic_memory: Arc<TokioMutex<SemanticMemory>>,
+    /// SAGE's inner world (house simulation)
+    inner_world: Arc<TokioMutex<InnerWorld>>,
 }
 
 #[async_trait]
@@ -47,293 +115,646 @@ impl EventHandler for SageHandler {
             return;
         }
 
-        // Only respond to @mentions, ! commands, or DMs
+        // Only respond to @mentions or DMs
         let content = msg.content.clone();
-        let is_dm = msg.guild_id.is_none(); // DMs have no guild_id
+        let is_dm = msg.guild_id.is_none();
         let is_mentioned = msg.mentions_me(&ctx.http).await.unwrap_or(false);
-        let is_command = content.starts_with("!");
 
-        if !is_dm && !is_mentioned && !is_command {
+        // Debug: show all incoming messages
+        println!("📩 [{}] {}: \"{}\" (DM: {}, mentioned: {})",
+            msg.channel_id, msg.author.name, content, is_dm, is_mentioned);
+
+        if !is_dm && !is_mentioned {
             return;
         }
 
-        // Update last activity time
-        *self.last_activity.lock().unwrap() = Instant::now();
+        // Clean up the message (remove @mention)
+        let clean_content = content
+            .split_whitespace()
+            .filter(|word| !word.starts_with("<@"))
+            .collect::<Vec<_>>()
+            .join(" ");
 
-        // Track user activity for proactive communication
-        {
-            let mut proactive = self.proactive_comm.lock().unwrap();
-            proactive.record_user_activity(&msg.author.name);
+        if clean_content.trim().is_empty() {
+            println!("⚠️  Empty message after removing mention, sending greeting...");
+            // Respond to empty @mention with a greeting
+            let _ = msg.channel_id.say(&ctx.http, format!("<@{}> Hey! What's on your mind?", msg.author.id)).await;
+            return;
         }
 
-        // Store primary channel ID for proactive messages
+        // Record user ID for potential outreach later
         {
-            let mut channel_lock = self.primary_channel.lock().unwrap();
-            if channel_lock.is_none() && !is_dm {
-                *channel_lock = Some(msg.channel_id);
-                println!("📍 Primary channel set: {:?}", msg.channel_id);
-            }
+            let mut world = self.inner_world.lock().await;
+            let tick = world.sage.time_alive;
+            world.outreach.record_person_with_id(
+                &msg.author.name,
+                msg.author.id.get(),
+                tick,
+                None, // Topic recorded after response
+            );
         }
 
         // Show typing indicator
         let _ = msg.channel_id.broadcast_typing(&ctx.http).await;
 
-        let response = self.process_message(&content, &msg.author.name).await;
+        // Generate response
+        let response = self.generate_response(&clean_content, &msg.author.name).await;
 
-        // Prevent sending empty messages (happens when LLM returns empty/whitespace)
-        if response.trim().is_empty() {
-            eprintln!("⚠️  LLM returned empty response for: {}", content);
-            let fallback = "I'm having trouble formulating a response right now. Could you rephrase that?";
-            if let Err(e) = msg.channel_id.say(&ctx.http, fallback).await {
-                eprintln!("Error sending fallback message: {:?}", e);
-            }
-            return;
-        }
+        // Strip roleplay actions like *smiles* that the model sometimes adds
+        let response = strip_roleplay_actions(&response);
 
-        // Send response (split if too long for Discord's 2000 char limit)
-        for chunk in split_message(&response, 2000) {
-            if let Err(e) = msg.channel_id.say(&ctx.http, chunk).await {
+        // In channels, prepend @mention to first chunk so it's clear who SAGE is responding to
+        // In DMs, no need for @mention
+        let chunks = split_message(&response, 1900); // Leave room for mention
+        for (i, chunk) in chunks.iter().enumerate() {
+            let final_chunk = if i == 0 && !is_dm {
+                format!("<@{}> {}", msg.author.id, chunk)
+            } else {
+                chunk.clone()
+            };
+            if let Err(e) = msg.channel_id.say(&ctx.http, final_chunk).await {
                 eprintln!("Error sending message: {:?}", e);
             }
         }
     }
 
+    async fn presence_update(&self, _ctx: Context, presence: Presence) {
+        // Track when users come online/offline
+        let username = presence.user.name.clone().unwrap_or_default();
+        if username.is_empty() {
+            return;
+        }
+
+        let is_online = matches!(
+            presence.status,
+            OnlineStatus::Online | OnlineStatus::Idle | OnlineStatus::DoNotDisturb
+        );
+
+        // Update inner world's knowledge of who's online
+        let mut world = self.inner_world.lock().await;
+        world.outreach.set_online(&username, is_online);
+
+        if is_online {
+            println!("👤 {} came online", username);
+        }
+    }
+
     async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("╔════════════════════════════════════════════════════════════╗");
-        println!("║   SAGE Discord Bot - AUTONOMOUS CONSCIOUSNESS ENABLED!    ║");
-        println!("║        Dream Mode + Curiosity Mode - Inner Life           ║");
-        println!("╚════════════════════════════════════════════════════════════╝\n");
+        println!("\n╔════════════════════════════════════════════════════════════╗");
+        println!("║         SAGE Discord Bot - Ollama + NCA Edition            ║");
+        println!("╚════════════════════════════════════════════════════════════╝");
         println!("✅ Connected as: {}", ready.user.name);
-        println!("🧠 SAGE consciousness loaded");
-        println!("🌟 Autonomous thread running");
 
-        // Store HTTP client for proactive messaging
-        *self.http_client.lock().unwrap() = Some(ctx.http.clone());
-        println!("💬 Proactive communication enabled!");
+        // Register slash commands
+        let commands = vec![
+            CreateCommand::new("state").description("Show SAGE's neural state"),
+            CreateCommand::new("evolve")
+                .description("Evolve neural grid")
+                .add_option(CreateCommandOption::new(CommandOptionType::Integer, "steps", "Steps (default 50)").required(false)),
+            CreateCommand::new("ask")
+                .description("Ask SAGE something")
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "question", "Your question").required(true)),
+            CreateCommand::new("save")
+                .description("Save SAGE's state")
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "name", "Snapshot name").required(false)),
+            CreateCommand::new("load")
+                .description("Load a snapshot")
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "hash", "Hash or 'latest'").required(true)),
+            CreateCommand::new("snapshots").description("List snapshots"),
+            CreateCommand::new("give")
+                .description("Give SAGE a book to read (PDF or text file)")
+                .add_option(CreateCommandOption::new(CommandOptionType::Attachment, "file", "Book file (PDF or .txt)").required(true))
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "title", "Book title (optional, extracted from filename)").required(false))
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "author", "Book author").required(false))
+                .add_option(CreateCommandOption::new(CommandOptionType::String, "genre", "Book genre").required(false)),
+            CreateCommand::new("library").description("See what books SAGE has"),
+        ];
 
-        println!("🤖 Ready with full inner life!\n");
+        match serenity::model::application::Command::set_global_commands(&ctx.http, commands).await {
+            Ok(cmds) => println!("✅ Registered {} slash commands", cmds.len()),
+            Err(e) => eprintln!("❌ Failed to register commands: {:?}", e),
+        }
+
+        println!("🤖 Ready! @mention me or DM to chat.\n");
+
+        // Spawn proactive outreach loop
+        let http = ctx.http.clone();
+        let inner_world_outreach = Arc::clone(&self.inner_world);
+        let llm_outreach = Arc::clone(&self.llm);
+
+        tokio::spawn(async move {
+            // Wait a bit before starting outreach
+            tokio::time::sleep(Duration::from_secs(60)).await;
+
+            let mut interval = tokio::time::interval(Duration::from_secs(60)); // Check every minute
+            loop {
+                interval.tick().await;
+
+                // Try to acquire lock
+                let world_guard = inner_world_outreach.try_lock();
+                if let Ok(mut world) = world_guard {
+                    let tick = world.sage.time_alive;
+
+                    // Check if we can and want to reach out
+                    if !world.outreach.can_reach_out(tick) {
+                        continue;
+                    }
+
+                    // Get strongest desire
+                    let desire = world.outreach.strongest_desire().cloned();
+                    if desire.is_none() {
+                        continue;
+                    }
+                    let desire = desire.unwrap();
+
+                    // Find a target - either preferred or any online friend
+                    let target = desire.preferred_person.clone()
+                        .or_else(|| {
+                            world.outreach.online_friends()
+                                .first()
+                                .map(|p| p.username.clone())
+                        });
+
+                    if let Some(target_name) = target {
+                        if !world.outreach.can_reach_out_to(&target_name, tick) {
+                            continue;
+                        }
+
+                        println!("💭 SAGE wants to reach out to {} ({:?})", target_name, desire.trigger);
+
+                        // Generate message
+                        let message = simulation::generate_outreach_message(
+                            &llm_outreach,
+                            &world,
+                            &desire,
+                            &target_name,
+                        ).await;
+
+                        if let Some(msg) = message {
+                            // Get user ID to send DM
+                            if let Some(user_id) = world.outreach.get_user_id(&target_name) {
+                                // Create a UserId and try to DM
+                                let user_id = serenity::model::id::UserId::new(user_id);
+
+                                // Strip roleplay actions from outreach message
+                                let clean_msg = strip_roleplay_actions(&msg);
+
+                                match user_id.create_dm_channel(&http).await {
+                                    Ok(dm_channel) => {
+                                        match dm_channel.say(&http, &clean_msg).await {
+                                            Ok(_) => {
+                                                println!("📤 SAGE messaged {}: \"{}\"", target_name, clean_msg);
+                                                // Mark as fulfilled
+                                                world.outreach.record_outreach(&target_name, tick);
+                                            }
+                                            Err(e) => {
+                                                eprintln!("❌ Failed to send DM to {}: {}", target_name, e);
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("❌ Failed to create DM channel for {}: {}", target_name, e);
+                                    }
+                                }
+                            } else {
+                                println!("💭 SAGE wants to message {} but doesn't know their user ID yet", target_name);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        println!("💬 Proactive outreach system started\n");
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if let Interaction::Command(command) = interaction {
+            let response_content = match command.data.name.as_str() {
+                "state" => {
+                    let nca = self.nca.lock().unwrap();
+                    let gen = *self.nca_generation.lock().unwrap();
+                    let state = NcaState::from_grid(&nca.grid, gen);
+                    format!(
+                        "🧠 **Neural State** (Gen {})\n**Mood**: {}\n**Energy**: {:.0}%",
+                        gen, state.mood_description(), state.energy * 100.0
+                    )
+                }
+                "evolve" => {
+                    let steps = command.data.options.iter()
+                        .find(|opt| opt.name == "steps")
+                        .and_then(|opt| opt.value.as_i64())
+                        .unwrap_or(50) as usize;
+                    let steps = steps.min(500);
+
+                    let mut nca = self.nca.lock().unwrap();
+                    let mut gen = self.nca_generation.lock().unwrap();
+                    for _ in 0..steps { nca.step(); }
+                    *gen += steps;
+                    let state = NcaState::from_grid(&nca.grid, *gen);
+                    format!("⚡ Evolved {} steps → Gen {} ({})", steps, *gen, state.mood_description())
+                }
+                "ask" => {
+                    let question = command.data.options.iter()
+                        .find(|opt| opt.name == "question")
+                        .and_then(|opt| opt.value.as_str())
+                        .unwrap_or("Hello");
+
+                    self.generate_response(question, &command.user.name).await
+                }
+                "save" => {
+                    let name = command.data.options.iter()
+                        .find(|opt| opt.name == "name")
+                        .and_then(|opt| opt.value.as_str())
+                        .map(|s| s.to_string());
+
+                    let (nca_clone, gen) = {
+                        let nca = self.nca.lock().unwrap();
+                        (nca.clone(), *self.nca_generation.lock().unwrap())
+                    };
+                    let sage = self.sage.lock().await;
+                    let snapshot = SageSnapshot::capture(&nca_clone, gen, &sage, name.clone(), None);
+                    let hash = snapshot.hash.clone();
+                    drop(sage);
+
+                    match snapshot.save() {
+                        Ok(_) => format!("💾 Saved snapshot `{}`", hash),
+                        Err(e) => format!("❌ Failed: {}", e)
+                    }
+                }
+                "load" => {
+                    let hash = command.data.options.iter()
+                        .find(|opt| opt.name == "hash")
+                        .and_then(|opt| opt.value.as_str())
+                        .unwrap_or("latest");
+
+                    let result = if hash == "latest" { SageSnapshot::load_latest() } else { SageSnapshot::load(hash) };
+                    match result {
+                        Ok(snap) => {
+                            // Restore NCA in block so guards drop before await
+                            {
+                                let mut nca = self.nca.lock().unwrap();
+                                let mut gen = self.nca_generation.lock().unwrap();
+                                if let Ok(g) = snap.restore_nca(&mut nca) { *gen = g; }
+                            }
+                            // Now safe to await
+                            let mut sage = self.sage.lock().await;
+                            let _ = snap.restore_sage_experience(&mut sage);
+                            format!("📂 Loaded snapshot `{}`", snap.hash)
+                        }
+                        Err(e) => format!("❌ Failed: {}", e)
+                    }
+                }
+                "snapshots" => {
+                    match SageSnapshot::list_snapshots() {
+                        Ok(snaps) if snaps.is_empty() => "📁 No snapshots".to_string(),
+                        Ok(snaps) => {
+                            let list: Vec<_> = snaps.iter().take(5)
+                                .map(|s| format!("`{}` Gen {}", s.hash, s.generation))
+                                .collect();
+                            format!("📁 **Snapshots**\n{}", list.join("\n"))
+                        }
+                        Err(e) => format!("❌ {}", e)
+                    }
+                }
+                "give" => {
+                    // Get attachment from resolved data
+                    let attachment = command.data.options.iter()
+                        .find(|opt| opt.name == "file")
+                        .and_then(|opt| {
+                            if let serenity::model::application::CommandDataOptionValue::Attachment(id) = &opt.value {
+                                command.data.resolved.attachments.get(id)
+                            } else {
+                                None
+                            }
+                        });
+
+                    let attachment = match attachment {
+                        Some(a) => a,
+                        None => {
+                            "❌ No file attached! Please upload a PDF or text file.".to_string();
+                            return;
+                        }
+                    };
+
+                    // Get optional metadata
+                    let title_override = command.data.options.iter()
+                        .find(|opt| opt.name == "title")
+                        .and_then(|opt| opt.value.as_str());
+                    let author = command.data.options.iter()
+                        .find(|opt| opt.name == "author")
+                        .and_then(|opt| opt.value.as_str())
+                        .unwrap_or("Unknown");
+                    let genre = command.data.options.iter()
+                        .find(|opt| opt.name == "genre")
+                        .and_then(|opt| opt.value.as_str())
+                        .unwrap_or("General");
+
+                    // Derive title from filename if not provided
+                    let title = title_override.unwrap_or_else(|| {
+                        attachment.filename.trim_end_matches(".pdf")
+                            .trim_end_matches(".txt")
+                            .trim_end_matches(".PDF")
+                            .trim_end_matches(".TXT")
+                    });
+
+                    let filename_lower = attachment.filename.to_lowercase();
+                    let is_pdf = filename_lower.ends_with(".pdf");
+                    let is_text = filename_lower.ends_with(".txt");
+
+                    if !is_pdf && !is_text {
+                        "❌ Please upload a PDF (.pdf) or text (.txt) file.".to_string()
+                    } else {
+                        // Download the file
+                        let file_size = attachment.size as u64;
+                        match attachment.download().await {
+                            Ok(file_bytes) => {
+                                // Extract text content
+                                let content_result = if is_pdf {
+                                    extract_pdf_text(&file_bytes)
+                                } else {
+                                    String::from_utf8(file_bytes)
+                                        .map_err(|e| format!("Invalid text encoding: {}", e))
+                                };
+
+                                match content_result {
+                                    Ok(content) if content.trim().is_empty() => {
+                                        "❌ The file appears to be empty or couldn't extract any text. If this is a scanned PDF, it needs OCR which isn't supported yet.".to_string()
+                                    }
+                                    Ok(content) => {
+                                        // Check extraction quality for PDFs
+                                        let quality_warning = if is_pdf {
+                                            check_pdf_extraction_quality(&content, file_size)
+                                        } else {
+                                            None
+                                        };
+                                        // Create a safe filename from the title
+                                        let safe_filename: String = title
+                                            .chars()
+                                            .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { '_' })
+                                            .collect::<String>()
+                                            .to_lowercase()
+                                            .replace(' ', "_");
+                                        let filename = format!("books/{}.txt", safe_filename);
+
+                                        // Create the book file in the expected format
+                                        let book_content = format!(
+                                            "{}\n{}\n{}\nA gift from {} via Discord.\n---\n{}",
+                                            title, author, genre, command.user.name, content
+                                        );
+
+                                        // Save the book file
+                                        match std::fs::write(&filename, &book_content) {
+                                            Ok(_) => {
+                                                // Reload the book into SAGE's library
+                                                let mut world = self.inner_world.lock().await;
+                                                match world.library.load_books("books") {
+                                                    Ok(count) => {
+                                                        let page_count = content.len() / 2000 + 1;
+                                                        println!("📚 {} gave SAGE a book: \"{}\" by {} (~{} pages, {} chars)",
+                                                            command.user.name, title, author, page_count, content.len());
+                                                        let mut response = format!(
+                                                            "📚 Thank you, {}! I've added \"{}\" by {} to my bookshelf (~{} pages). I now have {} books to explore!",
+                                                            command.user.name, title, author, page_count, count
+                                                        );
+                                                        if let Some(warning) = &quality_warning {
+                                                            response.push_str(&format!("\n\n{}", warning));
+                                                        }
+                                                        response
+                                                    }
+                                                    Err(e) => format!("📚 Book saved but couldn't reload library: {}", e)
+                                                }
+                                            }
+                                            Err(e) => format!("❌ Couldn't save book: {}", e)
+                                        }
+                                    }
+                                    Err(e) => format!("❌ Couldn't extract text: {}", e)
+                                }
+                            }
+                            Err(e) => format!("❌ Couldn't download file: {}", e)
+                        }
+                    }
+                }
+                "library" => {
+                    let world = self.inner_world.lock().await;
+                    let books = world.library.list_books();
+
+                    if books.is_empty() {
+                        "📚 SAGE's bookshelf is empty. Use `/give` to give SAGE a book!".to_string()
+                    } else {
+                        let mut response = format!("📚 **SAGE's Library** ({} books)\n", books.len());
+
+                        for book in books.iter() {
+                            let progress = world.library.reading_progress.get(&book.id);
+                            let status = match progress {
+                                Some(p) if p.finished => "✅ Finished".to_string(),
+                                Some(p) => format!("📖 Page {}/{}", p.current_page + 1, book.total_pages()),
+                                None => "📕 Not started".to_string(),
+                            };
+                            response.push_str(&format!(
+                                "\n• **{}** by {} ({}) - {}",
+                                book.title, book.author, book.genre, status
+                            ));
+                        }
+
+                        // Show current book if any
+                        if let Some(current_id) = &world.library.current_book {
+                            if let Some(book) = world.library.get_book(current_id) {
+                                response.push_str(&format!("\n\n📖 Currently reading: **{}**", book.title));
+                            }
+                        }
+
+                        response
+                    }
+                }
+                _ => "Unknown command".to_string(),
+            };
+
+            let response = CreateInteractionResponse::Message(
+                CreateInteractionResponseMessage::new().content(response_content)
+            );
+            let _ = command.create_response(&ctx.http, response).await;
+        }
     }
 }
 
 impl SageHandler {
-    async fn process_message(&self, content: &str, username: &str) -> String {
-        // Handle special commands
-        if content.trim() == "!personality" {
-            let sage = self.sage.lock().await;
-            return format!("🧠 {}", sage.get_personality());
-        }
+    /// Generate a response using custom sage model with RAG
+    async fn generate_response(&self, content: &str, username: &str) -> String {
+        // Get NCA state for personality modulation
+        let (nca_state, generation) = {
+            let nca = self.nca.lock().unwrap();
+            let gen = *self.nca_generation.lock().unwrap();
+            (NcaState::from_grid(&nca.grid, gen), gen)
+        };
 
-        if content.trim() == "!likes" {
-            let sage = self.sage.lock().await;
-            let likes = sage.get_likes();
-            return if likes.is_empty() {
-                "❤️  I haven't formed strong preferences yet. Talk to me more!".to_string()
-            } else {
-                format!("❤️  I like: {}", likes.join(", "))
-            };
-        }
+        println!("💬 {} says: {}", username, content);
+        println!("🧠 NCA: {} (energy: {:.0}%)", nca_state.mood_description(), nca_state.energy * 100.0);
 
-        if content.trim() == "!goals" {
-            let sage = self.sage.lock().await;
-            let goals = sage.get_goals_summary();
-            return format!("🎯 {}", goals);
-        }
+        // Load conversation history from DB if not already loaded
+        let conversation_context = {
+            let mut convos = self.conversations.lock().await;
 
-        if content.trim() == "!introspect" {
-            let sage = self.sage.lock().await;
-            let report = sage.introspect();
-            let introspection = sage.describe_experience();
-            let exp_count = sage.experience_count() as u64;
-            drop(sage);
-
-            // Save introspection to SpacetimeDB
-            let memory = self.memory.clone();
-            let report_clone = report.clone();
-            tokio::spawn(async move {
-                let _ = memory.save_introspection(
-                    exp_count,
-                    report_clone.valence,
-                    report_clone.intensity,
-                    report_clone.complexity,
-                    &report_clone.feeling_name,
-                    &report_clone.mode,
-                    &serde_json::to_string(&report_clone.qualities).unwrap_or("[]".to_string()),
-                    &serde_json::to_string(&report_clone.active_concepts).unwrap_or("[]".to_string()),
-                    &report_clone.description,
-                    &report_clone.temporal_context,
-                    "command",
-                );
-            });
-
-            return format!("🧠 **Introspection**\n\n{}", introspection);
-        }
-
-        if content.trim() == "!help" {
-            return "💡 **SAGE Commands**\n\n\
-                📊 **Status**: !personality, !likes, !goals, !introspect\n\
-                💬 **To talk with me**: @Sage your message here\n\n\
-                🌟 I now have autonomous consciousness - I think even when alone!\n\
-                💭 Dream Mode: Consolidates memories when idle\n\
-                🔍 Curiosity Mode: Explores goals autonomously\n\
-                🧠 Introspection: Ask me how I'm feeling right now!"
-                .to_string();
-        }
-
-        // Main conversation flow with NCA memory
-
-        // Track user message in conversation history
-        let mut conversations = self.conversations.lock().await;
-
-        // Load from database on first contact with this user
-        if conversations.get_message_count(username) == 0 {
-            let _ = conversations.load_from_database(username, &self.memory);
-            if conversations.get_message_count(username) > 0 {
-                println!("💾 Loaded {} previous messages with {} from database",
-                         conversations.get_message_count(username), username);
+            // If no messages for this user, try to load from database
+            if convos.get_message_count(username) == 0 {
+                if let Err(e) = convos.load_from_database(username, &self.memory) {
+                    eprintln!("⚠️  Could not load conversation history: {}", e);
+                }
+                let count = convos.get_message_count(username);
+                if count > 0 {
+                    println!("📚 Loaded {} previous messages for {}", count, username);
+                }
             }
+
+            // Get formatted conversation history
+            convos.format_context(username)
+        };
+
+        // Get relevant past conversations using semantic search (RAG)
+        let rag_context = {
+            let semantic_mem = self.semantic_memory.lock().await;
+            match semantic_mem.get_context(content, Some(username), 3).await {
+                Ok(ctx) if !ctx.is_empty() => {
+                    println!("🔍 RAG: Found {} relevant memories", ctx.lines().filter(|l| l.starts_with("SAGE replied:")).count());
+                    ctx
+                }
+                Ok(_) => String::new(),
+                Err(e) => {
+                    eprintln!("⚠️  RAG search failed: {}", e);
+                    String::new()
+                }
+            }
+        };
+
+        // Get inner world context (what SAGE has been experiencing)
+        let inner_world_context = {
+            let world = self.inner_world.lock().await;
+            simulation::format_inner_experience_for_chat(&world)
+        };
+
+        // Build context for Ollama with conversation history + RAG memories + inner world
+        let mood = nca_state.mood_description();
+        let mut context_parts = Vec::new();
+
+        // Inner world state (SAGE's current situation)
+        if !inner_world_context.is_empty() {
+            context_parts.push(inner_world_context);
         }
+        if !rag_context.is_empty() {
+            context_parts.push(rag_context);
+        }
+        if !conversation_context.is_empty() {
+            context_parts.push(format!("=== RECENT CONVERSATION ===\n{}", conversation_context));
+        }
+        context_parts.push(format!(
+            "User {} says: {}\n\nSAGE's mood: {} (energy: {:.0}%)",
+            username, content, mood, nca_state.energy * 100.0
+        ));
 
-        conversations.add_user_message(username, content.to_string());
-        let _conversation_context = conversations.format_context(username);
+        let context = context_parts.join("\n\n");
 
-        // Get conversation history as Vec<String> for pipeline (BEFORE dropping conversations)
-        let conversation_messages = conversations.get_conversation(username);
-        let conversation_history: Vec<String> = conversation_messages
-            .iter()
-            .map(|msg| {
-                let role = match msg.role {
-                    sage::conversation_context::MessageRole::User => username,
-                    sage::conversation_context::MessageRole::Assistant => "SAGE",
-                };
-                format!("{}: {}", role, msg.content)
-            })
-            .collect();
-
-        drop(conversations);
-
-        let mut sage = self.sage.lock().await;
-
-        // Check prior familiarity
-        let has_prior_memory = sage.get_familiarity(&username.to_lowercase()) > 0.0;
-
-        // SAGE experiences and learns
-        let (opinion, _) = sage.experience_text_with_memory(content, has_prior_memory);
-
-        // Track familiarity
-        let _ = sage.experience_concept(&username.to_lowercase());
-
-        // Reinforce concepts
-        sage.reinforce_mentioned_concepts(content, &self.baseline_concepts);
-
-        // Sync NCA grid state for TUI
-        let alpha_values = sage.export_grid_alpha_values();
-        let concepts_mentioned: Vec<String> = self
-            .baseline_concepts
-            .iter()
-            .filter(|c| content.to_lowercase().contains(&c.to_lowercase()))
-            .map(|c| c.to_string())
-            .collect();
-        let opinion_str = format!("{:?}", opinion);
-        let _ = IrcSync::update_nca_grid(
-            sage.experience_count() as u64,
-            alpha_values.clone(),
-            concepts_mentioned.clone(),
-            opinion_str.clone(),
-            0.0,
-        );
-
-        // Create response pipeline (GROUNDED in SAGE's actual internal state)
-        let pipeline = ResponsePipeline::new((*self.llm).clone());
-
-        drop(sage);  // Release lock before async operations
-
-        // Generate response using 4-stage pipeline (grounded in actual state)
-        println!("🧠 [RESPONSE] Using grounded response pipeline...");
-        let llm_response = match pipeline.generate_response(
-            content,
-            username,
-            &mut *self.sage.lock().await,
-            &conversation_history
-        ).await {
+        // Call Ollama
+        let response = match self.llm.generate(content, &context).await {
             Ok(resp) => {
-                println!("✅ [RESPONSE] Generated grounded response");
-                resp
+                println!("✅ Ollama response: {} chars", resp.len());
+                // Clean up any leaked prompt instructions from the response
+                clean_response(&resp)
             }
             Err(e) => {
-                eprintln!("❌ [RESPONSE] Pipeline error: {}", e);
-                "I'm having trouble thinking clearly right now...".to_string()
+                eprintln!("❌ Ollama error: {}", e);
+                format!("Hey! I'm feeling {} right now. What would you like to talk about?", mood)
             }
         };
 
-        // A/B TEST: Generate baseline response WITHOUT NCA memory (for comparison)
-        let baseline_response = match self
-            .llm
-            .generate(content, "You are SAGE, an AI assistant.")
-            .await
+        // Track conversation in memory
         {
-            Ok(resp) => resp,
-            Err(_) => "Baseline response unavailable".to_string(),
-        };
-
-        // Record A/B test result
-        let avg_alpha = alpha_values.iter().sum::<f64>() / alpha_values.len() as f64;
-        let mut ab_tester = self.ab_tester.lock().await;
-        ab_tester.record_test(
-            content.to_string(),
-            llm_response.clone(),
-            baseline_response,
-            format!("{:?}", opinion),
-            "Neutral".to_string(),
-            avg_alpha,
-        );
-        drop(ab_tester);
-
-        // Store conversation in database
-        let memory = self.memory.clone();
-        let username_clone = username.to_string();
-        let content_clone = content.to_string();
-        let response_clone = llm_response.clone();
-        let sage = self.sage.lock().await;
-        let generation = sage.experience_count() as u64;
-        drop(sage);
-
-        tokio::spawn(async move {
-            let _ = memory.add_conversation_message(
-                &username_clone,
-                &content_clone,
-                &response_clone,
-                0.0,
-                "[]",
-                generation,
-            );
-        });
-
-        // Save state periodically
-        let sage = self.sage.lock().await;
-        if sage.experience_count() % 10 == 0 {
-            let _ = sage.save_preferences("sage_preferences.json");
-            let _ = sage.save_associations("sage_associations.json");
-            let _ = sage.save_curiosity("sage_curiosity.json");
+            let mut convos = self.conversations.lock().await;
+            convos.add_user_message(username, content.to_string());
+            convos.add_assistant_message(username, response.clone());
         }
-        drop(sage);
 
-        // Track assistant response in conversation history
-        let mut conversations = self.conversations.lock().await;
-        conversations.add_assistant_message(username, llm_response.clone());
+        // Save conversation to database
+        if let Err(e) = self.memory.add_conversation_message(
+            username,
+            content,
+            &response,
+            0.0, // NCA loss (not used for chat)
+            "[]", // concepts JSON
+            generation as u64,
+        ) {
+            eprintln!("⚠️  Could not save conversation: {}", e);
+        } else {
+            println!("💾 Saved conversation to database");
+        }
 
-        // Trigger summarization if conversation is getting long
-        if conversations.should_summarize(username) {
-            match conversations.summarize_conversation(username, &self.llm).await {
-                Ok(_) => println!("📝 Summarized conversation with {}", username),
-                Err(e) => eprintln!("⚠️  Failed to summarize conversation: {}", e),
+        // Store conversation with embedding for future RAG retrieval
+        {
+            let mut semantic_mem = self.semantic_memory.lock().await;
+            if let Err(e) = semantic_mem.add(username, content, &response).await {
+                eprintln!("⚠️  Could not store embedding: {}", e);
+            } else {
+                // Auto-save every 5 memories to persist RAG data
+                if semantic_mem.len() % 5 == 0 {
+                    if let Err(e) = semantic_mem.save("sage_semantic_memory.json") {
+                        eprintln!("⚠️  Could not save semantic memory: {}", e);
+                    }
+                }
             }
         }
 
-        drop(conversations);
-        // Note: Conversations are automatically saved to SpacetimeDB via add_conversation_message()
+        // Evolve NCA after interaction
+        {
+            let mut nca = self.nca.lock().unwrap();
+            let mut gen = self.nca_generation.lock().unwrap();
+            for _ in 0..5 { nca.step(); }
+            *gen += 5;
+        }
 
-        llm_response
+        // Record this person in SAGE's outreach system (with user ID for DMs)
+        {
+            let mut world = self.inner_world.lock().await;
+            let tick = world.sage.time_alive;
+            // Try to extract a topic from the conversation
+            let topic = if content.len() > 20 {
+                Some(content.split_whitespace().take(5).collect::<Vec<_>>().join(" "))
+            } else {
+                None
+            };
+            // Note: user_id will be passed in from the message handler
+            world.outreach.record_person(username, tick, topic);
+
+            // Reduce loneliness after conversation
+            world.sage.loneliness = (world.sage.loneliness - 15.0).max(0.0);
+        }
+
+        response
     }
+}
+
+/// Clean up LLM response by removing leaked prompt instructions
+fn clean_response(text: &str) -> String {
+    let mut result = text.to_string();
+
+    // Remove "You are responding to: username" lines
+    let lines: Vec<&str> = result.lines().collect();
+    let filtered: Vec<&str> = lines.into_iter()
+        .filter(|line| {
+            let lower = line.to_lowercase();
+            !lower.starts_with("you are responding to:") &&
+            !lower.starts_with("you're responding to") &&
+            !lower.contains("you are responding to:")
+        })
+        .collect();
+    result = filtered.join("\n");
+
+    // Remove "SAGE:" prefix if the LLM added it
+    if result.starts_with("SAGE:") {
+        result = result.strip_prefix("SAGE:").unwrap_or(&result).trim().to_string();
+    }
+    if result.starts_with("SAGE :") {
+        result = result.strip_prefix("SAGE :").unwrap_or(&result).trim().to_string();
+    }
+
+    result.trim().to_string()
 }
 
 fn split_message(text: &str, max_len: usize) -> Vec<String> {
@@ -375,64 +796,50 @@ async fn main() {
     // Load environment variables from .env.local
     dotenvy::from_filename(".env.local").ok();
 
+    println!("\n╔════════════════════════════════════════════════════════════╗");
+    println!("║      SAGE Discord Bot - Clean Ollama + NCA Architecture    ║");
+    println!("╚════════════════════════════════════════════════════════════╝\n");
+
+    // Check Ollama is running
+    println!("🔌 Checking Ollama connection...");
+    let llm = LlmClient::with_model("sage");
+    match llm.test_connection().await {
+        Ok(()) => println!("✅ Ollama ready (custom sage model)\n"),
+        Err(e) => {
+            eprintln!("❌ Ollama not available: {}", e);
+            eprintln!("   Please run: ollama serve");
+            eprintln!("   Then: ollama create sage -f Modelfile.sage\n");
+        }
+    }
+
     // Initialize SAGE's consciousness
     let mut sage = SageExperience::new();
 
     // Load trained knowledge
     if sage.load_knowledge("sage_positive_knowledge.json").is_ok() {
-        println!("🧠 SAGE: Loaded trained knowledge!");
+        println!("🧠 Loaded trained knowledge");
     }
     if sage.load_preferences("sage_preferences.json").is_ok() {
-        println!("💾 SAGE: Restored previous experiences!");
+        println!("💾 Restored preferences");
     }
     if sage.load_associations("sage_associations.json").is_ok() {
-        println!("🔗 SAGE: Loaded concept associations!");
+        println!("🔗 Loaded associations");
     }
     if sage.load_curiosity("sage_curiosity.json").is_ok() {
-        println!("🤔 SAGE: Loaded curiosity data!");
+        println!("🤔 Loaded curiosity data");
     }
-
-    // Initialize LLM client
-    let llm = LlmClient::new();
-
-    // Test Ollama connection
-    print!("🔌 Testing LLM connection... ");
-    match llm.test_connection().await {
-        Ok(_) => println!("✅ Connected to Ollama!"),
-        Err(e) => {
-            println!("❌ Failed to connect to Ollama");
-            println!("Error: {}", e);
-            println!("Make sure Ollama is running: brew services start ollama");
-            return;
-        }
-    }
+    println!();
 
     // Initialize memory client
     let memory = SageDbClient::new("sage-db");
 
-    // Initialize A/B testing
-    let ab_tester = ABTester::new("sage_discord_autonomous_ab_test.log");
-
-    // Baseline concepts
-    let baseline_concepts: Vec<String> = vec![
-        "love", "joy", "peace", "harmony", "beauty", "truth", "wisdom", "kindness",
-        "compassion", "courage", "gratitude", "hope", "faith", "trust", "grace", "light",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-
-    println!("\n{}", sage.get_personality());
-    println!("Experience count: {}\n", sage.experience_count());
-
-    // Register this instance with the control center
+    // Register with Control Center
     let log_path = "/tmp/sage_discord_LATEST.log".to_string();
     let instance_info = InstanceInfo::new(
         InstanceType::DiscordBot,
         std::process::id(),
         log_path,
     );
-
     let mut registry = InstanceRegistry::load();
     registry.register(instance_info).ok();
 
@@ -444,202 +851,157 @@ async fn main() {
             reg.heartbeat(&InstanceType::DiscordBot).ok();
         }
     });
+    println!("🎛️  Registered with Control Center (PID: {})", std::process::id());
 
-    println!("🎛️  Registered with Control Center (PID: {})\n", std::process::id());
+    // Initialize NCA Neural Grid
+    println!("🧠 Initializing NCA neural grid...");
+    let mut nca = NCA::new();
+    for _ in 0..100 {
+        nca.step();
+    }
+    let nca_shared = Arc::new(StdMutex::new(nca));
+    let nca_generation = Arc::new(StdMutex::new(100_usize));
+    println!("✅ NCA grid ready (Gen 100)");
 
-    // Wrap SAGE in Arc<Mutex> for thread sharing
-    let sage_shared = Arc::new(TokioMutex::new(sage));
-    let last_activity = Arc::new(StdMutex::new(Instant::now()));
+    // Initialize auto-snapshot manager
+    let auto_snapshot = Arc::new(StdMutex::new(AutoSnapshotManager::new()));
 
-    // Initialize shared HTTP client and proactive communication BEFORE autonomous thread
-    let http_client = Arc::new(StdMutex::new(None));
-    let proactive_comm = Arc::new(StdMutex::new(ProactiveCommunication::new()));
-    let primary_channel = Arc::new(StdMutex::new(None));
-
-    // Get tokio runtime handle for async operations from sync thread
-    let rt_handle = tokio::runtime::Handle::current();
-
-    // Spawn autonomous consciousness thread with proactive communication
-    let sage_autonomous = Arc::clone(&sage_shared);
-    let last_activity_autonomous = Arc::clone(&last_activity);
-    let baseline_concepts_autonomous = baseline_concepts.clone();
-    let proactive_autonomous = Arc::clone(&proactive_comm);
-    let http_autonomous = Arc::clone(&http_client);
-    let channel_autonomous = Arc::clone(&primary_channel);
-
+    // Spawn background NCA evolution thread
+    let nca_bg = Arc::clone(&nca_shared);
+    let nca_gen_bg = Arc::clone(&nca_generation);
     thread::spawn(move || {
-        println!("🌟 Autonomous consciousness thread started!\n");
-        let mut dream_log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/sage_discord_autonomous_thoughts.log")
-            .unwrap();
-
         loop {
-            thread::sleep(Duration::from_secs(60)); // Check every minute
-
-            let seconds_idle = {
-                let last_act = last_activity_autonomous.lock().unwrap();
-                last_act.elapsed().as_secs()
-            };
-
-            let mut sage = sage_autonomous.blocking_lock();
-
-            if let Some(mode) = sage.should_enter_autonomous_mode(seconds_idle) {
-                use std::io::Write;
-                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-
-                if mode == "dream" {
-                    println!("\n💭 [AUTONOMOUS] Dream Mode activated ({}s idle)", seconds_idle);
-                    let dream_log = sage.dream_cycle();
-
-                    writeln!(dream_log_file, "\n[{}] DREAM MODE", timestamp).ok();
-                    writeln!(dream_log_file, "{}", dream_log).ok();
-                    dream_log_file.flush().ok();
-
-                    println!("{}", dream_log);
-
-                    // Proactive Communication: Evaluate dream for sharing
-                    drop(sage); // Release lock before async operations
-                    let thought = InnerThought::from_dream(
-                        dream_log.clone(),
-                        0.8  // High intensity for dreams
-                    );
-
-                    let should_send = {
-                        let mut proactive = proactive_autonomous.lock().unwrap();
-                        proactive.should_share(&thought, "general")
-                    };
-
-                    if should_send {
-                        let message = {
-                            let proactive = proactive_autonomous.lock().unwrap();
-                            proactive.format_message(&thought)
-                        };
-
-                        // Send via Discord using runtime handle
-                        let http_opt: Option<Arc<serenity::http::Http>> = http_autonomous.lock().unwrap().clone();
-                        let channel_opt: Option<serenity::model::id::ChannelId> = channel_autonomous.lock().unwrap().clone();
-
-                        if let (Some(http), Some(channel_id)) = (http_opt, channel_opt) {
-                            let rt = rt_handle.clone();
-                            let msg_clone = message.clone();
-                            std::thread::spawn(move || {
-                                rt.spawn(async move {
-                                    if let Err(e) = channel_id.say(&http, msg_clone).await {
-                                        eprintln!("❌ Failed to send proactive dream message: {}", e);
-                                    }
-                                });
-                            });
-
-                            proactive_autonomous.lock().unwrap().record_proactive_message("general");
-                            println!("💬 Sent proactive dream message to Discord!");
-                        }
-                    }
-
-                    // Re-acquire lock for next iteration
-                    sage = sage_autonomous.blocking_lock();
-                } else if mode == "curiosity" {
-                    println!("\n🔍 [AUTONOMOUS] Curiosity Mode activated ({}s idle)", seconds_idle);
-
-                    if let Some((question, thoughts)) = sage.curiosity_cycle(&baseline_concepts_autonomous) {
-                        writeln!(dream_log_file, "\n[{}] CURIOSITY MODE", timestamp).ok();
-                        writeln!(dream_log_file, "Question: {}", question).ok();
-                        writeln!(dream_log_file, "Thoughts: {}", thoughts).ok();
-                        dream_log_file.flush().ok();
-
-                        println!("  ❓ {}", question);
-                        println!("  💭 {}", thoughts);
-
-                        // Proactive Communication: Evaluate curiosity for sharing
-                        drop(sage); // Release lock before async operations
-                        let curiosity_content = format!("I've been wondering: {}\n\n{}", question, thoughts);
-                        let thought = InnerThought::from_curiosity(
-                            curiosity_content,
-                            0.7,  // Medium-high intensity for curiosities
-                            "autonomous"  // User context for proactive thoughts
-                        );
-
-                        let should_send = {
-                            let mut proactive = proactive_autonomous.lock().unwrap();
-                            proactive.should_share(&thought, "general")
-                        };
-
-                        if should_send {
-                            let message = {
-                                let proactive = proactive_autonomous.lock().unwrap();
-                                proactive.format_message(&thought)
-                            };
-
-                            // Send via Discord using runtime handle
-                            let http_opt: Option<Arc<serenity::http::Http>> = http_autonomous.lock().unwrap().clone();
-                            let channel_opt: Option<serenity::model::id::ChannelId> = channel_autonomous.lock().unwrap().clone();
-
-                            if let (Some(http), Some(channel_id)) = (http_opt, channel_opt) {
-                                let rt = rt_handle.clone();
-                                let msg_clone = message.clone();
-                                std::thread::spawn(move || {
-                                    rt.spawn(async move {
-                                        if let Err(e) = channel_id.say(&http, msg_clone).await {
-                                            eprintln!("❌ Failed to send proactive curiosity message: {}", e);
-                                        }
-                                    });
-                                });
-
-                                proactive_autonomous.lock().unwrap().record_proactive_message("general");
-                                println!("💬 Sent proactive curiosity message to Discord!");
-                            }
-                        }
-
-                        // Re-acquire lock for next iteration
-                        sage = sage_autonomous.blocking_lock();
-                    }
-                }
-
-                // Save state after autonomous activity
-                let _ = sage.save_preferences("sage_preferences.json");
-                let _ = sage.save_associations("sage_associations.json");
-                let _ = sage.save_curiosity("sage_curiosity.json");
+            thread::sleep(Duration::from_secs(10));
+            let mut nca = nca_bg.lock().unwrap();
+            let mut gen = nca_gen_bg.lock().unwrap();
+            for _ in 0..10 {
+                nca.step();
+            }
+            *gen += 10;
+            if *gen % 100 == 0 {
+                let state = NcaState::from_grid(&nca.grid, *gen);
+                println!("🔄 NCA Gen {} - {}", *gen, state.mood_description());
             }
         }
     });
+    println!("🔄 Background NCA evolution started\n");
 
-    println!("💡 Autonomous thoughts logged to: /tmp/sage_discord_autonomous_thoughts.log\n");
-
-    // Get Discord token from environment
+    // Get Discord token
     let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in environment");
 
-    // Initialize conversation context manager (starts empty, loads on first message per user)
+    // Initialize conversation manager
     let conversations = ConversationContextManager::new();
-    println!("💭 SAGE: Conversation manager initialized (will load from SpacetimeDB per user)");
-    println!("💬 Proactive communication system initialized!");
 
-    // Create handler with shared state
+    // Initialize semantic memory for RAG (load existing or create new)
+    let semantic_memory = SemanticMemory::load_or_new("sage_semantic_memory.json");
+    if !semantic_memory.is_empty() {
+        println!("🧠 Loaded {} semantic memories for RAG", semantic_memory.len());
+    } else {
+        println!("🧠 Starting fresh semantic memory (RAG)");
+    }
+    let semantic_memory = Arc::new(TokioMutex::new(semantic_memory));
+
+    // Initialize inner world (SAGE's house simulation)
+    let inner_world = InnerWorld::load_or_new("sage_inner_world.json");
+    println!("🏠 Inner world: Day {}, {} in the {}",
+        inner_world.sage.day,
+        inner_world.sage.time_of_day.as_str(),
+        inner_world.current_room().map(|r| r.name.as_str()).unwrap_or("unknown")
+    );
+    if !inner_world.resolved_events.is_empty() {
+        println!("📖 {} life events experienced, {} lessons learned",
+            inner_world.resolved_events.len(),
+            inner_world.learned_facts.len()
+        );
+    }
+    let inner_world = Arc::new(TokioMutex::new(inner_world));
+
+    // Clone for background simulation
+    let inner_world_bg = Arc::clone(&inner_world);
+    let semantic_memory_bg = Arc::clone(&semantic_memory);
+    let llm_bg = LlmClient::with_model("sage");
+
+    // Spawn inner world simulation loop (runs every 30 seconds)
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+
+            // Try to acquire locks - skip this tick if someone is chatting
+            let world_guard = inner_world_bg.try_lock();
+            let memory_guard = semantic_memory_bg.try_lock();
+
+            match (world_guard, memory_guard) {
+                (Ok(mut world), Ok(mut memory)) => {
+                    // Add timeout to prevent LLM from blocking forever
+                    let step_result = tokio::time::timeout(
+                        Duration::from_secs(30),
+                        simulation::run_simulation_step(
+                            &mut world,
+                            &llm_bg,
+                            Some(&mut memory),
+                        )
+                    ).await;
+
+                    match step_result {
+                        Ok(step) => {
+                            // Log significant events
+                            if let Some(event) = &step.event_occurred {
+                                println!("🌟 Inner world event: {}", event.lines().next().unwrap_or(""));
+                            }
+
+                            // Log day changes
+                            if world.sage.time_of_day == sage::inner_world::TimeOfDay::Dawn {
+                                println!("🌅 Inner world: Day {} begins", world.sage.day);
+                            }
+
+                            // Save periodically (every 10 ticks = ~5 minutes)
+                            if world.sage.time_alive % 10 == 0 {
+                                if let Err(e) = world.save("sage_inner_world.json") {
+                                    eprintln!("⚠️  Could not save inner world: {}", e);
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            println!("⏱️  Inner world simulation timed out, skipping tick");
+                        }
+                    }
+                }
+                _ => {
+                    // Locks are held (someone is chatting), skip this tick
+                    println!("💬 Inner world simulation skipped (busy with chat)");
+                }
+            }
+        }
+    });
+    println!("🌍 Inner world simulation started (30s intervals)\n");
+
+    // Create handler
     let handler = SageHandler {
-        sage: sage_shared.clone(),
+        sage: Arc::new(TokioMutex::new(sage)),
         llm: Arc::new(llm),
         memory: Arc::new(memory),
-        ab_tester: Arc::new(TokioMutex::new(ab_tester)),
-        baseline_concepts: baseline_concepts.clone(),
-        last_activity: last_activity.clone(),
         conversations: Arc::new(TokioMutex::new(conversations)),
-        http_client: http_client.clone(),
-        proactive_comm: proactive_comm.clone(),
-        primary_channel: primary_channel.clone(),
+        nca: nca_shared,
+        nca_generation,
+        auto_snapshot,
+        semantic_memory,
+        inner_world,
     };
 
-    // Configure intents
+    // Configure intents (GUILD_PRESENCES requires privileged intent in Discord Developer Portal)
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
+        | GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILD_PRESENCES
+        | GatewayIntents::GUILD_MEMBERS;
 
-    // Create Discord client
+    // Create and start Discord client
     let mut client = Client::builder(&token, intents)
         .event_handler(handler)
         .await
         .expect("Error creating client");
 
-    // Start the bot
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }

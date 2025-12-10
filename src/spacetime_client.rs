@@ -108,16 +108,27 @@ impl SageDbClient {
             return Err("Not connected to SpacetimeDB".to_string());
         }
 
+        // Escape and JSON-quote string arguments for spacetime CLI
+        let escape_json = |s: &str| -> String {
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\t', "\\t");
+            format!("\"{}\"", escaped)
+        };
+
         let status = std::process::Command::new("spacetime")
             .args(&[
                 "call",
                 &self.db_name,
                 "add_conversation_message",
-                sender,
-                message,
-                sage_response,
+                &escape_json(sender),
+                &escape_json(message),
+                &escape_json(sage_response),
                 &nca_loss.to_string(),
-                concepts_json,
+                concepts_json,  // Already JSON formatted
                 &generation_context.to_string(),
             ])
             .stderr(std::process::Stdio::null())
@@ -552,70 +563,49 @@ impl SageDbClient {
             return Err("Not connected to SpacetimeDB".to_string());
         }
 
-        // Call the reducer and capture logs
-        let _output = std::process::Command::new("spacetime")
-            .args(&[
-                "logs",
-                &self.db_name,
-                "--follow",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Failed to start logs: {}", e))?;
+        // SpacetimeDB doesn't support WHERE clauses, so fetch all and filter in Rust
+        let query = "SELECT sender, message, sage_response, nca_loss FROM conversations";
 
-        // Give logs a moment to start
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let output = std::process::Command::new("spacetime")
+            .args(&["sql", &self.db_name, query])
+            .output()
+            .map_err(|e| format!("Failed to query: {}", e))?;
 
-        // Call the query reducer
-        let call_status = std::process::Command::new("spacetime")
-            .args(&[
-                "call",
-                &self.db_name,
-                "get_user_conversations",
-                username,
-                &limit.to_string(),
-            ])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map_err(|e| format!("Failed to call reducer: {}", e))?;
-
-        if !call_status.success() {
-            return Err("Reducer call failed".to_string());
+        if !output.status.success() {
+            return Err("SQL query failed".to_string());
         }
 
-        // Give reducer time to log results
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Read recent logs to get conversation data
-        let log_output = std::process::Command::new("spacetime")
-            .args(&[
-                "logs",
-                &self.db_name,
-                "-n",
-                "100",  // Get last 100 log lines
-            ])
-            .output()
-            .map_err(|e| format!("Failed to read logs: {}", e))?;
-
-        let logs = String::from_utf8_lossy(&log_output.stdout);
-
-        // Parse CONVERSATION_DATA lines
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let mut conversations = Vec::new();
-        for line in logs.lines().rev() {  // Reverse to get chronological order
-            if line.contains("CONVERSATION_DATA|") {
-                if let Some(data_part) = line.split("CONVERSATION_DATA|").nth(1) {
-                    let parts: Vec<&str> = data_part.split('|').collect();
-                    if parts.len() >= 3 {
-                        conversations.push(ConversationRecord {
-                            sender: parts[0].replace("\\|", "|").to_string(),
-                            message: parts[1].replace("\\|", "|").to_string(),
-                            sage_response: parts[2].replace("\\|", "|").to_string(),
-                            nca_loss: 0.0,  // Not stored in conversation data
-                        });
-                    }
+
+        // Parse the SQL output (pipe-delimited table format)
+        for line in stdout.lines() {
+            // Skip header, separator, warning lines
+            if line.contains("sender") || line.contains("---") ||
+               line.contains("WARNING") || line.trim().is_empty() {
+                continue;
+            }
+
+            // Parse: sender | message | sage_response | nca_loss
+            let parts: Vec<&str> = line.split('|').map(|s| s.trim()).collect();
+            if parts.len() >= 4 {
+                let sender = parts[0].trim_matches('"');
+                // Filter by username
+                if sender == username {
+                    conversations.push(ConversationRecord {
+                        sender: sender.to_string(),
+                        message: parts[1].trim_matches('"').to_string(),
+                        sage_response: parts[2].trim_matches('"').to_string(),
+                        nca_loss: parts[3].parse().unwrap_or(0.0),
+                    });
                 }
             }
+        }
+
+        // Take only the last N conversations (most recent)
+        if conversations.len() > limit {
+            conversations = conversations.into_iter().rev().take(limit).collect();
+            conversations.reverse();
         }
 
         eprintln!("📚 Retrieved {} conversations for {} from database", conversations.len(), username);

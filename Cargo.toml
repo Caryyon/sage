@@ -35,3 +35,12 @@ dotenvy = "0.15"  # Load environment variables from .env files
 rodio = "0.17"  # Audio playback for sonification
 cpal = "0.15"  # Audio input from microphone
 rustfft = "6.1"  # FFT for audio frequency analysis
+
+# Candle ML framework for local LLM inference
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+hf-hub = "0.4"  # Download models from HuggingFace
+tokenizers = "0.20"  # Text tokenization
+regex = "1.12.2"
+pdf-extract = "0.10.0"
