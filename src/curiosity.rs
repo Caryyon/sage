@@ -24,6 +24,7 @@ pub enum QuestionType {
     Purpose,        // "Why is X important?"
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CuriosityEngine {
     /// Things SAGE is curious about
     curious_concepts: HashMap<String, CuriosityEntry>,

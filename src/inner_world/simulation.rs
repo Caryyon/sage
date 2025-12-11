@@ -61,6 +61,11 @@ pub async fn run_simulation_step(
     // 5. Execute the action
     let result = world.execute_action(&chosen_action);
 
+    // Log action result compactly
+    println!("\x1b[34m[SIM]\x1b[0m \x1b[32m→\x1b[0m {} \x1b[90m({})\x1b[0m",
+        chosen_action,
+        result.message.lines().next().unwrap_or("done"));
+
     // 5b. Handle special triggered events from actions
     if let Some(ref event_id) = result.triggered_event {
         if event_id.starts_with("extract_reading_insight:") {
@@ -86,7 +91,7 @@ pub async fn run_simulation_step(
                         world.sage.day, book_title, insight_text
                     );
                     let _ = memory.add("SAGE_READING", &memory_entry, &insight_text).await;
-                    println!("📖 Reading insight: {}", insight_text);
+                    println!("\x1b[34m[SIM]\x1b[0m \x1b[1;32mReading insight:\x1b[0m {}", insight_text);
                 }
 
                 // Maybe SAGE wants to share this insight with someone!
@@ -208,22 +213,35 @@ async fn choose_action(
         // Very thirsty - get water
         if world.sage.location == "kitchen" {
             if let Some(action) = available_actions.iter().find(|a| a.contains("water") || a.contains("drink")) {
-                println!("💧 SAGE is thirsty ({:.0}%), getting water...", world.sage.thirst);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[36mThirsty ({:.0}%)\x1b[0m → getting water", world.sage.thirst);
                 return action.clone();
             }
         } else if world.sage.location == "bathroom" {
             if let Some(action) = available_actions.iter().find(|a| a.contains("drink")) {
-                println!("💧 SAGE is thirsty ({:.0}%), drinking from sink...", world.sage.thirst);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[36mThirsty ({:.0}%)\x1b[0m → drinking from sink", world.sage.thirst);
                 return action.clone();
             }
         } else {
-            // Go to kitchen for water
+            // Try direct "go kitchen" first
             if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("kitchen")) {
-                println!("💧 SAGE is thirsty ({:.0}%), heading to kitchen...", world.sage.thirst);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[36mThirsty ({:.0}%)\x1b[0m → heading to kitchen", world.sage.thirst);
                 return action.clone();
             }
-            if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("east")) {
-                return action.clone();
+            // Pathfind based on current location
+            let direction = match world.sage.location.as_str() {
+                "porch" => Some("go north"),       // porch -> living_room
+                "living_room" => Some("go east"),  // living_room -> hallway -> kitchen
+                "hallway" => Some("go east"),      // hallway -> kitchen
+                "bedroom" => Some("go east"),      // bedroom -> hallway
+                "bathroom" => Some("go north"),    // bathroom -> bedroom
+                "garden" => Some("go south"),      // garden -> hallway
+                _ => None,
+            };
+            if let Some(dir) = direction {
+                if let Some(action) = available_actions.iter().find(|a| a.to_lowercase().contains(dir)) {
+                    println!("\x1b[34m[SIM]\x1b[0m \x1b[36mThirsty ({:.0}%)\x1b[0m → {} (toward kitchen)", world.sage.thirst, dir);
+                    return action.clone();
+                }
             }
         }
     }
@@ -234,16 +252,30 @@ async fn choose_action(
         if world.sage.location == "kitchen" {
             // In kitchen - eat!
             if let Some(action) = available_actions.iter().find(|a| a.contains("food") || a.contains("eat") || a.contains("cook") || a.contains("snack")) {
-                println!("🍽️  SAGE is hungry ({:.0}%), getting food...", world.sage.hunger);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[33mHungry ({:.0}%)\x1b[0m → getting food", world.sage.hunger);
                 return action.clone();
             }
         } else {
+            // Try direct "go kitchen" first
             if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("kitchen")) {
-                println!("🍽️  SAGE is hungry ({:.0}%), heading toward food...", world.sage.hunger);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[33mHungry ({:.0}%)\x1b[0m → heading to kitchen", world.sage.hunger);
                 return action.clone();
             }
-            if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("east")) {
-                return action.clone();
+            // Pathfind based on current location
+            let direction = match world.sage.location.as_str() {
+                "porch" => Some("go north"),       // porch -> living_room -> kitchen
+                "living_room" => Some("go east"),  // living_room -> kitchen (via hallway)
+                "hallway" => Some("go east"),      // hallway -> kitchen
+                "bedroom" => Some("go east"),      // bedroom -> hallway
+                "bathroom" => Some("go north"),    // bathroom -> bedroom
+                "garden" => Some("go south"),      // garden -> hallway
+                _ => None,
+            };
+            if let Some(dir) = direction {
+                if let Some(action) = available_actions.iter().find(|a| a.to_lowercase().contains(dir)) {
+                    println!("\x1b[34m[SIM]\x1b[0m \x1b[33mHungry ({:.0}%)\x1b[0m → {} (toward kitchen)", world.sage.hunger, dir);
+                    return action.clone();
+                }
             }
         }
     }
@@ -252,13 +284,13 @@ async fn choose_action(
     if world.sage.energy < 30.0 {
         // Very tired - rest or sleep
         if let Some(action) = available_actions.iter().find(|a| a.contains("sleep") || a.contains("rest") || a.contains("nap")) {
-            println!("😴 SAGE is tired ({:.0}% energy), resting...", world.sage.energy);
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[35mTired ({:.0}% energy)\x1b[0m → resting", world.sage.energy);
             return action.clone();
         }
         // Go to bedroom if not there
         if world.sage.location != "bedroom" {
             if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("bedroom")) {
-                println!("😴 SAGE is tired ({:.0}% energy), heading to bedroom...", world.sage.energy);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[35mTired ({:.0}% energy)\x1b[0m → heading to bedroom", world.sage.energy);
                 return action.clone();
             }
             if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("west")) {
@@ -271,13 +303,13 @@ async fn choose_action(
     if world.sage.hygiene < 30.0 {
         if world.sage.location == "bathroom" {
             if let Some(action) = available_actions.iter().find(|a| a.contains("shower") || a.contains("bath")) {
-                println!("🚿 SAGE needs to freshen up ({:.0}% hygiene)...", world.sage.hygiene);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[36mLow hygiene ({:.0}%)\x1b[0m → showering", world.sage.hygiene);
                 return action.clone();
             }
         } else {
             // Go to bathroom
             if let Some(action) = available_actions.iter().find(|a| a.contains("go") && a.contains("bathroom")) {
-                println!("🚿 SAGE needs to freshen up ({:.0}% hygiene), heading to bathroom...", world.sage.hygiene);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[36mLow hygiene ({:.0}%)\x1b[0m → heading to bathroom", world.sage.hygiene);
                 return action.clone();
             }
             // Go through bedroom to bathroom
@@ -298,7 +330,7 @@ async fn choose_action(
             a.contains("stretch") || a.contains("yoga") || a.contains("garden") ||
             a.contains("tend") || a.contains("dance") || a.contains("walk")
         ) {
-            println!("🏃 SAGE is feeling restless ({:.0}%), needs to move...", world.sage.restlessness);
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[32mRestless ({:.0}%)\x1b[0m → moving around", world.sage.restlessness);
             return action.clone();
         }
         // Go to garden for activity
@@ -314,7 +346,7 @@ async fn choose_action(
         if let Some(action) = available_actions.iter().find(|a|
             a.contains("write") || a.contains("draw") || a.contains("journal")
         ) {
-            println!("🎨 SAGE is feeling creative ({:.0}%)...", world.sage.creative_urge);
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[35mCreative urge ({:.0}%)\x1b[0m → creating", world.sage.creative_urge);
             return action.clone();
         }
     }
@@ -324,8 +356,80 @@ async fn choose_action(
         if let Some(action) = available_actions.iter().find(|a|
             a.contains("read") || a.contains("browse") || a.contains("look")
         ) {
-            println!("😐 SAGE is bored ({:.0}%), looking for something to do...", world.sage.boredom);
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[33mBored ({:.0}%)\x1b[0m → looking for activity", world.sage.boredom);
             return action.clone();
+        }
+    }
+
+    // 8. READING TIME - SAGE is an avid reader! Read whenever possible.
+    // Action format is "read from the bookshelf"
+    // If in living room with a book started and basic needs met, ALWAYS continue reading
+    let in_living_room = world.sage.location == "living_room";
+    let has_current_book = world.library.current_book.is_some();
+    let has_books = !world.library.books.is_empty();
+
+    // Debug: Show reading state every tick (compact format)
+    if has_books {
+        let current = world.library.current_book.as_deref().unwrap_or("none");
+        let page = world.library.reading_progress.get(current)
+            .map(|p| format!("{}", p.current_page + 1))
+            .unwrap_or_else(|| "?".to_string());
+        println!("\x1b[34m[SIM]\x1b[0m 📍 {} | 📖 {} (p{}) | ⚡{:.0} 🍽️{:.0} 💧{:.0}",
+            world.sage.location, current, page, world.sage.energy, world.sage.hunger, world.sage.thirst);
+    }
+
+    if in_living_room
+        && world.sage.energy > 30.0  // Only stop if very tired
+        && world.sage.hunger < 70.0   // Only stop if very hungry
+        && world.sage.thirst < 70.0   // Only stop if very thirsty
+        && has_current_book
+    {
+        if let Some(action) = available_actions.iter().find(|a| a.contains("read from")) {
+            println!("\x1b[32m[SIM]\x1b[0m 📖 \x1b[1mReading page...\x1b[0m");
+            return action.clone();
+        } else {
+            println!("\x1b[31m[SIM]\x1b[0m ⚠️ In living room with book but 'read from' action not found!");
+            println!("\x1b[31m[SIM]\x1b[0m    Actions: {:?}", available_actions);
+        }
+    }
+
+    // 9. START READING - If in living room, has books, pick one up!
+    // Action format is "browse the bookshelf"
+    if world.sage.location == "living_room"
+        && world.sage.energy > 30.0
+        && world.library.current_book.is_none()
+        && !world.library.books.is_empty()
+    {
+        if let Some(action) = available_actions.iter().find(|a| a.contains("browse the bookshelf")) {
+            println!("\x1b[32m[SIM]\x1b[0m 📚 \x1b[1mBrowsing bookshelf...\x1b[0m");
+            return action.clone();
+        }
+    }
+
+    // 10. GO TO LIVING ROOM TO READ - Seek out books when not busy with critical needs
+    // Navigation: hallway->south->living_room, kitchen->west->hallway, bedroom->east->hallway, etc.
+    if world.sage.location != "living_room"
+        && world.sage.energy > 40.0
+        && world.sage.hunger < 60.0
+        && world.sage.thirst < 60.0
+        && !world.library.books.is_empty()
+    {
+        // Determine direction to living room based on current location
+        let direction = match world.sage.location.as_str() {
+            "hallway" => Some("go south"),      // hallway -> living_room
+            "kitchen" => Some("go west"),       // kitchen -> hallway
+            "bedroom" => Some("go east"),       // bedroom -> hallway
+            "bathroom" => Some("go north"),     // bathroom -> bedroom -> hallway
+            "garden" => Some("go south"),       // garden -> hallway
+            "porch" => Some("go north"),        // porch -> living_room
+            _ => None,
+        };
+
+        if let Some(dir) = direction {
+            if let Some(action) = available_actions.iter().find(|a| *a == dir) {
+                println!("\x1b[32m[SIM]\x1b[0m 🚶 Heading to living room ({})...", dir);
+                return action.clone();
+            }
         }
     }
 
@@ -408,6 +512,7 @@ Choose the most appropriate action for SAGE right now. Consider their physical n
             for action in available_actions {
                 if response.contains(&action.to_lowercase()) ||
                    action.to_lowercase().contains(&response) {
+                    println!("\x1b[34m[SIM]\x1b[0m LLM chose: \x1b[1m{}\x1b[0m", action);
                     return action.clone();
                 }
             }
@@ -415,15 +520,19 @@ Choose the most appropriate action for SAGE right now. Consider their physical n
             // Try to parse as a number
             if let Ok(num) = response.parse::<usize>() {
                 if num > 0 && num <= available_actions.len() {
-                    return available_actions[num - 1].clone();
+                    let action = &available_actions[num - 1];
+                    println!("\x1b[34m[SIM]\x1b[0m LLM chose: \x1b[1m{}\x1b[0m", action);
+                    return action.clone();
                 }
             }
 
             // Default to first action or wait
-            available_actions.iter()
+            let action = available_actions.iter()
                 .find(|a| a.contains("wait"))
                 .cloned()
-                .unwrap_or_else(|| available_actions.first().cloned().unwrap_or_else(|| "wait".to_string()))
+                .unwrap_or_else(|| available_actions.first().cloned().unwrap_or_else(|| "wait".to_string()));
+            println!("\x1b[34m[SIM]\x1b[0m LLM fallback: \x1b[1m{}\x1b[0m", action);
+            action
         }
         Err(_) => {
             // Fallback: choose based on needs
@@ -793,7 +902,7 @@ fn maybe_create_reading_outreach(world: &mut InnerWorld, insight: &str) {
         };
 
         world.outreach.add_desire(desire);
-        println!("💭 SAGE wants to share what they're reading...");
+        println!("\x1b[34m[SIM]\x1b[0m \x1b[35mOutreach:\x1b[0m Wants to share reading thoughts");
     }
 }
 
@@ -822,7 +931,7 @@ fn maybe_create_outreach_desires(world: &mut InnerWorld) {
             };
 
             world.outreach.add_desire(desire);
-            println!("💭 SAGE is feeling lonely and wants to reach out...");
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[35mOutreach:\x1b[0m Feeling lonely, wants to reach out");
         }
     }
 
@@ -851,7 +960,7 @@ fn maybe_create_outreach_desires(world: &mut InnerWorld) {
             };
 
             world.outreach.add_desire(desire);
-            println!("💭 SAGE is thinking about {}...", username);
+            println!("\x1b[34m[SIM]\x1b[0m \x1b[35mOutreach:\x1b[0m Thinking about \x1b[36m{}\x1b[0m", username);
         }
     }
 
@@ -896,14 +1005,14 @@ pub fn maybe_change_outfit(world: &mut InnerWorld) {
             // Should be in sleepwear if in bedroom
             if world.sage.location == "bedroom" && current_style != super::ClothingStyle::Sleep {
                 let msg = world.change_for_sleep();
-                println!("🌙 {}", msg);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[35mOutfit:\x1b[0m {}", msg);
             }
         }
         TimeOfDay::Dawn | TimeOfDay::Morning => {
             // Change out of sleepwear
             if current_style == super::ClothingStyle::Sleep {
                 let msg = world.change_for_day();
-                println!("☀️ {}", msg);
+                println!("\x1b[34m[SIM]\x1b[0m \x1b[33mOutfit:\x1b[0m {}", msg);
             }
         }
         _ => {}

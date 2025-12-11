@@ -170,7 +170,7 @@ impl SemanticMemory {
             timestamp,
         });
 
-        println!("🧠 Stored memory #{} for {}", self.conversations.len(), username);
+        println!("\x1b[35m[MEM]\x1b[0m Stored memory \x1b[1m#{}\x1b[0m for \x1b[36m{}\x1b[0m", self.conversations.len(), username);
         Ok(())
     }
 

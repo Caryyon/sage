@@ -279,14 +279,14 @@ mod tests {
 
     #[test]
     fn test_grid_to_braille_empty() {
-        let grid = Grid::new(32, 32, 4);
+        let grid = Grid::new(32, 32);
         let braille = grid_to_braille(&grid);
         assert_eq!(braille.len(), 8); // 32 rows / 4 = 8 lines
     }
 
     #[test]
     fn test_encode_braille_all_on() {
-        let mut grid = Grid::new(32, 32, 4);
+        let mut grid = Grid::new(32, 32);
 
         // Set a 2×4 block to all white (alpha = 1.0)
         for y in 0..4 {
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_encode_braille_all_off() {
-        let grid = Grid::new(32, 32, 4);
+        let grid = Grid::new(32, 32);
         let braille = encode_braille_char(&grid, 0, 0);
         // All dots off = 0x00 = '⠀' (blank Braille)
         assert_eq!(braille, '⠀');
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_encode_braille_pattern() {
-        let mut grid = Grid::new(32, 32, 4);
+        let mut grid = Grid::new(32, 32);
 
         // Create diagonal pattern:
         // 1 0

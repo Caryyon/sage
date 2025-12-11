@@ -20,6 +20,7 @@ pub enum ConnectionType {
     Analogous,    // "light" ≈ "warmth" (metaphorical connection)
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct AssociationEngine {
     /// Map of concept → NCA loss
     concept_losses: HashMap<String, f64>,

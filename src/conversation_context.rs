@@ -115,11 +115,16 @@ impl ConversationContextManager {
 
         // Include recent messages in full
         if !conversation.is_empty() {
-            context.push_str("=== CONVERSATION ===\n");
+            context.push_str(&format!(
+                "=== ONGOING CONVERSATION WITH {} ({} messages) ===\n",
+                user_id,
+                conversation.len()
+            ));
+            context.push_str("[Continue this conversation naturally - DO NOT greet them again]\n\n");
             for msg in conversation {
                 let role_label = match msg.role {
-                    MessageRole::User => format!("User ({})", user_id),
-                    MessageRole::Assistant => "Assistant (SAGE)".to_string(),
+                    MessageRole::User => user_id.to_string(),
+                    MessageRole::Assistant => "SAGE".to_string(),
                 };
                 context.push_str(&format!("{}: {}\n", role_label, msg.content));
             }

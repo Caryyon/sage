@@ -57,8 +57,8 @@ impl LlmClient {
             username, user_facts, sage_context
         );
 
-        // DEBUG: Log the full prompt to see what's being sent to LLM
-        eprintln!("\n🔍 DEBUG: Full LLM prompt:\n{}\n", &full_prompt[..full_prompt.len().min(1000)]);
+        // Condensed debug for chat
+        eprintln!("\x1b[33m[LLM]\x1b[0m chat for \x1b[36m{}\x1b[0m ({} chars)", username, full_prompt.len());
 
         let client = reqwest::Client::new();
         let response = client
@@ -104,8 +104,17 @@ impl LlmClient {
     /// Generate a response using a raw prompt (no system prompt wrapping)
     /// Used by ResponsePipeline which constructs its own complete prompts
     pub async fn generate_raw(&self, prompt: &str) -> Result<String, Box<dyn Error>> {
-        // DEBUG: Log the raw prompt being sent
-        eprintln!("\n🔍 DEBUG: Raw LLM prompt (no system wrapping):\n{}\n", &prompt[..prompt.len().min(1000)]);
+        // Condensed debug - just show prompt type and length
+        let prompt_type = if prompt.contains("inner thought") {
+            "inner thought"
+        } else if prompt.contains("choose an action") {
+            "action choice"
+        } else if prompt.contains("event") {
+            "event response"
+        } else {
+            "general"
+        };
+        eprintln!("\x1b[33m[LLM]\x1b[0m {} ({} chars)", prompt_type, prompt.len());
 
         let client = reqwest::Client::new();
         let response = client
