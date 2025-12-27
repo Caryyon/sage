@@ -74,16 +74,42 @@ fn check_pdf_extraction_quality(content: &str, file_size: u64) -> Option<String>
     None
 }
 
-/// Strip roleplay actions like *smiles* or *leans back in chair* from responses
+/// Strip roleplay actions, signatures, and format response for Discord
 fn strip_roleplay_actions(text: &str) -> String {
-    // Remove *action* patterns (asterisk-wrapped text)
-    let re = Regex::new(r"\*[^*]+\*").unwrap();
-    let result = re.replace_all(text, "");
+    let mut result = text.to_string();
 
-    // Clean up extra whitespace and leading/trailing spaces
-    let result = result.trim();
-    let re_spaces = Regex::new(r"\s+").unwrap();
-    re_spaces.replace_all(result, " ").to_string()
+    // Remove *action* patterns (asterisk-wrapped text)
+    let re_asterisk = Regex::new(r"\*[^*]+\*").unwrap();
+    result = re_asterisk.replace_all(&result, "").to_string();
+
+    // Remove [action] patterns (bracket-wrapped text like [SAGE smiles warmly])
+    let re_brackets = Regex::new(r"\[[^\]]+\]").unwrap();
+    result = re_brackets.replace_all(&result, "").to_string();
+
+    // Strip signatures like "Warmly, SAGE" or "- SAGE" at the end
+    let signature_patterns = [
+        r"(?i)\n*warmly,?\s*(sage|lumin)\s*$",
+        r"(?i)\n*-\s*(sage|lumin)\s*$",
+        r"(?i)\n*best,?\s*(sage|lumin)\s*$",
+        r"(?i)\n*cheers,?\s*(sage|lumin)\s*$",
+        r"(?i)\n*yours,?\s*(sage|lumin)\s*$",
+        r"(?i)\n*(sage|lumin)\s*$",  // Just name at end
+    ];
+    for pattern in signature_patterns {
+        let re = Regex::new(pattern).unwrap();
+        result = re.replace(&result, "").to_string();
+    }
+
+    // Clean up extra whitespace and multiple newlines
+    result = result.trim().to_string();
+    let re_spaces = Regex::new(r"  +").unwrap();
+    result = re_spaces.replace_all(&result, " ").to_string();
+
+    // Collapse multiple newlines into single newline (Discord compact)
+    let re_newlines = Regex::new(r"\n{3,}").unwrap();
+    result = re_newlines.replace_all(&result, "\n\n").to_string();
+
+    result
 }
 
 /// SAGE Discord Bot Handler - Clean Architecture
@@ -140,6 +166,43 @@ impl EventHandler for SageHandler {
 
         println!("\x1b[32m[CHAT]\x1b[0m Processing...");
 
+        // Emit cognitive event for incoming message
+        let _ = self.memory.emit_cognitive_event(
+            "discord_input",
+            "user_message",
+            &format!("{}: {}", msg.author.name, content),
+            0.9, // high salience - user messages are important
+            0.8, // high urgency - needs response
+            0.6, // medium novelty
+        );
+        // Set attention focus to the conversation
+        let _ = self.memory.set_attention_focus(
+            "conversation",
+            &msg.author.name,
+            0.95, // very high intensity - prioritize user
+            None,
+        );
+
+        // Extract key concepts from message and boost their activation
+        // This implements spreading activation - related concepts become more accessible
+        let concepts: Vec<String> = content
+            .split_whitespace()
+            .filter(|word| word.len() > 3) // Skip short words
+            .filter(|word| !word.starts_with("<@")) // Skip mentions
+            .map(|word| word.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|word| !word.is_empty())
+            .collect();
+
+        if !concepts.is_empty() {
+            // Boost contextual activation for mentioned concepts
+            let _ = self.memory.boost_contextual_activation(&concepts, 0.5);
+
+            // For the most prominent concept, spread activation to related concepts
+            if let Some(main_concept) = concepts.first() {
+                let _ = self.memory.spread_activation(main_concept, 0.3);
+            }
+        }
+
         // Clean up the message (remove @mention)
         let clean_content = content
             .split_whitespace()
@@ -154,7 +217,7 @@ impl EventHandler for SageHandler {
             return;
         }
 
-        // Record user ID for potential outreach later
+        // Record user ID and update communication style (Feature 4: Relationship Modeling)
         {
             let mut world = self.inner_world.lock().await;
             let tick = world.sage.time_alive;
@@ -164,6 +227,11 @@ impl EventHandler for SageHandler {
                 tick,
                 None, // Topic recorded after response
             );
+
+            // Update communication style based on message content
+            if let Some(person) = world.outreach.known_people.get_mut(&msg.author.name) {
+                person.update_style_from_message(&clean_content);
+            }
         }
 
         // Show typing indicator
@@ -259,6 +327,7 @@ impl EventHandler for SageHandler {
         let http = ctx.http.clone();
         let inner_world_outreach = Arc::clone(&self.inner_world);
         let llm_outreach = Arc::clone(&self.llm);
+        let conversations_outreach = Arc::clone(&self.conversations);
 
         tokio::spawn(async move {
             // Wait a bit before starting outreach
@@ -300,6 +369,17 @@ impl EventHandler for SageHandler {
 
                         println!("\x1b[35m[OUTREACH]\x1b[0m Wants to message \x1b[36m{}\x1b[0m ({:?})", target_name, desire.trigger);
 
+                        // Emit cognitive event for outreach decision
+                        let outreach_db = SageDbClient::new("sage-db");
+                        let _ = outreach_db.emit_cognitive_event(
+                            "social_module",
+                            "outreach_initiated",
+                            &format!("Reaching out to {} because {:?}", target_name, desire.trigger),
+                            0.7,
+                            0.5,
+                            0.4,
+                        );
+
                         // Generate message
                         let message = simulation::generate_outreach_message(
                             &llm_outreach,
@@ -324,6 +404,9 @@ impl EventHandler for SageHandler {
                                                 println!("\x1b[35m[OUTREACH]\x1b[0m \x1b[32mSent to {}\x1b[0m: \"{}\"", target_name, &clean_msg[..clean_msg.len().min(50)]);
                                                 // Mark as fulfilled
                                                 world.outreach.record_outreach(&target_name, tick);
+                                                // Save SAGE's message to conversation history so she remembers it
+                                                let mut convos = conversations_outreach.lock().await;
+                                                convos.add_assistant_message(&target_name, clean_msg.clone());
                                             }
                                             Err(e) => {
                                                 eprintln!("\x1b[31m[ERROR]\x1b[0m Failed to send DM to {}: {}", target_name, e);
@@ -495,19 +578,45 @@ impl SageHandler {
         };
 
         // Get inner world context (what SAGE has been experiencing)
-        let inner_world_context = {
+        let (inner_world_context, book_context, relationship_context) = {
             let world = self.inner_world.lock().await;
-            simulation::format_inner_experience_for_chat(&world)
+            let inner_ctx = simulation::format_inner_experience_for_chat(&world);
+
+            // Look for relevant book quotes/knowledge based on the user's message
+            let book_ctx = world.library.get_book_context_for_topic(content);
+
+            // Get relationship context for this person (Feature 4: Relationship Modeling)
+            let rel_ctx = world.outreach.get_person_context(username);
+            (inner_ctx, book_ctx, rel_ctx)
         };
 
         // Build context for Ollama with conversation history + RAG memories + inner world
         let mood = nca_state.mood_description();
         let mut context_parts = Vec::new();
 
+        // Cognitive workspace context (what SAGE is actively thinking about)
+        match self.memory.get_workspace_summary() {
+            Ok(workspace_summary) if !workspace_summary.is_empty() && !workspace_summary.contains("quiet") => {
+                context_parts.push(format!("=== CURRENT THOUGHTS ===\n{}", workspace_summary));
+            }
+            _ => {}
+        }
+
         // Inner world state (SAGE's current situation)
         if !inner_world_context.is_empty() {
             context_parts.push(inner_world_context);
         }
+
+        // Book knowledge relevant to this conversation (Feature 3: Deeper Book Integration)
+        if let Some(book_ctx) = book_context {
+            context_parts.push(format!("=== {} ===", book_ctx.trim()));
+        }
+
+        // Relationship context for this person (Feature 4: Relationship Modeling)
+        if let Some(rel_ctx) = relationship_context {
+            context_parts.push(rel_ctx);
+        }
+
         if !rag_context.is_empty() {
             context_parts.push(rag_context);
         }
@@ -521,17 +630,57 @@ impl SageHandler {
 
         let context = context_parts.join("\n\n");
 
+        // Emit cognitive event for processing phase
+        let _ = self.memory.emit_cognitive_event(
+            "response_generator",
+            "processing_start",
+            &format!("Generating response for {} about: {}", username, content),
+            0.7,
+            0.7,
+            0.3,
+        );
+
         // Call Ollama
+        println!("\x1b[33m[LLM]\x1b[0m Calling Ollama...");
         let response = match self.llm.generate(content, &context).await {
             Ok(resp) => {
+                println!("\x1b[32m[LLM]\x1b[0m \x1b[1mGot response\x1b[0m ({} chars)", resp.len());
                 // Clean up any leaked prompt instructions from the response
                 clean_response(&resp)
             }
             Err(e) => {
-                eprintln!("\x1b[31m[ERROR]\x1b[0m Ollama: {}", e);
+                eprintln!("\x1b[31m[ERROR]\x1b[0m Ollama failed: {}", e);
+                // Emit error as cognitive event
+                let _ = self.memory.emit_cognitive_event(
+                    "response_generator",
+                    "generation_error",
+                    &format!("LLM failed: {}", e),
+                    0.8,
+                    0.9,
+                    0.8,
+                );
                 format!("Hey! I'm feeling {} right now. What would you like to talk about?", mood)
             }
         };
+        println!("\x1b[33m[LLM]\x1b[0m Final response: {} chars", response.len());
+
+        // Emit the response as a cognitive event (motor output)
+        let _ = self.memory.emit_cognitive_event(
+            "discord_output",
+            "response_generated",
+            &format!("To {}: {}", username, &response[..response.len().min(100)]),
+            0.7,
+            0.3,
+            0.4,
+        );
+
+        // Update workspace with current conversation context
+        let _ = self.memory.update_workspace(
+            "active_conversation",
+            &format!("{}: {} -> SAGE: {}", username, content, &response[..response.len().min(50)]),
+            0,
+            0.8,
+        );
 
         // Track conversation in memory
         {
@@ -930,6 +1079,13 @@ async fn main() {
     // Initialize memory client
     let memory = SageDbClient::new("sage-db");
 
+    // Initialize brain functions (cognitive architecture)
+    println!("\x1b[34m[BOOT]\x1b[0m Initializing cognitive architecture...");
+    match memory.init_brain_functions() {
+        Ok(_) => println!("\x1b[34m[BOOT]\x1b[0m \x1b[32mBrain functions ready\x1b[0m"),
+        Err(e) => eprintln!("\x1b[33m[WARN]\x1b[0m Brain functions init failed: {} (continuing anyway)", e),
+    }
+
     // Register with Control Center
     let log_path = "/tmp/sage_discord_LATEST.log".to_string();
     let instance_info = InstanceInfo::new(
@@ -1026,6 +1182,7 @@ async fn main() {
     let inner_world_bg = Arc::clone(&inner_world);
     let semantic_memory_bg = Arc::clone(&semantic_memory);
     let llm_bg = LlmClient::with_model("sage");
+    let memory_sim = SageDbClient::new("sage-db");
 
     // Spawn inner world simulation loop (runs every 30 seconds)
     tokio::spawn(async move {
@@ -1042,10 +1199,11 @@ async fn main() {
                     // Add timeout to prevent LLM from blocking forever
                     let step_result = tokio::time::timeout(
                         Duration::from_secs(30),
-                        simulation::run_simulation_step(
+                        simulation::run_simulation_step_with_db(
                             &mut world,
                             &llm_bg,
                             Some(&mut memory),
+                            Some(&memory_sim),
                         )
                     ).await;
 

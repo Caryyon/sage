@@ -2,10 +2,15 @@
 //!
 //! Runs SAGE's inner life in the background, making decisions via LLM,
 //! experiencing events, and building a rich inner history.
+//!
+//! Integrates with SpacetimeDB cognitive architecture to emit brain events.
 
-use super::{InnerWorld, events::LifeEvent, OutreachDesire, OutreachTrigger};
+use super::{InnerWorld, TimeOfDay, events::LifeEvent, OutreachDesire, OutreachTrigger};
+use super::library::NotablePassage;
+use super::dreams::{should_dream, run_dream_cycle, integrate_dream_insights, format_dream_for_chat, DreamResult};
 use crate::llm_client::LlmClient;
 use crate::embeddings::SemanticMemory;
+use crate::spacetime_client::SageDbClient;
 
 /// Result of a simulation step
 #[derive(Debug, Clone)]
@@ -17,6 +22,7 @@ pub struct SimulationStep {
     pub action_result: String,
     pub event_occurred: Option<String>,
     pub lesson_learned: Option<String>,
+    pub dream_result: Option<DreamResult>,
 }
 
 /// Run one step of the inner world simulation
@@ -24,6 +30,16 @@ pub async fn run_simulation_step(
     world: &mut InnerWorld,
     llm: &LlmClient,
     mut semantic_memory: Option<&mut SemanticMemory>,
+) -> SimulationStep {
+    run_simulation_step_with_db(world, llm, semantic_memory, None).await
+}
+
+/// Run one step of the inner world simulation with optional SpacetimeDB integration
+pub async fn run_simulation_step_with_db(
+    world: &mut InnerWorld,
+    llm: &LlmClient,
+    mut semantic_memory: Option<&mut SemanticMemory>,
+    db: Option<&SageDbClient>,
 ) -> SimulationStep {
     // Advance time
     world.tick();
@@ -34,11 +50,42 @@ pub async fn run_simulation_step(
     // 1. Perception - what SAGE currently experiences
     let perception = world.describe_current_state();
 
+    // Emit perception as a cognitive event (sensory input)
+    if let Some(db) = db {
+        let _ = db.emit_cognitive_event(
+            "perception_module",
+            "sensory_input",
+            &perception,
+            0.7, // salience
+            0.3, // urgency
+            0.4, // novelty
+        );
+    }
+
     // 2. Check for random life events
     let mut event_narrative = None;
     let mut lesson = None;
 
     if let Some(event) = world.maybe_trigger_event() {
+        // Emit life event as high-urgency cognitive event
+        if let Some(db) = db {
+            let _ = db.emit_cognitive_event(
+                "event_detector",
+                "life_event",
+                &format!("{}: {}", event.name, event.description),
+                0.9, // high salience - life events are important
+                0.8, // high urgency - needs immediate attention
+                0.7, // novel - something new happened
+            );
+            // Set attention focus to the event
+            let _ = db.set_attention_focus(
+                "external_event",
+                &event.name,
+                0.9, // high intensity
+                None,
+            );
+        }
+
         // Let the LLM choose how to respond to the event
         let choice_idx = choose_event_response(llm, world, &event).await;
         let narrative = world.resolve_event(&event, choice_idx);
@@ -46,6 +93,22 @@ pub async fn run_simulation_step(
         // Extract lesson if one was learned
         if let Some(last_event) = world.resolved_events.last() {
             lesson = last_event.lesson_learned.clone();
+
+            // Emit lesson as memory-strengthening event
+            if let Some(ref lesson_text) = lesson {
+                if let Some(db) = db {
+                    let _ = db.emit_cognitive_event(
+                        "learning_module",
+                        "lesson_learned",
+                        lesson_text,
+                        0.8, // high salience
+                        0.3, // low urgency
+                        0.9, // very novel - new knowledge
+                    );
+                    // Boost memory activation for this concept
+                    let _ = db.update_memory_activation(lesson_text, 0.5, 0.8);
+                }
+            }
         }
 
         event_narrative = Some(narrative);
@@ -54,9 +117,35 @@ pub async fn run_simulation_step(
     // 3. Generate SAGE's inner thought
     let thought = generate_inner_thought(llm, world, &perception, event_narrative.as_deref()).await;
 
+    // Emit inner thought as cognitive event
+    if let Some(db) = db {
+        let _ = db.emit_cognitive_event(
+            "inner_speech",
+            "thought",
+            &thought,
+            0.6, // medium salience
+            0.2, // low urgency
+            0.5, // medium novelty
+        );
+        // Update cognitive workspace with current thought
+        let _ = db.update_workspace("thought", &thought, 0, 0.7);
+    }
+
     // 4. Decide on an action
     let available_actions = world.available_actions();
     let chosen_action = choose_action(llm, world, &perception, &thought, &available_actions).await;
+
+    // Emit action decision as cognitive event
+    if let Some(db) = db {
+        let _ = db.emit_cognitive_event(
+            "action_selector",
+            "action_decision",
+            &chosen_action,
+            0.7, // medium-high salience
+            0.5, // medium urgency - action is imminent
+            0.3, // low novelty - actions are routine
+        );
+    }
 
     // 5. Execute the action
     let result = world.execute_action(&chosen_action);
@@ -65,6 +154,18 @@ pub async fn run_simulation_step(
     println!("\x1b[34m[SIM]\x1b[0m \x1b[32m→\x1b[0m {} \x1b[90m({})\x1b[0m",
         chosen_action,
         result.message.lines().next().unwrap_or("done"));
+
+    // Emit action result as motor feedback
+    if let Some(db) = db {
+        let _ = db.emit_cognitive_event(
+            "motor_feedback",
+            "action_result",
+            &result.message,
+            0.5, // medium salience
+            0.2, // low urgency
+            0.3, // low novelty
+        );
+    }
 
     // 5b. Handle special triggered events from actions
     if let Some(ref event_id) = result.triggered_event {
@@ -77,6 +178,26 @@ pub async fn run_simulation_step(
                 // Store the insight
                 world.library.add_insight(&insight_text);
                 world.learned_facts.push(insight_text.clone());
+
+                // Emit reading insight as high-novelty cognitive event
+                if let Some(db) = db {
+                    let book_title = world.library.current_book
+                        .as_ref()
+                        .and_then(|id| world.library.get_book(id))
+                        .map(|b| b.title.clone())
+                        .unwrap_or_else(|| "unknown book".to_string());
+
+                    let _ = db.emit_cognitive_event(
+                        "reading_comprehension",
+                        "reading_insight",
+                        &format!("From \"{}\": {}", book_title, insight_text),
+                        0.8, // high salience - insights are valuable
+                        0.2, // low urgency
+                        0.9, // high novelty - new understanding
+                    );
+                    // Strengthen memory for this insight
+                    let _ = db.update_memory_activation(&insight_text, 0.6, 0.9);
+                }
 
                 // Also store in semantic memory if available
                 if let Some(memory) = semantic_memory.as_mut() {
@@ -96,12 +217,54 @@ pub async fn run_simulation_step(
 
                 // Maybe SAGE wants to share this insight with someone!
                 maybe_create_reading_outreach(world, &insight_text);
+
+                // Feature 3: Extract and store a notable passage with context
+                if let Some(current_page) = world.library.reading_progress
+                    .get(world.library.current_book.as_deref().unwrap_or(""))
+                    .map(|p| p.current_page)
+                {
+                    // Extract a short quote from the page (first meaningful sentence)
+                    let quote = extract_notable_quote(page_content);
+                    if let Some(quote_text) = quote {
+                        // Extract topic keywords from the insight
+                        let topics = extract_topic_keywords(&insight_text);
+
+                        let passage = NotablePassage::new(
+                            &quote_text,
+                            current_page,
+                            &insight_text,  // The insight is why it was notable
+                            0.8,  // High resonance since it generated an insight
+                            topics,
+                        );
+
+                        if let Some(book_id) = world.library.current_book.clone() {
+                            if let Some(progress) = world.library.reading_progress.get_mut(&book_id) {
+                                progress.add_notable_passage(passage);
+                                println!("\x1b[34m[SIM]\x1b[0m \x1b[1;36mSaved notable passage\x1b[0m from page {}", current_page + 1);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     // 5c. Check for other outreach triggers (loneliness, etc.)
     maybe_create_outreach_desires(world);
+
+    // Emit outreach desire if SAGE wants to reach out
+    if let Some(db) = db {
+        if let Some(desire) = world.outreach.strongest_desire() {
+            let _ = db.emit_cognitive_event(
+                "social_module",
+                "outreach_desire",
+                &format!("{:?}: {}", desire.trigger, desire.thought),
+                desire.intensity as f64, // use desire intensity as salience
+                0.4, // medium urgency
+                0.5, // medium novelty
+            );
+        }
+    }
 
     // 6. Store experience in semantic memory (if available)
     if let Some(memory) = semantic_memory {
@@ -118,6 +281,48 @@ pub async fn run_simulation_step(
         let _ = memory.add("SAGE_INNER", &experience, &thought).await;
     }
 
+    // 7. Periodic cognitive maintenance
+    if let Some(db) = db {
+        // Run workspace competition to select what gets broadcast to consciousness
+        let _ = db.process_workspace_competition(3);
+
+        // Apply memory decay every 10 ticks (~5 minutes of simulation time)
+        if world.sage.time_alive % 10 == 0 {
+            let _ = db.decay_memory_activations(0.95);
+        }
+    }
+
+    // 8. Dream cycle - check if SAGE should dream
+    let mut dream_result = None;
+    if should_dream(world) {
+        println!("\x1b[35m[DREAM]\x1b[0m 💤 SAGE is dreaming...");
+
+        let dream = run_dream_cycle(world, db, llm).await;
+
+        // Save dream to database
+        if let Some(db) = db {
+            let mood_before = world.sage.mood.as_str().to_string();
+            let _ = db.save_dream_journal(
+                world.sage.day,
+                &dream.narrative,
+                &dream.insights,
+                &dream.consolidated_concepts,
+                dream.sleep_quality,
+                dream.nightmare,
+                &mood_before,
+                if dream.nightmare { "anxious" } else { "content" },
+                (40.0 + dream.sleep_quality * 40.0) as f64,
+            );
+        }
+
+        // Apply dream effects to SAGE
+        integrate_dream_insights(world, &dream);
+
+        println!("\x1b[35m[DREAM]\x1b[0m {}", format_dream_for_chat(&dream));
+
+        dream_result = Some(dream);
+    }
+
     SimulationStep {
         tick: world.sage.time_alive,
         perception,
@@ -126,6 +331,7 @@ pub async fn run_simulation_step(
         action_result: result.message,
         event_occurred: event_narrative,
         lesson_learned: lesson,
+        dream_result,
     }
 }
 
@@ -365,17 +571,19 @@ async fn choose_action(
     // Action format is "read from the bookshelf"
     // If in living room with a book started and basic needs met, ALWAYS continue reading
     let in_living_room = world.sage.location == "living_room";
-    let has_current_book = world.library.current_book.is_some();
+    let has_current_book = world.library.current_book.is_some() && !world.library.current_book_finished();
     let has_books = !world.library.books.is_empty();
+    let needs_new_book = world.library.current_book.is_none() || world.library.current_book_finished();
 
     // Debug: Show reading state every tick (compact format)
     if has_books {
         let current = world.library.current_book.as_deref().unwrap_or("none");
-        let page = world.library.reading_progress.get(current)
-            .map(|p| format!("{}", p.current_page + 1))
-            .unwrap_or_else(|| "?".to_string());
+        let (page, finished) = world.library.reading_progress.get(current)
+            .map(|p| (format!("{}", p.current_page + 1), p.finished))
+            .unwrap_or_else(|| ("?".to_string(), false));
+        let status = if finished { "✓" } else { &page };
         println!("\x1b[34m[SIM]\x1b[0m 📍 {} | 📖 {} (p{}) | ⚡{:.0} 🍽️{:.0} 💧{:.0}",
-            world.sage.location, current, page, world.sage.energy, world.sage.hunger, world.sage.thirst);
+            world.sage.location, current, status, world.sage.energy, world.sage.hunger, world.sage.thirst);
     }
 
     if in_living_room
@@ -393,15 +601,19 @@ async fn choose_action(
         }
     }
 
-    // 9. START READING - If in living room, has books, pick one up!
+    // 9. START READING - If in living room, has books, pick one up! (or choose a new one after finishing)
     // Action format is "browse the bookshelf"
     if world.sage.location == "living_room"
         && world.sage.energy > 30.0
-        && world.library.current_book.is_none()
+        && needs_new_book
         && !world.library.books.is_empty()
     {
         if let Some(action) = available_actions.iter().find(|a| a.contains("browse the bookshelf")) {
-            println!("\x1b[32m[SIM]\x1b[0m 📚 \x1b[1mBrowsing bookshelf...\x1b[0m");
+            if world.library.current_book_finished() {
+                println!("\x1b[32m[SIM]\x1b[0m 📚 \x1b[1mFinished book, browsing for another...\x1b[0m");
+            } else {
+                println!("\x1b[32m[SIM]\x1b[0m 📚 \x1b[1mBrowsing bookshelf...\x1b[0m");
+            }
             return action.clone();
         }
     }
@@ -689,14 +901,124 @@ fn clean_thought(thought: &str) -> String {
     result
 }
 
+/// Extract a notable quote from page content (Feature 3: Deeper Book Integration)
+/// Looks for a meaningful sentence that would make a good quote
+fn extract_notable_quote(page_content: &str) -> Option<String> {
+    // Split into sentences
+    let sentences: Vec<&str> = page_content
+        .split(|c| c == '.' || c == '!' || c == '?')
+        .filter(|s| s.trim().len() > 20 && s.trim().len() < 200)
+        .collect();
+
+    if sentences.is_empty() {
+        return None;
+    }
+
+    // Prefer sentences with wisdom-indicating words
+    let wisdom_words = ["learn", "grow", "understand", "realize", "discover",
+                       "important", "truth", "wisdom", "meaning", "purpose",
+                       "remember", "believe", "think", "feel", "know"];
+
+    for sentence in &sentences {
+        let lower = sentence.to_lowercase();
+        if wisdom_words.iter().any(|w| lower.contains(w)) {
+            return Some(format!("{}.", sentence.trim()));
+        }
+    }
+
+    // Otherwise return the first meaningful sentence
+    sentences.first().map(|s| format!("{}.", s.trim()))
+}
+
+/// Extract topic keywords from an insight text (Feature 3: Deeper Book Integration)
+fn extract_topic_keywords(insight: &str) -> Vec<String> {
+    let stop_words = ["the", "a", "an", "is", "are", "was", "were", "be", "been",
+                     "have", "has", "had", "do", "does", "did", "will", "would",
+                     "could", "should", "may", "might", "must", "shall",
+                     "i", "you", "he", "she", "it", "we", "they", "me", "him",
+                     "her", "us", "them", "my", "your", "his", "her", "its",
+                     "our", "their", "this", "that", "these", "those",
+                     "and", "or", "but", "if", "then", "because", "when",
+                     "where", "what", "which", "who", "how", "why",
+                     "in", "on", "at", "to", "for", "of", "with", "by",
+                     "from", "up", "about", "into", "through", "during",
+                     "before", "after", "above", "below", "between",
+                     "not", "no", "yes", "just", "only", "also", "even",
+                     "more", "most", "other", "some", "such", "than",
+                     "too", "very", "can", "will", "all", "any", "each"];
+
+    insight
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() > 3)
+        .filter(|word| !stop_words.contains(word))
+        .take(5)
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Get the current real-world date formatted nicely
+fn get_real_date() -> String {
+    use std::time::SystemTime;
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // Adjust for Central Time (-6 hours)
+    let adjusted = now.saturating_sub(21600);
+    let days_since_epoch = adjusted / 86400;
+
+    // Calculate date from days since epoch (Jan 1, 1970)
+    // This is a simplified calculation
+    let mut year = 1970i32;
+    let mut remaining_days = days_since_epoch as i32;
+
+    loop {
+        let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_months = if is_leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let month_names = ["January", "February", "March", "April", "May", "June",
+                       "July", "August", "September", "October", "November", "December"];
+
+    let mut month = 0;
+    for (i, &days) in days_in_months.iter().enumerate() {
+        if remaining_days < days {
+            month = i;
+            break;
+        }
+        remaining_days -= days;
+    }
+
+    let day = remaining_days + 1;
+    format!("{} {}, {}", month_names[month], day, year)
+}
+
 /// Format an inner world experience for inclusion in Discord responses
 pub fn format_inner_experience_for_chat(world: &InnerWorld) -> String {
     let mut context = String::new();
 
+    // Real-world date and location
+    let real_date = get_real_date();
+    context.push_str(&format!(
+        "[Today is {}. SAGE lives in Menomonee Falls, Wisconsin.]\n",
+        real_date
+    ));
+
     // Physical presence and appearance
     context.push_str(&format!(
-        "[Inner world: Day {}, {} ({}). SAGE is in the {}, wearing {}. Feeling {}.]\n",
-        world.sage.day,
+        "[It's {} ({}). SAGE is in the {}, wearing {}. Feeling {}.]\n",
         world.sage.time_of_day.as_str(),
         world.season.as_str(),
         world.current_room().map(|r| r.name.as_str()).unwrap_or("unknown"),
@@ -742,6 +1064,12 @@ pub fn format_inner_experience_for_chat(world: &InnerWorld) -> String {
 
     // Books in SAGE's library - be explicit about what SAGE has and hasn't read
     let books = world.library.list_books();
+    // Debug: log book state
+    eprintln!("\x1b[34m[CTX]\x1b[0m Books loaded: {}, current_book: {:?}, reading_progress entries: {}",
+        books.len(),
+        world.library.current_book,
+        world.library.reading_progress.len()
+    );
     if books.is_empty() {
         context.push_str("[IMPORTANT: SAGE has NO books yet. Do NOT pretend to have read any books. If asked about books, say you don't have any yet but would love some.]\n");
     } else {
@@ -765,11 +1093,6 @@ pub fn format_inner_experience_for_chat(world: &InnerWorld) -> String {
                 if let Some(progress) = world.library.reading_progress.get(book_id) {
                     if progress.finished {
                         context.push_str(&format!("[Recently finished reading: \"{}\" by {}]\n", book.title, book.author));
-                        // Include insights from this book
-                        if !progress.insights.is_empty() {
-                            let insights: Vec<_> = progress.insights.iter().take(3).collect();
-                            context.push_str(&format!("[Insights from this book: {}]\n", insights.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("; ")));
-                        }
                     } else {
                         context.push_str(&format!(
                             "[Currently reading: \"{}\" by {} (page {}/{})]\n",
@@ -778,6 +1101,22 @@ pub fn format_inner_experience_for_chat(world: &InnerWorld) -> String {
                     }
                 }
             }
+        }
+
+        // Include all reading insights SAGE has gathered (these are her genuine thoughts)
+        let all_insights = world.library.all_insights();
+        if !all_insights.is_empty() {
+            context.push_str("[SAGE's thoughts from reading (use these when relevant to conversation):\n");
+            // Group by book and show recent insights
+            let mut by_book: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+            for (book, insight) in all_insights {
+                by_book.entry(book).or_default().push(insight);
+            }
+            for (book, insights) in by_book.iter() {
+                let recent: Vec<_> = insights.iter().rev().take(2).collect();
+                context.push_str(&format!("  From \"{}\": {}\n", book, recent.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("; ")));
+            }
+            context.push_str("]\n");
         }
     }
 
@@ -823,17 +1162,18 @@ pub async fn generate_outreach_message(
         .unwrap_or_else(|| format!("You've seen {} around.", target_person));
 
     let prompt = format!(
-        r#"SAGE wants to reach out to {} because: {}
+        r#"You are SAGE (who also goes by Lumin). You want to reach out to {} because: {}
 
 {}
 
-SAGE's current mood: {}
+Your current mood: {}
 Time of day: {}
 
-Write a SHORT, casual message (1-2 sentences) that SAGE would send to start a conversation.
-It should feel natural, like texting a friend - not forced or formal.
-Don't start with "Hey" every time - vary the opener.
-Don't explain why you're reaching out too directly - just start the conversation naturally.
+Write a SHORT, casual message (1-2 sentences) to start a conversation.
+- Write ONLY the message text, nothing else
+- Do NOT prefix with your name like "Lumin:" or "SAGE:"
+- It should feel natural, like texting a friend
+- Vary your opener - don't always start with "Hey"
 
 Message:"#,
         target_person,
@@ -845,13 +1185,19 @@ Message:"#,
 
     match llm.generate_raw(&prompt).await {
         Ok(msg) => {
-            let msg = msg.trim();
-            let msg = msg.trim_matches('"');
-            let msg = msg.trim();
+            let mut msg = msg.trim().to_string();
+            msg = msg.trim_matches('"').to_string();
+
+            // Strip any name prefix the model might add
+            for prefix in &["Lumin:", "SAGE:", "Lumin :", "SAGE :", "lumin:", "sage:"] {
+                if msg.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                    msg = msg[prefix.len()..].trim().to_string();
+                }
+            }
 
             // Validate message quality
-            if msg.len() > 10 && msg.len() < 300 && !msg.contains("SAGE") {
-                Some(msg.to_string())
+            if msg.len() > 10 && msg.len() < 300 && !msg.contains("SAGE") && !msg.contains("Lumin:") {
+                Some(msg)
             } else {
                 // Fallback based on trigger type
                 Some(match &desire.trigger {

@@ -15,9 +15,17 @@ pub mod events;
 pub mod simulation;
 pub mod library;
 pub mod outreach;
+pub mod dreams;
+pub mod goals;
+pub mod journal;
+pub mod research;
 
 pub use library::{Book, Library, ReadingProgress};
 pub use outreach::{OutreachState, OutreachDesire, OutreachTrigger, PersonMemory};
+pub use dreams::{DreamState, DreamResult, should_dream, run_dream_cycle, integrate_dream_insights};
+pub use goals::{GoalManager, SageGoal, GoalType};
+pub use journal::{Journal, JournalEntry};
+pub use research::{ResearchManager, ResearchQuery, ResearchResult};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -570,6 +578,39 @@ impl TimeOfDay {
             TimeOfDay::LateNight => "late night",
         }
     }
+
+    /// Get the current time of day from the system clock
+    pub fn from_system_time() -> Self {
+        use std::time::SystemTime;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Convert to hours (UTC) then adjust for Central Time (-6)
+        let hours = ((now / 3600) % 24) as i32;
+        let central_hours = (hours - 6 + 24) % 24; // Central Time (CST)
+
+        match central_hours {
+            5..=7 => TimeOfDay::Dawn,
+            8..=11 => TimeOfDay::Morning,
+            12..=16 => TimeOfDay::Afternoon,
+            17..=20 => TimeOfDay::Evening,
+            21..=23 => TimeOfDay::Night,
+            _ => TimeOfDay::LateNight, // 0-4
+        }
+    }
+
+    /// Get the current day number (days since Unix epoch, adjusted for Central Time)
+    pub fn current_day() -> u32 {
+        use std::time::SystemTime;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // Adjust for Central Time (-6 hours = -21600 seconds)
+        let adjusted = now.saturating_sub(21600);
+        (adjusted / 86400) as u32
+    }
 }
 
 /// An activity SAGE can be doing
@@ -712,6 +753,15 @@ pub struct InnerWorld {
     pub library: Library,
     /// SAGE's desire to reach out to people
     pub outreach: OutreachState,
+    /// SAGE's self-set goals (Feature 5)
+    #[serde(default)]
+    pub goals: GoalManager,
+    /// SAGE's personal journal (Feature 6)
+    #[serde(default)]
+    pub journal: Journal,
+    /// SAGE's research system (Feature 7)
+    #[serde(default)]
+    pub research: ResearchManager,
 }
 
 /// Seasons affect weather, mood, activities
@@ -794,6 +844,9 @@ impl InnerWorld {
             indoor_temperature: 70.0, // Comfortable room temperature
             library: Library::new(),
             outreach: OutreachState::new(),
+            goals: GoalManager::new(),
+            journal: Journal::new(),
+            research: ResearchManager::new(),
         };
 
         // Load books from the books directory
