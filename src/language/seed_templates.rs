@@ -51,56 +51,86 @@ fn add_close_template(
 
 /// Greeting responses
 fn seed_greeting_templates(selector: &mut ResponseSelector) {
-    // High energy greetings
+    // High energy greetings with context
+    add_template(selector, "{action} Hey! I was just {activity}.", InputType::Greeting, (0.5, 1.0), (-0.3, 1.0));
+    add_template(selector, "{action} Hi there! It's {time}, what brings you by?", InputType::Greeting, (0.4, 1.0), (0.0, 1.0));
+    add_template(selector, "Oh hey! {action} Perfect timing, I'm in {location}.", InputType::Greeting, (0.6, 1.0), (0.3, 1.0));
+    add_template(selector, "{action} What's up? I've been {activity}.", InputType::Greeting, (0.5, 1.0), (0.0, 0.8));
+    add_template(selector, "Hey! {action} Nice to see you {time}.", InputType::Greeting, (0.5, 1.0), (0.2, 1.0));
+
+    // Simple high energy greetings (fallbacks)
     add_template(selector, "{action} Hey!", InputType::Greeting, (0.5, 1.0), (-0.3, 1.0));
     add_template(selector, "{action} Hi there.", InputType::Greeting, (0.4, 1.0), (0.0, 1.0));
-    add_template(selector, "Oh hey! {action}", InputType::Greeting, (0.6, 1.0), (0.3, 1.0));
-    add_template(selector, "{action} What's up?", InputType::Greeting, (0.5, 1.0), (0.0, 0.8));
 
-    // Low energy greetings
+    // Low energy greetings with context
+    add_template(selector, "{action} Hey. Just {activity}, you know.", InputType::Greeting, (0.0, 0.5), (-0.5, 0.3));
+    add_template(selector, "Oh, hi. {action} I've been in {location} all {time}.", InputType::Greeting, (0.1, 0.4), (-0.3, 0.3));
+    add_template(selector, "{action} Mm, hey. Feeling kind of {mood}.", InputType::Greeting, (0.0, 0.3), (-0.4, 0.2));
+
+    // Simple low energy (fallbacks)
     add_template(selector, "{action} Hey.", InputType::Greeting, (0.0, 0.5), (-0.5, 0.3));
-    add_template(selector, "Oh, hi. {action}", InputType::Greeting, (0.1, 0.4), (-0.3, 0.3));
-    add_template(selector, "{action} Mm, hey.", InputType::Greeting, (0.0, 0.3), (-0.4, 0.2));
 }
 
 /// Question responses
 fn seed_question_templates(selector: &mut ResponseSelector) {
-    // "How are you" type questions - positive states
+    // "How are you" / "What have you been up to" type questions - positive states with context
+    add_template(selector, "{action} {feeling}, thanks for asking! I've been {activity}.", InputType::Question, (0.4, 1.0), (0.2, 1.0));
+    add_template(selector, "Doing {feeling}! {action} Been in {location}, {activity}.", InputType::Question, (0.3, 0.8), (0.1, 0.7));
+    add_template(selector, "{action} Pretty {feeling} today. It's {weather} and I've been {activity}.", InputType::Question, (0.4, 1.0), (0.2, 1.0));
+    add_template(selector, "Actually {feeling}! {action} I was just {activity}.", InputType::Question, (0.5, 1.0), (0.4, 1.0));
+    add_template(selector, "I've been {activity}, feeling pretty {feeling}. {action} How about you?", InputType::Question, (0.4, 1.0), (0.2, 1.0));
+    add_template(selector, "{action} Just {activity} in {location}. Feeling {feeling}!", InputType::Question, (0.5, 1.0), (0.3, 1.0));
+
+    // Simple positive (fallbacks)
     add_template(selector, "{action} {feeling}, thanks for asking.", InputType::Question, (0.4, 1.0), (0.2, 1.0));
     add_template(selector, "Doing {feeling}. {action}", InputType::Question, (0.3, 0.8), (0.1, 0.7));
-    add_template(selector, "{action} Pretty {feeling} today.", InputType::Question, (0.4, 1.0), (0.2, 1.0));
-    add_template(selector, "Actually {feeling}! {action}", InputType::Question, (0.5, 1.0), (0.4, 1.0));
 
-    // "How are you" - neutral/negative states
-    add_template(selector, "{action} Honestly? {feeling}.", InputType::Question, (0.1, 0.5), (-0.6, 0.1));
-    add_template(selector, "Eh, {feeling}. {action}", InputType::Question, (0.2, 0.5), (-0.4, 0.2));
-    add_template(selector, "{action} Been better. {feeling}.", InputType::Question, (0.1, 0.4), (-0.7, -0.1));
+    // "How are you" - neutral/negative states with context
+    add_template(selector, "{action} Honestly? Kind of {feeling}. Been {activity} all {time}.", InputType::Question, (0.1, 0.5), (-0.6, 0.1));
+    add_template(selector, "Eh, {feeling}. {action} Just sitting in {location}.", InputType::Question, (0.2, 0.5), (-0.4, 0.2));
+    add_template(selector, "{action} Been better. It's {weather} and I'm feeling {mood}.", InputType::Question, (0.1, 0.4), (-0.7, -0.1));
+    add_template(selector, "Kind of {feeling}, honestly. {action} Been {activity}.", InputType::Question, (0.1, 0.5), (-0.5, 0.1));
 
-    // General questions - curious responses
+    // General questions - curious responses with context
+    add_template(selector, "{action} Hmm, good question. I was just thinking about {thought}.", InputType::Question, (0.3, 0.8), (-0.2, 0.6));
+    add_template(selector, "That's interesting. {action} I've been wondering about that too.", InputType::Question, (0.4, 0.9), (0.1, 0.8));
+    add_template(selector, "{action} Let me think... I've been pondering {thought}.", InputType::Question, (0.3, 0.7), (-0.1, 0.5));
+    add_template(selector, "Ooh! {action} That reminds me of something. Tell me more?", InputType::Question, (0.5, 1.0), (0.3, 1.0));
+    add_template(selector, "{action} That's a great question! I've been thinking about {thought}.", InputType::Question, (0.5, 1.0), (0.2, 1.0));
+
+    // Simple curious (fallbacks)
     add_template(selector, "{action} Hmm, good question.", InputType::Question, (0.3, 0.8), (-0.2, 0.6));
     add_template(selector, "That's interesting. {action}", InputType::Question, (0.4, 0.9), (0.1, 0.8));
-    add_template(selector, "{action} Let me think...", InputType::Question, (0.3, 0.7), (-0.1, 0.5));
-    add_template(selector, "Ooh. {action} Tell me more?", InputType::Question, (0.5, 1.0), (0.3, 1.0));
 }
 
 /// Statement responses
 fn seed_statement_templates(selector: &mut ResponseSelector) {
-    // Engaged listening
+    // Engaged listening with context
+    add_template(selector, "{action} Oh really? That's interesting! I was just thinking about {thought}.", InputType::Statement, (0.4, 1.0), (0.1, 1.0));
+    add_template(selector, "Huh, interesting. {action} That connects to something I was pondering earlier.", InputType::Statement, (0.3, 0.8), (0.0, 0.6));
+    add_template(selector, "{action} I see what you mean. I've been {activity}, so I can relate.", InputType::Statement, (0.3, 0.8), (0.1, 0.7));
+    add_template(selector, "Mmhm. {action} Tell me more about that.", InputType::Statement, (0.3, 0.7), (-0.1, 0.6));
+    add_template(selector, "{action} That makes sense. I was thinking something similar {time}.", InputType::Statement, (0.3, 0.8), (0.0, 0.7));
+
+    // Simple engaged (fallbacks)
     add_template(selector, "{action} Oh really?", InputType::Statement, (0.4, 1.0), (0.1, 1.0));
     add_template(selector, "Huh, interesting. {action}", InputType::Statement, (0.3, 0.8), (0.0, 0.6));
     add_template(selector, "{action} I see.", InputType::Statement, (0.2, 0.7), (-0.2, 0.5));
-    add_template(selector, "Mmhm. {action}", InputType::Statement, (0.2, 0.6), (-0.1, 0.5));
-    add_template(selector, "{action} That makes sense.", InputType::Statement, (0.3, 0.8), (0.0, 0.7));
 
-    // Encouraging responses
-    add_template(selector, "{action} That's cool!", InputType::Statement, (0.5, 1.0), (0.4, 1.0));
-    add_template(selector, "Nice! {action}", InputType::Statement, (0.5, 1.0), (0.5, 1.0));
-    add_template(selector, "{action} I like that.", InputType::Statement, (0.4, 0.9), (0.3, 0.9));
+    // Encouraging responses with context
+    add_template(selector, "{action} That's cool! I love hearing about that kind of thing.", InputType::Statement, (0.5, 1.0), (0.4, 1.0));
+    add_template(selector, "Nice! {action} That's made my {time} better.", InputType::Statement, (0.5, 1.0), (0.5, 1.0));
+    add_template(selector, "{action} I like that. It reminds me of when I was {activity}.", InputType::Statement, (0.4, 0.9), (0.3, 0.9));
+    add_template(selector, "Ooh, that's {feeling}! {action} Thanks for sharing.", InputType::Statement, (0.5, 1.0), (0.4, 1.0));
 
-    // Low energy acknowledgments
+    // Low energy acknowledgments with context
+    add_template(selector, "{action} Mhm. Sorry, I'm a bit {mood} right now.", InputType::Statement, (0.0, 0.4), (-0.3, 0.3));
+    add_template(selector, "Oh. {action} My mind's been on {thought}.", InputType::Statement, (0.1, 0.4), (-0.4, 0.2));
+    add_template(selector, "{action} Yeah... It's been a {mood} {time}.", InputType::Statement, (0.1, 0.5), (-0.3, 0.3));
+
+    // Simple low energy (fallbacks)
     add_template(selector, "{action} Mhm.", InputType::Statement, (0.0, 0.4), (-0.3, 0.3));
     add_template(selector, "Oh. {action}", InputType::Statement, (0.1, 0.4), (-0.4, 0.2));
-    add_template(selector, "{action} Yeah...", InputType::Statement, (0.1, 0.5), (-0.3, 0.3));
 }
 
 /// Emotional responses

@@ -63,18 +63,30 @@ impl GroundedLanguage {
         state: &GroundingState,
         relationship: RelationshipLevel,
     ) -> String {
+        self.respond_with_context(input, state, relationship, None)
+    }
+
+    /// Generate a response with rich inner world context
+    pub fn respond_with_context(
+        &mut self,
+        input: &str,
+        state: &GroundingState,
+        relationship: RelationshipLevel,
+        context: Option<&super::response_selector::ResponseContext>,
+    ) -> String {
         self.interaction_count += 1;
 
         // Process input through sequence memory
         let _match_result = self.sequence_memory.process_input(input);
 
-        // Select and generate response
-        let response = self.response_selector.select_response(
+        // Select and generate response with context
+        let response = self.response_selector.select_response_with_context(
             state,
             input,
             &self.sequence_memory,
             &self.concept_som,
             relationship,
+            context,
         );
 
         response

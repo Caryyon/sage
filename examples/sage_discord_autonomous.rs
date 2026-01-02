@@ -21,7 +21,7 @@ use sage::nca_state::NcaState;
 use sage::sage_snapshot::{SageSnapshot, AutoSnapshotManager};
 use sage::embeddings::SemanticMemory;
 use sage::inner_world::{InnerWorld, simulation};
-use sage::language::{GroundedLanguage, inner_world_to_grounding_state, affinity_to_relationship_level};
+use sage::language::{GroundedLanguage, inner_world_to_grounding_state, affinity_to_relationship_level, ResponseContext};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::Path;
 
@@ -39,6 +39,85 @@ use std::time::Duration;
 use std::thread;
 use tokio::sync::Mutex as TokioMutex;
 use regex::Regex;
+
+/// Build a ResponseContext from SAGE's inner world state
+fn build_response_context(world: &InnerWorld) -> ResponseContext {
+    // Get activity description
+    let activity = world.sage.current_activity.as_ref().map(|a| a.description.clone());
+
+    // Get location description
+    let location = world.current_room().map(|r| {
+        format!("the {}", r.name.to_lowercase())
+    });
+
+    // Get time description
+    let time_description = Some(match world.sage.time_of_day {
+        sage::inner_world::TimeOfDay::Dawn => "this early morning".to_string(),
+        sage::inner_world::TimeOfDay::Morning => "this morning".to_string(),
+        sage::inner_world::TimeOfDay::Afternoon => "this afternoon".to_string(),
+        sage::inner_world::TimeOfDay::Evening => "this evening".to_string(),
+        sage::inner_world::TimeOfDay::Night => "tonight".to_string(),
+        sage::inner_world::TimeOfDay::LateNight => "this late night".to_string(),
+    });
+
+    // Get weather description
+    let weather = Some(match world.weather {
+        sage::inner_world::Weather::Sunny => "sunny outside".to_string(),
+        sage::inner_world::Weather::Cloudy => "cloudy out".to_string(),
+        sage::inner_world::Weather::Rainy => "raining outside".to_string(),
+        sage::inner_world::Weather::Stormy => "stormy out".to_string(),
+        sage::inner_world::Weather::Snowy => "snowing outside".to_string(),
+        sage::inner_world::Weather::Foggy => "foggy out".to_string(),
+    });
+
+    // Get mood description
+    let mood_description = Some(match world.sage.mood {
+        sage::inner_world::Mood::Happy => "happy".to_string(),
+        sage::inner_world::Mood::Content => "content".to_string(),
+        sage::inner_world::Mood::Peaceful => "peaceful".to_string(),
+        sage::inner_world::Mood::Excited => "excited".to_string(),
+        sage::inner_world::Mood::Curious => "curious".to_string(),
+        sage::inner_world::Mood::Tired => "tired".to_string(),
+        sage::inner_world::Mood::Lonely => "lonely".to_string(),
+        sage::inner_world::Mood::Sad => "sad".to_string(),
+        sage::inner_world::Mood::Anxious => "anxious".to_string(),
+        sage::inner_world::Mood::Frustrated => "frustrated".to_string(),
+    });
+
+    // Get current book if reading
+    let current_book = if let Some(ref activity) = world.sage.current_activity {
+        if activity.name.contains("reading") || activity.description.contains("reading") {
+            world.library.currently_reading.as_ref().map(|b| b.title.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Get recent thought from last activities or creative urge
+    let recent_thought = if world.sage.creative_urge > 60.0 {
+        Some("making something creative".to_string())
+    } else if world.sage.boredom > 60.0 {
+        Some("finding something interesting to do".to_string())
+    } else if world.sage.loneliness > 60.0 {
+        Some("wanting some company".to_string())
+    } else if !world.sage.last_activities.is_empty() {
+        world.sage.last_activities.last().cloned()
+    } else {
+        None
+    };
+
+    ResponseContext {
+        activity,
+        location,
+        time_description,
+        recent_thought,
+        current_book,
+        weather,
+        mood_description,
+    }
+}
 
 /// Extract text from a PDF file
 fn extract_pdf_text(bytes: &[u8]) -> Result<String, String> {
@@ -774,7 +853,7 @@ impl SageHandler {
         println!("\x1b[36m[GROUNDED]\x1b[0m Generating response for \x1b[36m{}\x1b[0m", username);
 
         // Get inner world state for grounding
-        let (grounding_state, relationship_level, conversation_length) = {
+        let (grounding_state, relationship_level, conversation_length, response_context) = {
             let world = self.inner_world.lock().await;
 
             // Get person memory if we know them
@@ -797,13 +876,21 @@ impl SageHandler {
                 .map(|p| affinity_to_relationship_level(p.affinity))
                 .unwrap_or(sage::language::RelationshipLevel::Stranger);
 
-            (state, rel_level, conv_len)
+            // Build rich response context from inner world
+            let context = build_response_context(&world);
+
+            (state, rel_level, conv_len, context)
         };
 
-        // Generate response using grounded language system
+        // Generate response using grounded language system with context
         let (response, stats) = {
             let mut grounded = self.grounded_language.lock().await;
-            let response = grounded.respond(content, &grounding_state, relationship_level);
+            let response = grounded.respond_with_context(
+                content,
+                &grounding_state,
+                relationship_level,
+                Some(&response_context),
+            );
             let stats = grounded.stats();
             (response, stats)
         };

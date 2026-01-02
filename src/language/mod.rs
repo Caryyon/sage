@@ -42,6 +42,6 @@ pub use corpus::Corpus;
 // Re-exports for grounded system
 pub use concept_som::{ConceptSOM, GroundingState, ConceptNode};
 pub use sequence_memory::{SequenceMemory, SequencePattern, SequenceMatch};
-pub use response_selector::{ResponseSelector, ResponseTemplate, RelationshipLevel, InputType};
+pub use response_selector::{ResponseSelector, ResponseTemplate, RelationshipLevel, InputType, ResponseContext};
 pub use grounded::{GroundedLanguage, GroundedLanguageStats};
 pub use inner_world_bridge::{inner_world_to_grounding_state, affinity_to_relationship_level};

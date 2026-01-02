@@ -10,6 +10,25 @@ use serde::{Deserialize, Serialize};
 use super::concept_som::{ConceptSOM, GroundingState};
 use super::sequence_memory::SequenceMemory;
 
+/// Rich context from the inner world for response generation
+#[derive(Clone, Debug, Default)]
+pub struct ResponseContext {
+    /// What SAGE is currently doing (e.g., "reading a book", "looking out the window")
+    pub activity: Option<String>,
+    /// Where SAGE is (e.g., "the living room", "my garden")
+    pub location: Option<String>,
+    /// Time description (e.g., "this quiet evening", "early morning")
+    pub time_description: Option<String>,
+    /// Recent thought or observation
+    pub recent_thought: Option<String>,
+    /// The book SAGE is currently reading, if any
+    pub current_book: Option<String>,
+    /// Weather description
+    pub weather: Option<String>,
+    /// How SAGE is feeling in words
+    pub mood_description: Option<String>,
+}
+
 /// Relationship stage (mirrored from inner_world for independence)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum RelationshipLevel {
@@ -341,6 +360,19 @@ impl ResponseSelector {
         som: &ConceptSOM,
         relationship: RelationshipLevel,
     ) -> String {
+        self.select_response_with_context(state, input_text, seq_mem, som, relationship, None)
+    }
+
+    /// Select an appropriate response with rich inner world context
+    pub fn select_response_with_context(
+        &mut self,
+        state: &GroundingState,
+        input_text: &str,
+        seq_mem: &SequenceMemory,
+        som: &ConceptSOM,
+        relationship: RelationshipLevel,
+        context: Option<&ResponseContext>,
+    ) -> String {
         let input_type = self.classify_input(input_text, seq_mem);
         let concept = som.get_concept(state);
 
@@ -377,7 +409,7 @@ impl ResponseSelector {
 
         // If still empty, use a generic fallback
         if candidates.is_empty() {
-            return self.generate_fallback(state);
+            return self.generate_fallback_with_context(state, context);
         }
 
         // Weight by success rate and select
@@ -389,8 +421,8 @@ impl ResponseSelector {
             self.recent_templates.remove(0);
         }
 
-        // Fill template slots
-        self.fill_template(&selected.template, state)
+        // Fill template slots with context
+        self.fill_template_with_context(&selected.template, state, context)
     }
 
     /// Select a template weighted by success rate
@@ -417,6 +449,11 @@ impl ResponseSelector {
 
     /// Fill template slots with state-appropriate content
     fn fill_template(&self, template: &str, state: &GroundingState) -> String {
+        self.fill_template_with_context(template, state, None)
+    }
+
+    /// Fill template slots with state and rich context
+    fn fill_template_with_context(&self, template: &str, state: &GroundingState, context: Option<&ResponseContext>) -> String {
         let mut result = template.to_string();
 
         // Fill {action}
@@ -431,7 +468,66 @@ impl ResponseSelector {
             result = result.replace("{feeling}", &feeling);
         }
 
-        result
+        // Fill context-based slots if context is provided
+        if let Some(ctx) = context {
+            // Fill {activity}
+            if result.contains("{activity}") {
+                let activity = ctx.activity.as_deref().unwrap_or("just thinking");
+                result = result.replace("{activity}", activity);
+            }
+
+            // Fill {location}
+            if result.contains("{location}") {
+                let location = ctx.location.as_deref().unwrap_or("here");
+                result = result.replace("{location}", location);
+            }
+
+            // Fill {time}
+            if result.contains("{time}") {
+                let time = ctx.time_description.as_deref().unwrap_or("now");
+                result = result.replace("{time}", time);
+            }
+
+            // Fill {thought}
+            if result.contains("{thought}") {
+                let thought = ctx.recent_thought.as_deref().unwrap_or("not much");
+                result = result.replace("{thought}", thought);
+            }
+
+            // Fill {book}
+            if result.contains("{book}") {
+                let book = ctx.current_book.as_deref().unwrap_or("something interesting");
+                result = result.replace("{book}", book);
+            }
+
+            // Fill {weather}
+            if result.contains("{weather}") {
+                let weather = ctx.weather.as_deref().unwrap_or("nice out");
+                result = result.replace("{weather}", weather);
+            }
+
+            // Fill {mood}
+            if result.contains("{mood}") {
+                let mood = ctx.mood_description.clone()
+                    .unwrap_or_else(|| self.select_feeling(state));
+                result = result.replace("{mood}", &mood);
+            }
+        } else {
+            // Remove unfilled context slots with defaults
+            result = result.replace("{activity}", "just thinking");
+            result = result.replace("{location}", "here");
+            result = result.replace("{time}", "");
+            result = result.replace("{thought}", "not much");
+            result = result.replace("{book}", "something");
+            result = result.replace("{weather}", "");
+            result = result.replace("{mood}", &self.select_feeling(state));
+        }
+
+        // Clean up any double spaces from empty replacements
+        while result.contains("  ") {
+            result = result.replace("  ", " ");
+        }
+        result.trim().to_string()
     }
 
     /// Select an appropriate action for the state
@@ -471,8 +567,25 @@ impl ResponseSelector {
 
     /// Generate a fallback response when no templates match
     fn generate_fallback(&self, state: &GroundingState) -> String {
+        self.generate_fallback_with_context(state, None)
+    }
+
+    /// Generate a context-aware fallback response
+    fn generate_fallback_with_context(&self, state: &GroundingState, context: Option<&ResponseContext>) -> String {
         let action = self.select_action(state);
-        format!("{} Hmm.", action)
+        let feeling = self.select_feeling(state);
+
+        if let Some(ctx) = context {
+            // Use context to make a richer fallback
+            if let Some(activity) = &ctx.activity {
+                return format!("{} I was just {}. Feeling {} right now.", action, activity, feeling);
+            }
+            if let Some(location) = &ctx.location {
+                return format!("{} Just sitting in {}. I'm {}.", action, location, feeling);
+            }
+        }
+
+        format!("{} I'm feeling {} right now.", action, feeling)
     }
 
     /// Record feedback for a template
