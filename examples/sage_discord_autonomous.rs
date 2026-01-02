@@ -9,7 +9,7 @@
 // Usage:
 //   cargo run --release --example sage_discord_autonomous
 //
-// Commands: /state, /evolve, /ask, /save, /load, /snapshots, /give, /library
+// Commands: /state, /evolve, /ask, /save, /load, /snapshots, /give, /library, /mode
 
 use sage::sage_experience::SageExperience;
 use sage::llm_client::LlmClient;
@@ -21,6 +21,9 @@ use sage::nca_state::NcaState;
 use sage::sage_snapshot::{SageSnapshot, AutoSnapshotManager};
 use sage::embeddings::SemanticMemory;
 use sage::inner_world::{InnerWorld, simulation};
+use sage::language::{GroundedLanguage, inner_world_to_grounding_state, affinity_to_relationship_level};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
 
 use serenity::async_trait;
 use serenity::builder::{CreateCommand, CreateCommandOption, CreateInteractionResponse, CreateInteractionResponseMessage};
@@ -131,6 +134,10 @@ struct SageHandler {
     semantic_memory: Arc<TokioMutex<SemanticMemory>>,
     /// SAGE's inner world (house simulation)
     inner_world: Arc<TokioMutex<InnerWorld>>,
+    /// Grounded language system (LLM-free response generation)
+    grounded_language: Arc<TokioMutex<GroundedLanguage>>,
+    /// Toggle: true = use grounded language, false = use Ollama
+    use_grounded_mode: Arc<AtomicBool>,
 }
 
 #[async_trait]
@@ -314,6 +321,7 @@ impl EventHandler for SageHandler {
                 .add_option(CreateCommandOption::new(CommandOptionType::String, "author", "Book author").required(false))
                 .add_option(CreateCommandOption::new(CommandOptionType::String, "genre", "Book genre").required(false)),
             CreateCommand::new("library").description("See what books SAGE has"),
+            CreateCommand::new("mode").description("Toggle between Ollama LLM and Grounded language (experimental)"),
         ];
 
         match serenity::model::application::Command::set_global_commands(&ctx.http, commands).await {
@@ -527,6 +535,18 @@ impl EventHandler for SageHandler {
                         Err(e) => format!("❌ {}", e)
                     }
                 }
+                "mode" => {
+                    // Toggle between Ollama and Grounded language mode
+                    let was_grounded = self.use_grounded_mode.load(Ordering::SeqCst);
+                    let now_grounded = !was_grounded;
+                    self.use_grounded_mode.store(now_grounded, Ordering::SeqCst);
+
+                    if now_grounded {
+                        "🧠 Switched to **Grounded Language** mode\n_Responses now emerge from SAGE's inner state (experimental, no LLM)_".to_string()
+                    } else {
+                        "🤖 Switched to **Ollama LLM** mode\n_Responses now use the sage model_".to_string()
+                    }
+                }
                 // "give" and "library" are handled separately above with deferred response
                 _ => "Unknown command".to_string(),
             };
@@ -542,6 +562,11 @@ impl EventHandler for SageHandler {
 impl SageHandler {
     /// Generate a response using custom sage model with RAG
     async fn generate_response(&self, content: &str, username: &str) -> String {
+        // Check if we're in grounded mode (no LLM)
+        if self.use_grounded_mode.load(Ordering::SeqCst) {
+            return self.generate_grounded_response(content, username).await;
+        }
+
         // Get NCA state for personality modulation
         let (nca_state, generation) = {
             let nca = self.nca.lock().unwrap();
@@ -738,6 +763,92 @@ impl SageHandler {
             world.outreach.record_person(username, tick, topic);
 
             // Reduce loneliness after conversation
+            world.sage.loneliness = (world.sage.loneliness - 15.0).max(0.0);
+        }
+
+        response
+    }
+
+    /// Generate a response using the grounded language system (no LLM)
+    async fn generate_grounded_response(&self, content: &str, username: &str) -> String {
+        println!("\x1b[36m[GROUNDED]\x1b[0m Generating response for \x1b[36m{}\x1b[0m", username);
+
+        // Get inner world state for grounding
+        let (grounding_state, relationship_level, conversation_length) = {
+            let world = self.inner_world.lock().await;
+
+            // Get person memory if we know them
+            let person = world.outreach.known_people.get(username);
+
+            // Get conversation length from our tracker
+            let convos = self.conversations.lock().await;
+            let conv_len = convos.get_message_count(username);
+
+            // Create grounding state from inner world
+            let state = inner_world_to_grounding_state(
+                &world,
+                person,
+                conv_len,
+                0.0, // Topic sentiment (neutral for now)
+            );
+
+            // Get relationship level
+            let rel_level = person
+                .map(|p| affinity_to_relationship_level(p.affinity))
+                .unwrap_or(sage::language::RelationshipLevel::Stranger);
+
+            (state, rel_level, conv_len)
+        };
+
+        // Generate response using grounded language system
+        let (response, stats) = {
+            let mut grounded = self.grounded_language.lock().await;
+            let response = grounded.respond(content, &grounding_state, relationship_level);
+            let stats = grounded.stats();
+            (response, stats)
+        };
+
+        println!(
+            "\x1b[36m[GROUNDED]\x1b[0m Response: \"{}\" (templates: {}, vocab: {})",
+            &response[..response.len().min(40)],
+            stats.response_stats.total_templates,
+            stats.som_stats.total_words,
+        );
+
+        // Track conversation in memory
+        {
+            let mut convos = self.conversations.lock().await;
+            convos.add_user_message(username, content.to_string());
+            convos.add_assistant_message(username, response.clone());
+        }
+
+        // Learn from this exchange and save periodically
+        {
+            let mut grounded = self.grounded_language.lock().await;
+            let world = self.inner_world.lock().await;
+            let person = world.outreach.known_people.get(username);
+            let state = inner_world_to_grounding_state(&world, person, conversation_length + 1, 0.0);
+            grounded.learn_from_exchange(content, &response, &state, true); // Assume positive feedback
+
+            // Save after every 5 conversations
+            let stats = grounded.stats();
+            if stats.sequence_stats.current_tick % 5 == 0 {
+                if let Err(e) = grounded.save(Path::new("sage_grounded_language.json")) {
+                    eprintln!("\x1b[31m[ERROR]\x1b[0m Could not save grounded language: {}", e);
+                }
+            }
+        }
+
+        // Record interaction in inner world
+        {
+            let mut world = self.inner_world.lock().await;
+            let tick = world.sage.time_alive;
+            let topic = if content.len() > 20 {
+                Some(content.split_whitespace().take(5).collect::<Vec<_>>().join(" "))
+            } else {
+                None
+            };
+            world.outreach.record_person(username, tick, topic);
             world.sage.loneliness = (world.sage.loneliness - 15.0).max(0.0);
         }
 
@@ -1178,6 +1289,31 @@ async fn main() {
     }
     let inner_world = Arc::new(TokioMutex::new(inner_world));
 
+    // Initialize grounded language system (LLM-free response generation)
+    println!("\x1b[36m[BOOT]\x1b[0m Initializing grounded language system...");
+    let grounded_language = if Path::new("sage_grounded_language.json").exists() {
+        match GroundedLanguage::load(Path::new("sage_grounded_language.json")) {
+            Ok(gl) => {
+                let stats = gl.stats();
+                println!("\x1b[36m[BOOT]\x1b[0m \x1b[32mGrounded language loaded\x1b[0m (templates: {}, vocab: {})",
+                    stats.response_stats.total_templates, stats.som_stats.total_words);
+                gl
+            }
+            Err(e) => {
+                eprintln!("\x1b[33m[WARN]\x1b[0m Could not load grounded language: {}", e);
+                GroundedLanguage::new()
+            }
+        }
+    } else {
+        let gl = GroundedLanguage::new();
+        let stats = gl.stats();
+        println!("\x1b[36m[BOOT]\x1b[0m \x1b[32mGrounded language ready\x1b[0m (templates: {}, vocab: {})",
+            stats.response_stats.total_templates, stats.som_stats.total_words);
+        gl
+    };
+    let grounded_language = Arc::new(TokioMutex::new(grounded_language));
+    let use_grounded_mode = Arc::new(AtomicBool::new(false)); // Start in Ollama mode
+
     // Clone for background simulation
     let inner_world_bg = Arc::clone(&inner_world);
     let semantic_memory_bg = Arc::clone(&semantic_memory);
@@ -1251,6 +1387,8 @@ async fn main() {
         auto_snapshot,
         semantic_memory,
         inner_world,
+        grounded_language,
+        use_grounded_mode,
     };
 
     // Configure intents (GUILD_PRESENCES requires privileged intent in Discord Developer Portal)

@@ -55,8 +55,8 @@ pub mod embeddings;  // Text embedding engine using Ollama (nomic-embed-text)
 pub mod inner_world;  // SAGE's inner world simulation (house, events, experiences)
 pub mod vector_memory;  // In-memory vector store for semantic RAG search
 pub mod tui;
+pub mod nca_state;  // NCA cognitive state extraction for language modulation
+pub mod sage_snapshot;  // Complete state snapshot system (save/load SAGE at any point)
 // Planned modules (not yet implemented):
-// pub mod nca_state;  // NCA cognitive state extraction for language modulation
 // pub mod hybrid_language;  // Hybrid NCA + SLM language system
 // pub mod local_llm;  // Local LLM inference using Candle (TinyLlama, etc.)
-// pub mod sage_snapshot;  // Complete state snapshot system (save/load SAGE at any point)
