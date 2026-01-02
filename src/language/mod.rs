@@ -30,6 +30,7 @@ pub mod sequence_memory;
 pub mod response_selector;
 pub mod seed_templates;
 pub mod grounded;
+pub mod inner_world_bridge;
 
 // Re-exports for reservoir model
 pub use encoder::CharacterEncoder;
@@ -43,3 +44,4 @@ pub use concept_som::{ConceptSOM, GroundingState, ConceptNode};
 pub use sequence_memory::{SequenceMemory, SequencePattern, SequenceMatch};
 pub use response_selector::{ResponseSelector, ResponseTemplate, RelationshipLevel, InputType};
 pub use grounded::{GroundedLanguage, GroundedLanguageStats};
+pub use inner_world_bridge::{inner_world_to_grounding_state, affinity_to_relationship_level};
