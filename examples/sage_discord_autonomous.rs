@@ -87,7 +87,10 @@ fn build_response_context(world: &InnerWorld) -> ResponseContext {
     // Get current book if reading
     let current_book = if let Some(ref activity) = world.sage.current_activity {
         if activity.name.contains("reading") || activity.description.contains("reading") {
-            world.library.currently_reading.as_ref().map(|b| b.title.clone())
+            // Get the book title from the current_book ID
+            world.library.current_book.as_ref().and_then(|book_id| {
+                world.library.books.get(book_id).map(|b| b.title.clone())
+            })
         } else {
             None
         }
@@ -1236,6 +1239,12 @@ async fn main() {
     // Load environment variables from .env.local
     dotenvy::from_filename(".env.local").ok();
 
+    // Limit Rayon thread pool to 4 threads (prevents NCA from maxing all CPU cores)
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build_global()
+        .expect("Failed to initialize Rayon thread pool");
+
     println!("\n\x1b[36m╔════════════════════════════════════════════════════════════╗\x1b[0m");
     println!("\x1b[36m║\x1b[0m      \x1b[1;37mSAGE Discord Bot\x1b[0m - Ollama + NCA Architecture        \x1b[36m║\x1b[0m");
     println!("\x1b[36m╚════════════════════════════════════════════════════════════╝\x1b[0m\n");
@@ -1317,12 +1326,13 @@ async fn main() {
     // Initialize auto-snapshot manager
     let auto_snapshot = Arc::new(StdMutex::new(AutoSnapshotManager::new()));
 
-    // Spawn background NCA evolution thread
+    // Spawn background NCA evolution thread (throttled to ~66% CPU)
     let nca_bg = Arc::clone(&nca_shared);
     let nca_gen_bg = Arc::clone(&nca_generation);
     thread::spawn(move || {
         loop {
-            thread::sleep(Duration::from_secs(10));
+            // Increased from 10s to 30s to reduce CPU usage (~66% reduction)
+            thread::sleep(Duration::from_secs(30));
             let mut nca = nca_bg.lock().unwrap();
             let mut gen = nca_gen_bg.lock().unwrap();
             for _ in 0..10 {

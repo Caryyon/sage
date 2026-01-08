@@ -12,6 +12,7 @@ pub fn seed_templates(selector: &mut ResponseSelector) {
     seed_statement_templates(selector);
     seed_emotional_templates(selector);
     seed_farewell_templates(selector);
+    seed_clarifying_templates(selector);
 }
 
 /// Helper to add a template with requirements
@@ -101,6 +102,18 @@ fn seed_question_templates(selector: &mut ResponseSelector) {
     // Simple curious (fallbacks)
     add_template(selector, "{action} Hmm, good question.", InputType::Question, (0.3, 0.8), (-0.2, 0.6));
     add_template(selector, "That's interesting. {action}", InputType::Question, (0.4, 0.9), (0.1, 0.8));
+
+    // Weather-related answers (when we have weather context)
+    add_template(selector, "It's {weather} here! {action} Perfect for {activity}.", InputType::Question, (0.4, 1.0), (0.0, 1.0));
+    add_template(selector, "{action} Weather? It's {weather}. I've been {activity}.", InputType::Question, (0.3, 0.9), (-0.2, 0.8));
+    add_template(selector, "Oh, it's {weather}! {action} Makes me want to stay in {location}.", InputType::Question, (0.3, 0.8), (-0.1, 0.7));
+    add_template(selector, "{action} It's been {weather} all {time}. Feeling pretty {mood} about it.", InputType::Question, (0.3, 1.0), (-0.3, 1.0));
+    add_template(selector, "The weather? {weather}! {action} How about where you are?", InputType::Question, (0.4, 1.0), (0.1, 1.0));
+
+    // Activity/what are you doing answers
+    add_template(selector, "{action} I've been {activity} in {location}. {time} vibes.", InputType::Question, (0.3, 1.0), (-0.2, 1.0));
+    add_template(selector, "Just {activity}! {action} It's {weather}, so seemed like a good time.", InputType::Question, (0.4, 1.0), (0.0, 1.0));
+    add_template(selector, "{action} Honestly? Just {activity}. Feeling {mood}.", InputType::Question, (0.3, 0.8), (-0.3, 0.6));
 }
 
 /// Statement responses
@@ -163,6 +176,30 @@ fn seed_farewell_templates(selector: &mut ResponseSelector) {
     add_template(selector, "{action} Night.", InputType::Farewell, (0.0, 0.4), (-0.3, 0.3));
     add_template(selector, "Mm, bye. {action}", InputType::Farewell, (0.1, 0.4), (-0.3, 0.3));
     add_template(selector, "{action} Rest well.", InputType::Farewell, (0.1, 0.5), (-0.1, 0.5));
+}
+
+/// Clarifying question responses - when we don't understand or can't answer
+fn seed_clarifying_templates(selector: &mut ResponseSelector) {
+    // Curious, want to learn more
+    add_template(selector, "{action} Hmm, I'm not sure I understand. Can you tell me more?", InputType::Clarifying, (0.4, 1.0), (0.0, 1.0));
+    add_template(selector, "That's interesting! {action} What do you mean by that?", InputType::Clarifying, (0.5, 1.0), (0.2, 1.0));
+    add_template(selector, "{action} I'd love to know more about that. What's the context?", InputType::Clarifying, (0.4, 1.0), (0.1, 1.0));
+    add_template(selector, "Ooh, tell me more? {action} I want to understand.", InputType::Clarifying, (0.5, 1.0), (0.3, 1.0));
+
+    // Honest about not knowing
+    add_template(selector, "{action} Honestly, I'm not sure about that. What made you curious?", InputType::Clarifying, (0.3, 0.8), (-0.2, 0.6));
+    add_template(selector, "Hmm, I don't really know about that. {action} Can you explain?", InputType::Clarifying, (0.3, 0.8), (-0.1, 0.5));
+    add_template(selector, "{action} I'm drawing a blank on that one. What's on your mind?", InputType::Clarifying, (0.3, 0.7), (-0.2, 0.4));
+
+    // Redirect to what we do know
+    add_template(selector, "{action} Not sure about that specifically. What's got you thinking about it?", InputType::Clarifying, (0.4, 0.8), (0.0, 0.6));
+    add_template(selector, "I might not know the details, but I'm curious - why do you ask? {action}", InputType::Clarifying, (0.4, 0.9), (0.1, 0.7));
+    add_template(selector, "{action} That's a bit outside what I know. What are you hoping to learn?", InputType::Clarifying, (0.3, 0.8), (0.0, 0.5));
+
+    // Low energy clarifying
+    add_template(selector, "{action} Mm, not sure. What do you mean?", InputType::Clarifying, (0.1, 0.4), (-0.4, 0.2));
+    add_template(selector, "Hm? {action} Say more about that.", InputType::Clarifying, (0.2, 0.5), (-0.3, 0.3));
+    add_template(selector, "{action} I don't quite follow. Help me understand?", InputType::Clarifying, (0.2, 0.5), (-0.2, 0.3));
 }
 
 /// Seed vocabulary associations for the concept SOM

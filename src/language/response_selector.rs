@@ -53,6 +53,8 @@ pub enum InputType {
     Statement,
     Emotional,
     Farewell,
+    /// For specific questions we can't answer - should ask for clarification
+    Clarifying,
     Unknown,
 }
 
@@ -322,6 +324,11 @@ impl ResponseSelector {
 
     /// Classify the input type
     pub fn classify_input(&self, text: &str, seq_mem: &SequenceMemory) -> InputType {
+        self.classify_input_with_context(text, seq_mem, None)
+    }
+
+    /// Classify input with optional context to determine if we can answer
+    pub fn classify_input_with_context(&self, text: &str, seq_mem: &SequenceMemory, context: Option<&ResponseContext>) -> InputType {
         let lower = text.to_lowercase();
 
         // Check for farewells
@@ -344,6 +351,51 @@ impl ResponseSelector {
         }
 
         if seq_mem.is_question(&lower) {
+            // Check if this is a specific question we can answer
+            // Questions about weather
+            if lower.contains("weather") || lower.contains("temperature") || lower.contains("rain")
+                || lower.contains("snow") || lower.contains("cold") || lower.contains("warm")
+                || lower.contains("sunny") || lower.contains("cloudy")
+            {
+                // If we have weather context, this is a Question we can answer
+                if context.map(|c| c.weather.is_some()).unwrap_or(false) {
+                    return InputType::Question;
+                }
+                // No weather context - need to clarify
+                return InputType::Clarifying;
+            }
+
+            // Questions about what we're doing/activity
+            if lower.contains("doing") || lower.contains("up to") || lower.contains("been up to")
+                || lower.contains("working on") || lower.contains("busy")
+            {
+                return InputType::Question; // We always know what we're doing
+            }
+
+            // Questions about how we are/feelings - we can always answer
+            if lower.contains("how are you") || lower.contains("how're you")
+                || lower.contains("how you doing") || lower.contains("how do you feel")
+            {
+                return InputType::Question;
+            }
+
+            // Questions about reading/books
+            if lower.contains("reading") || lower.contains("book") {
+                if context.map(|c| c.current_book.is_some()).unwrap_or(false) {
+                    return InputType::Question;
+                }
+                return InputType::Clarifying;
+            }
+
+            // Questions asking for external facts we don't know
+            let external_knowledge = ["who is", "who was", "what is the", "what's the",
+                "when did", "where is", "how many", "how much", "what happened",
+                "did you hear", "have you heard", "news about", "score"];
+            if external_knowledge.iter().any(|phrase| lower.contains(phrase)) {
+                return InputType::Clarifying;
+            }
+
+            // Default question - we'll try to answer
             return InputType::Question;
         }
 
@@ -373,7 +425,7 @@ impl ResponseSelector {
         relationship: RelationshipLevel,
         context: Option<&ResponseContext>,
     ) -> String {
-        let input_type = self.classify_input(input_text, seq_mem);
+        let input_type = self.classify_input_with_context(input_text, seq_mem, context);
         let concept = som.get_concept(state);
 
         // Gather candidate templates
@@ -576,16 +628,36 @@ impl ResponseSelector {
         let feeling = self.select_feeling(state);
 
         if let Some(ctx) = context {
-            // Use context to make a richer fallback
+            // Build a rich response using all available context
+            let mut parts = Vec::new();
+
+            // Start with action
+            parts.push(action.clone());
+
+            // Add activity if available
             if let Some(activity) = &ctx.activity {
-                return format!("{} I was just {}. Feeling {} right now.", action, activity, feeling);
+                parts.push(format!("I've been {}.", activity));
             }
-            if let Some(location) = &ctx.location {
-                return format!("{} Just sitting in {}. I'm {}.", action, location, feeling);
+
+            // Add weather if available
+            if let Some(weather) = &ctx.weather {
+                parts.push(format!("It's {} here.", weather));
             }
+
+            // Add mood
+            if let Some(mood) = &ctx.mood_description {
+                parts.push(format!("Feeling {}.", mood));
+            } else {
+                parts.push(format!("Feeling {}.", feeling));
+            }
+
+            // Add a question to invite conversation
+            parts.push("What's on your mind?".to_string());
+
+            return parts.join(" ");
         }
 
-        format!("{} I'm feeling {} right now.", action, feeling)
+        format!("{} Feeling {}. What's up?", action, feeling)
     }
 
     /// Record feedback for a template
