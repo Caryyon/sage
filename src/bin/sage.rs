@@ -308,19 +308,46 @@ fn run_node_stop() {
 fn run_update(quiet: bool) {
     let home = sage_home();
     let bin_path = home.join("bin/sage");
-    let base_url = std::env::var("SAGE_UPDATE_URL")
-        .unwrap_or_else(|_| "https://sage.lattice.black/releases/latest".to_string());
+    let repo = std::env::var("SAGE_REPO").unwrap_or_else(|_| "Caryyon/sage".to_string());
 
     // Detect OS/arch
     let os = if cfg!(target_os = "linux") { "linux" }
              else if cfg!(target_os = "macos") { "darwin" }
              else { eprintln!("Unsupported OS"); return; };
-    let arch = if cfg!(target_arch = "x86_64") { "amd64" }
+    let arch = if cfg!(target_arch = "x86_64") { "x86_64" }
                else if cfg!(target_arch = "aarch64") { "arm64" }
                else { eprintln!("Unsupported arch"); return; };
 
-    let binary_url = format!("{base_url}/sage-{os}-{arch}");
-    let changelog_url = format!("{base_url}/CHANGELOG.md");
+    // Fetch latest release tag from GitHub API
+    let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("sage-updater")
+        .build()
+        .unwrap();
+    let version = match client.get(&api_url).send() {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.text() {
+                Ok(body) => {
+                    body.split("\"tag_name\"").nth(1)
+                        .and_then(|s| s.split('"').nth(1))
+                        .map(|s| s.to_string())
+                        .unwrap_or_default()
+                }
+                _ => { eprintln!("Failed to parse release info"); return; }
+            }
+        }
+        _ => { eprintln!("Failed to check for updates"); return; }
+    };
+
+    if version.is_empty() {
+        eprintln!("No releases found"); return;
+    }
+
+    println!("📦 Latest version: {version}");
+
+    let binary_name = format!("sage-{os}-{arch}");
+    let binary_url = format!("https://github.com/{repo}/releases/download/{version}/{binary_name}");
+    let changelog_url = format!("https://github.com/{repo}/releases/tag/{version}");
 
     println!("🔄 Checking for updates...");
 
