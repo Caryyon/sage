@@ -677,9 +677,25 @@ class MiniworldServer:
     def create_app(self):
         app = web.Application()
         app.on_startup.append(self.on_startup)
+        
+        # Landing page at root
+        landing_dir = self.static_dir.parent  # static/ directory
         app.router.add_get('/ws', self.websocket_handler)
-        app.router.add_get('/', lambda r: web.FileResponse(self.static_dir / 'index.html'))
-        app.router.add_static('/', self.static_dir)
+        app.router.add_get('/', lambda r: web.FileResponse(landing_dir / 'index.html'))
+        
+        # City/game at /city
+        app.router.add_get('/city', lambda r: web.FileResponse(self.static_dir / 'index.html'))
+        app.router.add_static('/city/', self.static_dir)
+        
+        # Sprites and miniworld assets at root level (for backward compat)
+        app.router.add_static('/sprites', self.static_dir / 'sprites')
+        
+        # Dashboard and other static dirs
+        app.router.add_static('/dashboard', landing_dir / 'dashboard')
+        app.router.add_static('/journals', landing_dir / 'journals')
+        
+        # Catch-all static from landing dir
+        app.router.add_static('/', landing_dir)
         return app
     
     def run(self, port=8888):
