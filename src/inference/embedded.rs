@@ -172,7 +172,11 @@ impl EmbeddedLLM {
             .unsqueeze(0)?;
         let logits = model.forward(&prompt_tensor, 0)?;
         let logits = logits.squeeze(0)?;
-        let logits = logits.get(logits.dim(0)? - 1)?;
+        let logits = if logits.dims().len() == 1 {
+            logits
+        } else {
+            logits.get(logits.dim(0)? - 1)?
+        };
 
         // Apply repeat penalty
         let logits = Self::apply_repeat_penalty(
@@ -201,7 +205,11 @@ impl EmbeddedLLM {
             let input = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
             let logits = model.forward(&input, prompt_tokens.len() + i)?;
             let logits = logits.squeeze(0)?;
-            let logits = logits.get(logits.dim(0)? - 1)?;
+            let logits = if logits.dims().len() == 1 {
+                logits
+            } else {
+                logits.get(logits.dim(0)? - 1)?
+            };
 
             let logits = Self::apply_repeat_penalty(
                 &logits,
