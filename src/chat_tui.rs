@@ -402,7 +402,7 @@ fn ui(f: &mut Frame, state: &AppState) {
     let version = env!("CARGO_PKG_VERSION");
     let header = Paragraph::new(Line::from(vec![
         Span::styled("SAGE", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
-        Span::styled(" — Self-Adaptive General Explorer", Style::default().fg(PURPLE)),
+        Span::styled(" — Shared Adaptive Growing Experience", Style::default().fg(PURPLE)),
         Span::styled(format!("  v{}", version), Style::default().fg(DIM)),
     ]))
     .block(
@@ -655,7 +655,7 @@ pub fn run(prefer_ollama: bool, model: &str, ollama_url: &str) -> Result<(), Box
                         }
                     }
                     KeyCode::Esc => {
-                        state.quit = true;
+                        // Don't quit on Escape — use /exit or /quit
                     }
                     _ => {}
                 }
