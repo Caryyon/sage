@@ -129,59 +129,11 @@ fn main() {
     }
 }
 
-/// Launch the interactive chat.
+/// Launch the interactive TUI chat with brain visualization.
 fn run_chat(prefer_ollama: bool, model: &str, ollama_url: &str) {
-    use std::io;
-    use sage::inference::{self, ChatMessage, ChatRole};
-
-    let brain_path = default_brain_path();
-    let knowledge = NCAKnowledge::new();
-
-    // Initialize inference engine
-    let engine = if prefer_ollama {
-        inference::engine_with_preference(true, Some(model), Some(ollama_url))
-    } else {
-        inference::default_engine()
-    };
-
-    println!("SAGE Chat — engine: {}", engine.name());
-    println!("Brain: {brain_path} ({} active cells)",
-             knowledge.active_knowledge(0.01).len());
-    println!("Type your message, or /quit to exit.\n");
-
-    let system_msg = ChatMessage {
-        role: ChatRole::System,
-        content: "You are SAGE, a decentralized AI that learns and grows. You're running on the user's local machine as part of a peer-to-peer network of AI nodes. Be helpful, curious, and thoughtful.".to_string(),
-    };
-
-    let mut history: Vec<ChatMessage> = vec![system_msg];
-
-    loop {
-        eprint!("\x1b[36myou>\x1b[0m ");
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() || input.trim().is_empty() {
-            continue;
-        }
-        let input = input.trim();
-        if input == "/quit" || input == "/exit" {
-            break;
-        }
-
-        history.push(ChatMessage {
-            role: ChatRole::User,
-            content: input.to_string(),
-        });
-
-        match engine.chat(&history, 1000) {
-            Ok(response) => {
-                println!("\x1b[35msage>\x1b[0m {response}\n");
-                history.push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: response,
-                });
-            }
-            Err(e) => eprintln!("Error: {e}"),
-        }
+    if let Err(e) = sage::chat_tui::run(prefer_ollama, model, ollama_url) {
+        eprintln!("Chat error: {e}");
+        std::process::exit(1);
     }
 }
 
