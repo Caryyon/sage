@@ -77,6 +77,12 @@ enum NodeCommands {
         /// Disable mDNS discovery
         #[arg(long)]
         no_mdns: bool,
+        /// Run in foreground (don't daemonize)
+        #[arg(short, long)]
+        foreground: bool,
+        /// Internal flag: running as daemon (hidden)
+        #[arg(long, hide = true)]
+        daemon_internal: bool,
     },
     /// Stop the running SAGE node
     Stop,
@@ -128,8 +134,24 @@ fn main() {
             run_update(quiet);
         }
         Some(Commands::Node { command }) => match command {
-            NodeCommands::Start { port, chat_port, sync_interval, no_mdns } => {
-                run_node_start(port, chat_port, sync_interval, no_mdns);
+            NodeCommands::Start { port, chat_port, sync_interval, no_mdns, foreground, daemon_internal } => {
+                if foreground || daemon_internal {
+                    // Run directly (foreground mode or we ARE the daemon)
+                    if daemon_internal {
+                        // Write PID file
+                        let pid_file = sage_home().join("sage.pid");
+                        let _ = std::fs::create_dir_all(sage_home());
+                        let _ = std::fs::write(&pid_file, std::process::id().to_string());
+                    }
+                    run_node_start(port, chat_port, sync_interval, no_mdns);
+                    if daemon_internal {
+                        // Clean up PID file on exit
+                        let _ = std::fs::remove_file(sage_home().join("sage.pid"));
+                    }
+                } else {
+                    // Daemonize: re-exec self with --daemon-internal
+                    daemonize_node(port, chat_port, sync_interval, no_mdns);
+                }
             }
             NodeCommands::Stop => {
                 run_node_stop();
@@ -146,6 +168,74 @@ fn run_chat(engine_mode: sage::chat_tui::EngineMode, model: &str, ollama_url: &s
     if let Err(e) = sage::chat_tui::run(engine_mode, model, ollama_url) {
         eprintln!("Chat error: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Daemonize: re-exec self with --daemon-internal, redirect output to log file.
+fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) {
+    let home = sage_home();
+    let _ = std::fs::create_dir_all(&home);
+    let pid_file = home.join("sage.pid");
+    let log_file = home.join("sage.log");
+
+    // Check if already running
+    if pid_file.exists() {
+        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                // Check if process is alive
+                #[cfg(unix)]
+                {
+                    let status = std::process::Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                    if status.map(|s| s.success()).unwrap_or(false) {
+                        eprintln!("SAGE node is already running (PID {pid})");
+                        std::process::exit(1);
+                    }
+                }
+                // Stale PID file, remove it
+                let _ = std::fs::remove_file(&pid_file);
+            }
+        }
+    }
+
+    let exe = std::env::current_exe().expect("Failed to determine executable path");
+    let log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+        .expect("Failed to open log file");
+    let log_err = log.try_clone().expect("Failed to clone log file handle");
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["node", "start", "--daemon-internal"])
+        .arg("--port").arg(port.to_string())
+        .arg("--chat-port").arg(chat_port.to_string())
+        .arg("--sync-interval").arg(sync_interval.to_string());
+    if no_mdns {
+        cmd.arg("--no-mdns");
+    }
+    cmd.stdout(log).stderr(log_err)
+        .stdin(std::process::Stdio::null());
+
+    // Detach from parent process group on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    match cmd.spawn() {
+        Ok(child) => {
+            println!("🧠 SAGE node started (PID {})", child.id());
+            println!("   Log: {}", log_file.display());
+            println!("   Stop: sage node stop");
+        }
+        Err(e) => {
+            eprintln!("Failed to start daemon: {e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -248,23 +338,27 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
 }
 
 fn run_node_stop() {
-    let pid_file = sage_home().join("node.pid");
+    let pid_file = sage_home().join("sage.pid");
     match std::fs::read_to_string(&pid_file) {
         Ok(pid_str) => {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                 #[cfg(unix)]
                 {
-                    let _ = std::process::Command::new("kill")
+                    let status = std::process::Command::new("kill")
                         .arg(pid.to_string())
                         .status();
+                    if status.map(|s| s.success()).unwrap_or(false) {
+                        println!("🛑 Stopped SAGE node (PID {pid})");
+                    } else {
+                        eprintln!("Process {pid} not found (may have already exited)");
+                    }
                 }
-                println!("Sent stop signal to SAGE node (PID {pid})");
                 let _ = std::fs::remove_file(&pid_file);
             } else {
                 eprintln!("Invalid PID file");
             }
         }
-        Err(_) => eprintln!("No running SAGE node found (no PID file)"),
+        Err(_) => eprintln!("No running SAGE node found (no PID file at {})", pid_file.display()),
     }
 }
 
@@ -394,7 +488,8 @@ fn run_node_status() {
     let home = sage_home();
     let config_path = home.join("config.toml");
     let brain_path = default_brain_path();
-    let pid_file = home.join("node.pid");
+    let pid_file = home.join("sage.pid");
+    let log_file = home.join("sage.log");
 
     println!("SAGE Node Status");
     println!("─────────────────");
@@ -403,12 +498,51 @@ fn run_node_status() {
              if config_path.exists() { "✓" } else { "✗" });
     println!("  Brain:    {brain_path} {}",
              if std::path::Path::new(&brain_path).exists() { "✓" } else { "✗" });
+    println!("  Log:      {}", log_file.display());
 
     if pid_file.exists() {
-        if let Ok(pid) = std::fs::read_to_string(&pid_file) {
-            println!("  Running:  PID {}", pid.trim());
+        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                // Check if actually running
+                #[cfg(unix)]
+                {
+                    let alive = std::process::Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if alive {
+                        // Try to get uptime from /proc on Linux
+                        let mut uptime_str = String::new();
+                        #[cfg(target_os = "linux")]
+                        {
+                            if let Ok(stat) = std::fs::metadata(format!("/proc/{pid}")) {
+                                if let Ok(created) = stat.modified() {
+                                    if let Ok(elapsed) = created.elapsed() {
+                                        let secs = elapsed.as_secs();
+                                        let h = secs / 3600;
+                                        let m = (secs % 3600) / 60;
+                                        uptime_str = format!(", uptime: {h}h {m}m");
+                                    }
+                                }
+                            }
+                        }
+                        println!("  Running:  ✅ PID {pid}{uptime_str}");
+                    } else {
+                        println!("  Running:  ✗ (stale PID file, process {pid} not found)");
+                        let _ = std::fs::remove_file(&pid_file);
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    println!("  Running:  PID {pid} (cannot verify on this platform)");
+                }
+            } else {
+                println!("  Running:  ✗ (invalid PID file)");
+            }
         }
     } else {
-        println!("  Running:  no");
+        println!("  Running:  ✗ not running");
     }
 }
