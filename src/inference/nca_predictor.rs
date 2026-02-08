@@ -23,6 +23,8 @@ use std::path::PathBuf;
 
 /// Grid side length for the token prediction grid (separate from main SAGE grid)
 const NCA_GRID_SIZE: usize = 181; // 181*181 = 32761 cells ≥ 32K vocab
+/// Smaller grid for training (16×16 = 256 cells, sufficient for demo vocab)
+const TRAINING_GRID_SIZE: usize = 8;
 const NCA_CHANNELS: usize = 8; // Per-cell channels: [activation, embedding x4, hidden x3]
 const ACTIVATION_CH: usize = 0;
 
@@ -111,11 +113,11 @@ impl SimpleTokenizer {
 // NCA Grid for Token Prediction
 // ---------------------------------------------------------------------------
 
-/// Maps token ids to (row, col) on the grid
-fn token_to_coord(token_id: usize) -> (usize, usize) {
-    let row = token_id / NCA_GRID_SIZE;
-    let col = token_id % NCA_GRID_SIZE;
-    (row.min(NCA_GRID_SIZE - 1), col.min(NCA_GRID_SIZE - 1))
+/// Maps token ids to (row, col) on a grid of given size
+fn token_to_coord(token_id: usize, grid_size: usize) -> (usize, usize) {
+    let row = token_id / grid_size;
+    let col = token_id % grid_size;
+    (row.min(grid_size - 1), col.min(grid_size - 1))
 }
 
 /// The NCA update rule weights (small MLP: perception → hidden → output)
@@ -211,13 +213,18 @@ pub struct NcaPredictor {
     grid: Vec<Vec<[f64; NCA_CHANNELS]>>,
     weights: NcaWeights,
     steps: usize,
+    grid_size: usize,
     pub tokenizer: SimpleTokenizer,
 }
 
 impl NcaPredictor {
     pub fn new(tokenizer: SimpleTokenizer, weights: NcaWeights, steps: usize) -> Self {
-        let grid = vec![vec![[0.0; NCA_CHANNELS]; NCA_GRID_SIZE]; NCA_GRID_SIZE];
-        Self { grid, weights, steps, tokenizer }
+        Self::with_grid_size(tokenizer, weights, steps, NCA_GRID_SIZE)
+    }
+
+    pub fn with_grid_size(tokenizer: SimpleTokenizer, weights: NcaWeights, steps: usize, grid_size: usize) -> Self {
+        let grid = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
+        Self { grid, weights, steps, grid_size, tokenizer }
     }
 
     pub fn with_default_steps(tokenizer: SimpleTokenizer, weights: NcaWeights) -> Self {
@@ -236,7 +243,7 @@ impl NcaPredictor {
     /// Activate grid cells for the given token ids
     fn activate_tokens(&mut self, token_ids: &[usize]) {
         for (pos, &tid) in token_ids.iter().enumerate() {
-            let (r, c) = token_to_coord(tid);
+            let (r, c) = token_to_coord(tid, self.grid_size);
             // Set activation to 1.0 and encode position in channels
             self.grid[r][c][ACTIVATION_CH] = 1.0;
             // Encode positional info (normalized position in sequence)
@@ -257,8 +264,8 @@ impl NcaPredictor {
         let mut idx = 0;
         for dr in [-1i32, 0, 1] {
             for dc in [-1i32, 0, 1] {
-                let nr = (r as i32 + dr).rem_euclid(NCA_GRID_SIZE as i32) as usize;
-                let nc = (c as i32 + dc).rem_euclid(NCA_GRID_SIZE as i32) as usize;
+                let nr = (r as i32 + dr).rem_euclid(self.grid_size as i32) as usize;
+                let nc = (c as i32 + dc).rem_euclid(self.grid_size as i32) as usize;
                 for ch in 0..NCA_CHANNELS {
                     input[idx] = self.grid[nr][nc][ch];
                     idx += 1;
@@ -270,10 +277,10 @@ impl NcaPredictor {
 
     /// Apply the NCA update rule (one step)
     fn nca_step(&mut self) {
-        let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; NCA_GRID_SIZE]; NCA_GRID_SIZE];
+        let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; self.grid_size]; self.grid_size];
         
-        for r in 0..NCA_GRID_SIZE {
-            for c in 0..NCA_GRID_SIZE {
+        for r in 0..self.grid_size {
+            for c in 0..self.grid_size {
                 let input = self.perceive(r, c);
                 // MLP forward pass: input → hidden (ReLU) → output (tanh)
                 let mut hidden = vec![0.0; HIDDEN_SIZE];
@@ -295,8 +302,8 @@ impl NcaPredictor {
         }
 
         // Apply deltas
-        for r in 0..NCA_GRID_SIZE {
-            for c in 0..NCA_GRID_SIZE {
+        for r in 0..self.grid_size {
+            for c in 0..self.grid_size {
                 for ch in 0..NCA_CHANNELS {
                     self.grid[r][c][ch] = (self.grid[r][c][ch] + deltas[r][c][ch]).clamp(-5.0, 5.0);
                 }
@@ -317,7 +324,7 @@ impl NcaPredictor {
         let vocab_size = self.tokenizer.vocab_size();
         let mut activations = vec![0.0; vocab_size];
         for tid in 0..vocab_size {
-            let (r, c) = token_to_coord(tid);
+            let (r, c) = token_to_coord(tid, self.grid_size);
             activations[tid] = self.grid[r][c][ACTIVATION_CH];
         }
         activations
@@ -386,16 +393,22 @@ pub struct TrainingConfig {
     pub learning_rate: f64,
     pub epochs: usize,
     pub context_window: usize, // How many tokens of context
+    pub grid_size: usize,      // Grid side length for training (smaller = faster)
+    pub nca_steps: usize,      // NCA update steps per evaluation during training
+    pub max_examples: usize,   // Max training examples to subsample
 }
 
 impl Default for TrainingConfig {
     fn default() -> Self {
         Self {
-            population_size: 50,
+            population_size: 10,
             sigma: 0.02,
             learning_rate: 0.001,
-            epochs: 100,
+            epochs: 30,
             context_window: 5,
+            grid_size: TRAINING_GRID_SIZE,
+            nca_steps: 3,
+            max_examples: 30,
         }
     }
 }
@@ -407,7 +420,8 @@ pub fn train_nca(
     config: &TrainingConfig,
     verbose: bool,
 ) -> Result<(NcaPredictor, f64, f64), Box<dyn Error>> {
-    let tokenizer = SimpleTokenizer::from_corpus(corpus, NCA_GRID_SIZE * NCA_GRID_SIZE);
+    let grid_size = config.grid_size;
+    let tokenizer = SimpleTokenizer::from_corpus(corpus, grid_size * grid_size);
     let tokens = tokenizer.encode(corpus);
     let vocab_size = tokenizer.vocab_size();
 
@@ -419,8 +433,8 @@ pub fn train_nca(
     let random_accuracy = 1.0 / vocab_size as f64;
 
     if verbose {
-        eprintln!("📊 Vocab size: {}, Corpus tokens: {}, Random baseline: {:.4}%",
-                  vocab_size, tokens.len(), random_accuracy * 100.0);
+        eprintln!("📊 Vocab size: {}, Corpus tokens: {}, Grid: {}×{}, Random baseline: {:.4}%",
+                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
         eprintln!("📊 NCA params: {}", NcaWeights::random().param_count());
     }
 
@@ -430,7 +444,7 @@ pub fn train_nca(
     let mut rng = rand::thread_rng();
 
     // Build training examples (subsample for speed)
-    let max_examples = 200.min(tokens.len() - config.context_window);
+    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_examples).max(1);
     let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
         .step_by(step)
@@ -462,7 +476,7 @@ pub fn train_nca(
                 .collect();
 
             let w = NcaWeights::from_vec(&perturbed);
-            let fitness = evaluate_fitness(&tokenizer, &w, &examples);
+            let fitness = evaluate_fitness(&tokenizer, &w, &examples, grid_size, config.nca_steps);
             noise_vecs.push(noise);
             fitnesses.push(fitness);
         }
@@ -487,20 +501,20 @@ pub fn train_nca(
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
-        let new_fitness = evaluate_fitness(&tokenizer, &new_weights, &examples);
+        let new_fitness = evaluate_fitness(&tokenizer, &new_weights, &examples, grid_size, config.nca_steps);
 
         if new_fitness > best_fitness {
             best_fitness = new_fitness;
             best_weights = new_weights;
         }
 
-        if verbose && (epoch % 10 == 0 || epoch == config.epochs - 1) {
+        if verbose {
             eprintln!("  Epoch {}/{}: accuracy = {:.4}% (random = {:.4}%)",
                       epoch + 1, config.epochs, best_fitness * 100.0, random_accuracy * 100.0);
         }
     }
 
-    let predictor = NcaPredictor::with_default_steps(tokenizer, best_weights);
+    let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, DEFAULT_STEPS, grid_size);
     Ok((predictor, best_fitness, random_accuracy))
 }
 
@@ -509,8 +523,10 @@ fn evaluate_fitness(
     tokenizer: &SimpleTokenizer,
     weights: &NcaWeights,
     examples: &[(Vec<usize>, usize)],
+    grid_size: usize,
+    nca_steps: usize,
 ) -> f64 {
-    let mut predictor = NcaPredictor::with_default_steps(tokenizer.clone(), weights.clone());
+    let mut predictor = NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
     let mut correct = 0;
     // Use top-5 accuracy for richer signal
     for (ctx, target) in examples {
@@ -609,7 +625,7 @@ mod tests {
     #[test]
     fn test_token_coord_mapping() {
         for id in [0, 1, 100, 1000, NCA_GRID_SIZE * NCA_GRID_SIZE - 1] {
-            let (r, c) = token_to_coord(id);
+            let (r, c) = token_to_coord(id, NCA_GRID_SIZE);
             assert!(r < NCA_GRID_SIZE);
             assert!(c < NCA_GRID_SIZE);
         }

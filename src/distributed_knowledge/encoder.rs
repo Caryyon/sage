@@ -288,6 +288,7 @@ pub fn write_knowledge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::distributed_knowledge::GRID_SIZE;
 
     #[test]
     fn test_encode_text_produces_nonzero() {

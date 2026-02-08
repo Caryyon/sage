@@ -47,9 +47,14 @@ fn main() {
     eprintln!("🧬 NCA Token Prediction Training");
     eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
 
-    let config = TrainingConfig {
-        epochs,
-        ..Default::default()
+    let config = if demo && epochs == 100 {
+        // Use fast defaults for demo mode
+        TrainingConfig::default()
+    } else {
+        TrainingConfig {
+            epochs,
+            ..Default::default()
+        }
     };
 
     match nca_predictor::train_nca(&corpus, &config, true) {
