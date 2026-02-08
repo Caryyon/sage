@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE — The People's AI</title>
+    <meta name="description" content="SAGE is a free, local AI that gets smarter the more people run it. No API keys. No monthly fees. No cloud required.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        section { position: relative; z-index: 1; }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+        /* ── NAV ── */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+        }
+        nav .logo {
+            font-weight: 700;
+            font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            transition: color 0.2s;
+        }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* ── HERO ── */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+            position: relative;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            font-size: 0.65rem;
+            padding: 4px 14px;
+            border-radius: 999px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            animation: pulse-border 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,255,213,0.15); }
+            50% { border-color: var(--purple); box-shadow: 0 0 12px rgba(168,85,247,0.2); }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.8rem, 7vw, 5rem);
+            font-weight: 700;
+            letter-spacing: -2px;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .hero .tagline {
+            font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+            font-weight: 300;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+
+        .hero .subtitle {
+            font-size: clamp(0.85rem, 1.8vw, 1rem);
+            color: var(--text-dim);
+            max-width: 560px;
+            font-weight: 300;
+        }
+
+        .hero-install {
+            margin-top: 40px;
+            width: 100%;
+            max-width: 560px;
+        }
+
+        .install-cmd {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-size: 0.88rem;
+            color: var(--cyan);
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            user-select: all;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .install-cmd:hover {
+            border-color: var(--cyan);
+            box-shadow: 0 0 20px rgba(0,255,213,0.1);
+        }
+        .install-cmd code { flex: 1; text-align: left; }
+        .install-cmd .copy-btn {
+            background: rgba(0,255,213,0.1);
+            border: 1px solid rgba(0,255,213,0.2);
+            color: var(--cyan);
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .install-cmd .copy-btn:hover {
+            background: rgba(0,255,213,0.2);
+        }
+        .install-cmd .copy-btn.copied {
+            background: rgba(57,255,20,0.2);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .hero-links {
+            margin-top: 20px;
+            display: flex;
+            gap: 24px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .hero-links a {
+            color: var(--text-dim);
+            font-size: 0.75rem;
+            transition: color 0.2s;
+        }
+        .hero-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* Floating NCA cells */
+        .nca-bg {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: -1;
+        }
+        .nca-cell {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0;
+            animation: float-cell linear infinite;
+        }
+        @keyframes float-cell {
+            0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+            10%  { opacity: 0.5; }
+            90%  { opacity: 0.5; }
+            100% { transform: translateY(-20vh) scale(1); opacity: 0; }
+        }
+
+        /* ── SECTION COMMON ── */
+        .section-label {
+            font-size: 0.65rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--cyan);
+            margin-bottom: 8px;
+        }
+        .section-title {
+            font-size: clamp(1.5rem, 3vw, 2.2rem);
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+        .section-subtitle {
+            font-size: 0.88rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin-bottom: 48px;
+        }
+        .text-center { text-align: center; }
+        .mx-auto { margin-left: auto; margin-right: auto; }
+
+        /* ── WHAT IS SAGE ── */
+        .what-is {
+            padding: 100px 24px;
+        }
+        .what-is-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 64px;
+            align-items: center;
+        }
+        .what-is-text h2 {
+            font-size: clamp(1.4rem, 3vw, 2rem);
+            margin-bottom: 24px;
+            line-height: 1.3;
+        }
+        .what-is-text h2 span {
+            background: linear-gradient(135deg, var(--cyan), var(--green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .what-is-text p {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+            line-height: 1.7;
+        }
+        .what-is-text p strong { color: var(--text); }
+        .what-is-text .analogy {
+            color: var(--purple);
+            font-style: italic;
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+
+        .value-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .value-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            transition: all 0.25s;
+        }
+        .value-card:hover {
+            border-color: var(--cyan);
+            transform: translateX(4px);
+        }
+        .value-card .icon { font-size: 2rem; flex-shrink: 0; }
+        .value-card h3 { font-size: 0.88rem; margin-bottom: 4px; }
+        .value-card p { font-size: 0.75rem; color: var(--text-dim); }
+
+        /* ── HOW IT WORKS ── */
+        .how-it-works {
+            padding: 100px 24px;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            max-width: 960px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .steps::before {
+            content: '';
+            position: absolute;
+            top: 56px;
+            left: 12.5%;
+            right: 12.5%;
+            height: 2px;
+            background: linear-gradient(90deg, var(--cyan), var(--purple), var(--green), var(--cyan));
+            opacity: 0.3;
+            z-index: 0;
+        }
+        .step {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px 20px;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+            transition: all 0.25s;
+        }
+        .step:hover { border-color: var(--cyan); transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+        .step-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            color: #000;
+            font-size: 0.75rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+        }
+        .step-icon { font-size: 2rem; margin-bottom: 12px; }
+        .step h3 { font-size: 0.88rem; margin-bottom: 8px; }
+        .step p { font-size: 0.72rem; color: var(--text-dim); line-height: 1.5; }
+        .step code { color: var(--cyan); font-size: 0.7rem; }
+
+        /* Network diagram */
+        .network-diagram {
+            margin-top: 64px;
+            display: flex;
+            justify-content: center;
+        }
+        .network-viz {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 16/10;
+            position: relative;
+            overflow: hidden;
+        }
+        .network-viz canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* ── COMPARISON ── */
+        .compare {
+            padding: 100px 24px;
+        }
+        .compare-table {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            border-collapse: collapse;
+        }
+        .compare-table th,
+        .compare-table td {
+            padding: 14px 16px;
+            text-align: center;
+            font-size: 0.78rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .compare-table th {
+            color: var(--text-dim);
+            font-weight: 400;
+            font-size: 0.65rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .compare-table th:first-child,
+        .compare-table td:first-child {
+            text-align: left;
+            color: var(--text);
+            font-weight: 500;
+        }
+        .compare-table .sage-col { background: rgba(0,255,213,0.04); }
+        .compare-table .yes { color: var(--green); }
+        .compare-table .no { color: #ff4466; }
+        .compare-table .meh { color: #ffaa00; }
+
+        .compare-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            max-width: 800px;
+            margin: 48px auto 0;
+        }
+        .compare-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            transition: all 0.25s;
+        }
+        .compare-card:hover { border-color: var(--purple); }
+        .compare-card h4 {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            color: var(--purple);
+        }
+        .compare-card p {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        /* ── TECHNICAL DEEP DIVE ── */
+        .deep-dive {
+            padding: 100px 24px;
+        }
+        .accordion {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .accordion-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: border-color 0.25s;
+        }
+        .accordion-item:hover { border-color: rgba(0,255,213,0.3); }
+        .accordion-header {
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        .accordion-header:hover { background: var(--bg-card-hover); }
+        .accordion-header .icon { font-size: 1.4rem; }
+        .accordion-header h3 { font-size: 0.85rem; flex: 1; }
+        .accordion-header .arrow {
+            color: var(--text-dim);
+            font-size: 0.7rem;
+            transition: transform 0.3s;
+        }
+        .accordion-item.open .accordion-header .arrow { transform: rotate(180deg); }
+        .accordion-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.35s ease;
+        }
+        .accordion-body-inner {
+            padding: 0 24px 20px;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.7;
+        }
+        .accordion-body-inner strong { color: var(--text); }
+
+        /* ── VISION ── */
+        .vision {
+            padding: 100px 24px;
+            text-align: center;
+        }
+        .vision-quote {
+            font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+            font-weight: 300;
+            color: var(--text);
+            max-width: 700px;
+            margin: 0 auto 16px;
+            line-height: 1.4;
+        }
+        .vision-quote em {
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-style: normal;
+            font-weight: 500;
+        }
+        .vision-text {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin: 0 auto 48px;
+            line-height: 1.7;
+        }
+
+        .roadmap {
+            display: flex;
+            gap: 0;
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .roadmap::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--border);
+            z-index: 0;
+        }
+        .phase {
+            flex: 1;
+            position: relative;
+            z-index: 1;
+            padding: 0 8px;
+            text-align: center;
+        }
+        .phase-dot {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin: 0 auto 12px;
+            position: relative;
+        }
+        .phase-dot.done {
+            background: var(--green);
+            box-shadow: 0 0 12px rgba(57,255,20,0.4);
+        }
+        .phase-dot.current {
+            background: var(--cyan);
+            box-shadow: 0 0 12px rgba(0,255,213,0.4);
+            animation: dot-pulse 2s ease-in-out infinite;
+        }
+        .phase-dot.future {
+            background: var(--border);
+            border: 2px solid var(--text-dim);
+        }
+        @keyframes dot-pulse {
+            0%, 100% { box-shadow: 0 0 12px rgba(0,255,213,0.4); }
+            50% { box-shadow: 0 0 24px rgba(0,255,213,0.7); }
+        }
+        .phase h4 {
+            font-size: 0.72rem;
+            margin-bottom: 4px;
+        }
+        .phase p {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+        }
+        .phase .check { color: var(--green); }
+
+        /* ── GET STARTED ── */
+        .get-started {
+            padding: 100px 24px;
+            text-align: center;
+        }
+        .get-started-box {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .get-started-box h2 {
+            font-size: 1.6rem;
+            margin-bottom: 8px;
+        }
+        .get-started-box .sub {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            margin-bottom: 32px;
+        }
+        .get-started-links {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 24px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--cyan), #3b82f6);
+            color: #000;
+            border-color: var(--cyan);
+        }
+        .btn-primary:hover { text-decoration: none; box-shadow: 0 0 24px rgba(0,255,213,0.3); transform: translateY(-1px); }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text);
+            border-color: var(--border);
+        }
+        .btn-ghost:hover { text-decoration: none; border-color: var(--purple); color: var(--purple); }
+
+        /* ── FOOTER ── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+        }
+        .footer-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .footer-brand {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .footer-links {
+            display: flex;
+            gap: 24px;
+        }
+        .footer-links a {
+            color: var(--text-dim);
+            font-size: 0.72rem;
+            transition: color 0.2s;
+        }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 768px) {
+            .what-is-content { grid-template-columns: 1fr; gap: 40px; }
+            .steps { grid-template-columns: 1fr 1fr; }
+            .steps::before { display: none; }
+            .compare-table { font-size: 0.7rem; }
+            .compare-table th, .compare-table td { padding: 10px 8px; }
+            .compare-cards { grid-template-columns: 1fr; }
+            .roadmap { flex-direction: column; gap: 16px; }
+            .roadmap::before { display: none; }
+            .get-started-box { padding: 32px 20px; }
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+        }
+        @media (max-width: 480px) {
+            .steps { grid-template-columns: 1fr; max-width: 300px; }
+            .install-cmd { font-size: 0.72rem; }
+            .install-cmd code { word-break: break-all; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+    <div class="nav-inner">
+        <span class="logo">🌿 SAGE</span>
+        <div class="nav-links">
+            <a href="#what">What is SAGE?</a>
+            <a href="#how">How it works</a>
+            <a href="#why">Why SAGE?</a>
+            <a href="#start">Get started</a>
+            <a href="https://discord.gg/YXThZcrPHc" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Floating NCA cells background -->
+<div class="nca-bg" id="ncaBg"></div>
+
+<!-- HERO -->
+<section class="hero">
+    <span class="hero-badge">Shared Adaptive Growing Experience</span>
+    <h1>The People's AI</h1>
+    <p class="tagline">Free. Local. Gets smarter together.</p>
+    <p class="subtitle">An AI that runs on your computer, learns from every conversation, and shares knowledge across every node in the network. No accounts. No API keys. No monthly fees.</p>
+
+    <div class="hero-install">
+        <div class="install-cmd" id="heroCopy">
+            <code>curl -fsSL https://sage.lattice.black/install.sh | sh</code>
+            <button class="copy-btn" onclick="copyInstall(event)">Copy</button>
+        </div>
+    </div>
+    <div class="hero-links">
+        <a href="#what">Learn more ↓</a>
+        <a href="https://discord.gg/YXThZcrPHc" target="_blank">Join Discord</a>
+        <a href="/dashboard">Dashboard</a>
+    </div>
+</section>
+
+<!-- WHAT IS SAGE -->
+<section class="what-is" id="what">
+    <div class="container">
+        <div class="what-is-content">
+            <div class="what-is-text">
+                <p class="section-label">What is SAGE?</p>
+                <h2>An AI that runs on your computer — <span>for free, forever.</span></h2>
+                <p>SAGE is a decentralized AI that lives on your machine. <strong>No cloud, no accounts, no subscription.</strong> Just install and start chatting.</p>
+                <p>But here's the magic: <strong>every person who runs SAGE makes it smarter for everyone.</strong> Your node learns from your conversations, encodes that knowledge into compact neural patterns, and shares it across the network.</p>
+                <p>Your raw data never leaves your machine. Only anonymous, compressed knowledge patterns flow between nodes. Privacy by design.</p>
+                <p class="analogy">Think of it like BitTorrent, but for intelligence.</p>
+            </div>
+            <div class="value-cards">
+                <div class="value-card">
+                    <div class="icon">🆓</div>
+                    <div>
+                        <h3>Free Forever</h3>
+                        <p>No API keys. No rate limits. No billing surprises. SAGE runs on your hardware — you already own everything you need.</p>
+                    </div>
+                </div>
+                <div class="value-card">
+                    <div class="icon">🧠</div>
+                    <div>
+                        <h3>Gets Smarter</h3>
+                        <p>Every node that joins the network contributes knowledge. The more people run SAGE, the smarter it gets — for everyone.</p>
+                    </div>
+                </div>
+                <div class="value-card">
+                    <div class="icon">🔒</div>
+                    <div>
+                        <h3>Your Data Stays Yours</h3>
+                        <p>Raw conversations never leave your machine. Only encrypted knowledge patterns are shared. PII filtering and local-only mode available.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how-it-works" id="how">
+    <div class="container">
+        <p class="section-label text-center">How It Works</p>
+        <h2 class="section-title text-center">Four Steps to Collective Intelligence</h2>
+        <p class="section-subtitle text-center mx-auto">From install to contributing to a global intelligence network — in under a minute.</p>
+        <div class="steps">
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-icon">📦</div>
+                <h3>Install</h3>
+                <p>One command. 30 seconds. Runs on any machine — even old laptops. No GPU required.</p>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-icon">💬</div>
+                <h3>Chat</h3>
+                <p>Run <code>sage chat</code> and talk to your local AI. It learns from every conversation.</p>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-icon">🔗</div>
+                <h3>Connect</h3>
+                <p>Run <code>sage node start</code> — your node joins the mesh. Knowledge begins flowing.</p>
+            </div>
+            <div class="step">
+                <div class="step-num">4</div>
+                <div class="step-icon">🌱</div>
+                <h3>Grow</h3>
+                <p>Every node makes the whole network smarter. Collective intelligence, emergent and unstoppable.</p>
+            </div>
+        </div>
+
+        <div class="network-diagram">
+            <div class="network-viz">
+                <canvas id="networkCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- WHY SAGE -->
+<section class="compare" id="why">
+    <div class="container">
+        <p class="section-label text-center">Why SAGE?</p>
+        <h2 class="section-title text-center">The AI You Deserve</h2>
+        <p class="section-subtitle text-center mx-auto">Stop renting intelligence. Own it.</p>
+
+        <table class="compare-table">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th class="sage-col">SAGE</th>
+                    <th>ChatGPT</th>
+                    <th>Ollama</th>
+                    <th>Cloud APIs</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Free forever</td><td class="sage-col yes">✓</td><td class="no">✗ $20/mo</td><td class="yes">✓</td><td class="no">✗ pay/token</td></tr>
+                <tr><td>Runs locally</td><td class="sage-col yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
+                <tr><td>Gets smarter over time</td><td class="sage-col yes">✓ network</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+                <tr><td>No account needed</td><td class="sage-col yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
+                <tr><td>Privacy-first</td><td class="sage-col yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
+                <tr><td>Decentralized</td><td class="sage-col yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+                <tr><td>No rate limits</td><td class="sage-col yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
+                <tr><td>OpenAI compatible</td><td class="sage-col yes">✓</td><td class="meh">is OpenAI</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            </tbody>
+        </table>
+
+        <div class="compare-cards">
+            <div class="compare-card">
+                <h4>vs ChatGPT</h4>
+                <p>Free, private, no account needed. SAGE gets smarter from the community — ChatGPT gets smarter from selling your data.</p>
+            </div>
+            <div class="compare-card">
+                <h4>vs Ollama</h4>
+                <p>Same local-first philosophy, but SAGE learns and shares knowledge across nodes. Your Ollama is an island. Your SAGE is a network.</p>
+            </div>
+            <div class="compare-card">
+                <h4>vs Cloud APIs</h4>
+                <p>No rate limits. No billing. No vendor lock-in. Drop-in OpenAI-compatible API. Switch in one line.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- TECHNICAL DEEP DIVE -->
+<section class="deep-dive" id="tech">
+    <div class="container">
+        <p class="section-label text-center">Under the Hood</p>
+        <h2 class="section-title text-center">Technical Deep Dive</h2>
+        <p class="section-subtitle text-center mx-auto">For the nerds. You know who you are.</p>
+
+        <div class="accordion">
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion(this)">
+                    <span class="icon">🧬</span>
+                    <h3>NCA Grid — Your AI's Brain is a Living Neural Grid</h3>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="accordion-body-inner">
+                        SAGE's core is a <strong>32×32 Neural Cellular Automata grid</strong> with 22 channels per cell. Cells perceive neighbors via Sobel filters and update through tiny neural networks. This creates self-organizing, self-healing knowledge structures. Damage the grid and it regenerates — like biological tissue, but for intelligence. Knowledge isn't stored as text — it's encoded as stable NCA patterns that emerge from simple cellular rules.
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion(this)">
+                    <span class="icon">🔄</span>
+                    <h3>Knowledge Sync — Encrypted Diffs, Not Your Conversations</h3>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="accordion-body-inner">
+                        Nodes exchange <strong>compact NCA pattern diffs</strong> via a gossip protocol — not your raw conversations. These diffs are anonymous, compressed knowledge representations measured in kilobytes, not gigabytes. Peer discovery uses Kademlia DHT. Conflict resolution merges patterns via NCA superposition. Sync is lazy and runs in the background — never blocks your chat.
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion(this)">
+                    <span class="icon">🔒</span>
+                    <h3>Privacy — PII Filtering, Differential Privacy, Local-Only Mode</h3>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="accordion-body-inner">
+                        Raw data <strong>never leaves your machine</strong>. Knowledge is encoded into NCA patterns before any network sharing occurs. Built-in PII filtering strips personal information before encoding. Differential privacy adds calibrated noise to shared patterns. And if you want total isolation, <strong>local-only mode</strong> keeps everything on your machine with zero network traffic.
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion(this)">
+                    <span class="icon">🔌</span>
+                    <h3>OpenAI Compatible — Drop-In Replacement for Any Tool</h3>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="accordion-body-inner">
+                        SAGE exposes an <strong>OpenAI-compatible API</strong> on localhost. Set <code style="color:var(--cyan)">OPENAI_API_BASE=http://localhost:19176/v1</code> and any tool that speaks the OpenAI protocol — Continue, Cursor, Open WebUI, custom scripts — works with SAGE instantly. Zero code changes. No API key needed.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- VISION -->
+<section class="vision" id="vision">
+    <div class="container">
+        <p class="section-label">The Vision</p>
+        <p class="vision-quote">What if AI <em>belonged to everyone?</em></p>
+        <p class="vision-text">Every SAGE node contributes to a collective intelligence. The more people run it, the smarter it gets — for free. No corporation owns it. No paywall gates it. Just people, running AI, together.</p>
+
+        <div class="roadmap">
+            <div class="phase">
+                <div class="phase-dot done"></div>
+                <h4><span class="check">✓</span> Phase 1</h4>
+                <p>Local chat</p>
+            </div>
+            <div class="phase">
+                <div class="phase-dot done"></div>
+                <h4><span class="check">✓</span> Phase 2</h4>
+                <p>Network sync</p>
+            </div>
+            <div class="phase">
+                <div class="phase-dot current"></div>
+                <h4>Phase 3</h4>
+                <p>Kill the LLM</p>
+            </div>
+            <div class="phase">
+                <div class="phase-dot future"></div>
+                <h4>Phase 4</h4>
+                <p>Pure NCA intelligence</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- GET STARTED -->
+<section class="get-started" id="start">
+    <div class="container">
+        <div class="get-started-box">
+            <h2>Ready to join?</h2>
+            <p class="sub">Install SAGE in one command. Start chatting in 30 seconds.</p>
+            <div class="install-cmd" id="startCopy">
+                <code>curl -fsSL https://sage.lattice.black/install.sh | sh</code>
+                <button class="copy-btn" onclick="copyInstall(event)">Copy</button>
+            </div>
+            <div class="get-started-links">
+                <a href="/docs/GETTING_STARTED.md" class="btn btn-ghost">📖 Getting Started Guide</a>
+                <a href="https://discord.gg/YXThZcrPHc" target="_blank" class="btn btn-ghost">💬 Join Discord</a>
+                <a href="/docs" class="btn btn-ghost">📚 Documentation</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="https://discord.gg/YXThZcrPHc" target="_blank">Discord</a>
+            <a href="/docs">Docs</a>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+    </div>
+</footer>
+
+<script>
+// Copy install command
+function copyInstall(e) {
+    e.stopPropagation();
+    const cmd = 'curl -fsSL https://sage.lattice.black/install.sh | sh';
+    navigator.clipboard.writeText(cmd).then(() => {
+        const btn = e.target;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+// Accordion
+function toggleAccordion(header) {
+    const item = header.parentElement;
+    const body = item.querySelector('.accordion-body');
+    const isOpen = item.classList.contains('open');
+
+    // Close all
+    document.querySelectorAll('.accordion-item').forEach(i => {
+        i.classList.remove('open');
+        i.querySelector('.accordion-body').style.maxHeight = '0';
+    });
+
+    if (!isOpen) {
+        item.classList.add('open');
+        body.style.maxHeight = body.scrollHeight + 'px';
+    }
+}
+
+// Floating NCA cells
+(function() {
+    const bg = document.getElementById('ncaBg');
+    const colors = ['#00ffd5','#a855f7','#39ff14'];
+    for (let i = 0; i < 25; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'nca-cell';
+        const size = 3 + Math.random() * 5;
+        cell.style.width = size + 'px';
+        cell.style.height = size + 'px';
+        cell.style.left = Math.random() * 100 + '%';
+        cell.style.background = colors[Math.floor(Math.random() * colors.length)];
+        cell.style.animationDuration = (14 + Math.random() * 20) + 's';
+        cell.style.animationDelay = (-Math.random() * 30) + 's';
+        bg.appendChild(cell);
+    }
+})();
+
+// Network visualization
+(function() {
+    const canvas = document.getElementById('networkCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let W, H;
+
+    function resize() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        W = canvas.width = rect.width * devicePixelRatio;
+        H = canvas.height = rect.height * devicePixelRatio;
+        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const NUM = 20;
+    const nodes = [];
+    for (let i = 0; i < NUM; i++) {
+        nodes.push({
+            x: 0, y: 0,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
+            r: 3 + Math.random() * 3,
+            pulse: Math.random() * Math.PI * 2,
+            hue: Math.random() > 0.5 ? 168 : 270
+        });
+    }
+
+    const packets = [];
+
+    function spawnPacket() {
+        if (packets.length > 6) return;
+        const a = Math.floor(Math.random() * NUM);
+        let b = Math.floor(Math.random() * NUM);
+        if (a === b) b = (a + 1) % NUM;
+        const dx = nodes[b].x - nodes[a].x;
+        const dy = nodes[b].y - nodes[a].y;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        if (Math.sqrt(dx*dx + dy*dy) < rect.width * 0.4) {
+            packets.push({ from: a, to: b, t: 0, speed: 0.006 + Math.random() * 0.006 });
+        }
+    }
+
+    let inited = false;
+    function draw() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        const w = rect.width, h = rect.height;
+        if (!inited) {
+            nodes.forEach(n => { n.x = Math.random() * w; n.y = Math.random() * h; });
+            inited = true;
+        }
+        ctx.clearRect(0, 0, w, h);
+
+        nodes.forEach(n => {
+            n.x += n.vx; n.y += n.vy;
+            if (n.x < 20 || n.x > w - 20) n.vx *= -1;
+            if (n.y < 20 || n.y > h - 20) n.vy *= -1;
+            n.pulse += 0.02;
+        });
+
+        const maxDist = w * 0.35;
+        for (let i = 0; i < NUM; i++) {
+            for (let j = i + 1; j < NUM; j++) {
+                const dx = nodes[j].x - nodes[i].x;
+                const dy = nodes[j].y - nodes[i].y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < maxDist) {
+                    ctx.strokeStyle = `rgba(0,255,213,${(1 - dist / maxDist) * 0.12})`;
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(nodes[i].x, nodes[i].y);
+                    ctx.lineTo(nodes[j].x, nodes[j].y);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        if (Math.random() < 0.025) spawnPacket();
+
+        for (let i = packets.length - 1; i >= 0; i--) {
+            const p = packets[i];
+            p.t += p.speed;
+            if (p.t >= 1) { packets.splice(i, 1); continue; }
+            const a = nodes[p.from], b = nodes[p.to];
+            const px = a.x + (b.x - a.x) * p.t;
+            const py = a.y + (b.y - a.y) * p.t;
+            ctx.beginPath();
+            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(57,255,20,${0.8 - p.t * 0.5})`;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(px, py, 6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(57,255,20,${0.12 - p.t * 0.08})`;
+            ctx.fill();
+        }
+
+        nodes.forEach(n => {
+            const glow = Math.sin(n.pulse) * 0.3 + 0.7;
+            const color = n.hue === 168 ? `rgba(0,255,213,${glow})` : `rgba(168,85,247,${glow})`;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI * 2);
+            ctx.fillStyle = n.hue === 168 ? 'rgba(0,255,213,0.05)' : 'rgba(168,85,247,0.05)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+        });
+
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+
+// Smooth scroll for nav
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
+    });
+});
+</script>
+</body>
+</html>

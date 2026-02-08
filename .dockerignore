@@ -1,0 +1,54 @@
+# Build artifacts
+target/
+*.rlib
+*.rmeta
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+!README.md
+
+# Data files (mounted as volumes)
+data/
+*.json
+!package.json
+
+# Node modules (dashboard client)
+sage-dashboard-client/node_modules/
+sage-dashboard-client/.next/
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test files
+*_test.rs
+tests/

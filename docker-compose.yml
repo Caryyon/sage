@@ -1,0 +1,241 @@
+name: sage
+
+services:
+  # SpacetimeDB Server
+  spacetimedb:
+    image: clockworklabs/spacetime:latest
+    container_name: sage-spacetimedb
+    command: ["start"]
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - spacetimedb_data:/root/.local/share/spacetime
+    networks:
+      - sage-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:3000/v1/database -o /dev/null -w '%{http_code}' | grep -q '405\\|200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # SpacetimeDB module initialization
+  spacetimedb-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.spacetimedb-init
+    container_name: sage-spacetimedb-init
+    depends_on:
+      spacetimedb:
+        condition: service_healthy
+    environment:
+      - SPACETIMEDB_HOST=http://spacetimedb:3000
+    networks:
+      - sage-network
+    restart: "no"
+
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sage-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./Modelfile.sage:/app/Modelfile.sage:ro
+    networks:
+      - sage-network
+    # NVIDIA GPU support enabled
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Model initialization - runs once to pull/create models
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: sage-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ./Modelfile.sage:/Modelfile.sage:ro
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - sage-network
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling base model..."
+        ollama pull fluffy/l3-8b-stheno-v3.2:latest
+        echo "Creating SAGE model..."
+        ollama create sage -f /Modelfile.sage
+        echo "Pulling embedding model..."
+        ollama pull nomic-embed-text
+        echo "Models ready!"
+    restart: "no"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SAGE Discord Bots - Multi-Instance Support
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Usage:
+  #   docker compose up -d                          # Start Lumin (default)
+  #   docker compose --profile nova up -d           # Start Nova
+  #   docker compose --profile echo up -d           # Start Echo
+  #   docker compose --profile all-sages up -d      # Start all SAGEs
+  #
+  # Each SAGE needs its own Discord bot token in .env:
+  #   DISCORD_TOKEN=<lumin's token>
+  #   DISCORD_TOKEN_NOVA=<nova's token>
+  #   DISCORD_TOKEN_ECHO=<echo's token>
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Lumin - The primary SAGE (always starts by default)
+  sage-discord:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sage-lumin
+    restart: unless-stopped
+    depends_on:
+      spacetimedb:
+        condition: service_healthy
+      spacetimedb-init:
+        condition: service_completed_successfully
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - SAGE_NAME=Lumin
+      - SAGE_INSTANCE_ID=lumin-1
+      # Use host Ollama if OLLAMA_HOST is set, otherwise use Docker container
+      # For host Ollama on Linux: OLLAMA_HOST=http://172.17.0.1:11434
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - SPACETIMEDB_URI=http://spacetimedb:3000
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Lumin's persistent data
+      - ./data/lumin/sage_inner_world.json:/app/sage_inner_world.json
+      - ./data/lumin/sage_semantic_memory.json:/app/sage_semantic_memory.json
+      - ./data/lumin/sage_associations.json:/app/sage_associations.json
+      - ./data/lumin/sage_curiosity.json:/app/sage_curiosity.json
+      - ./data/lumin/sage_preferences.json:/app/sage_preferences.json
+      - ./data/lumin/sage_positive_knowledge.json:/app/sage_positive_knowledge.json
+      - ./data/lumin/sage_nca_grid.json:/app/sage_nca_grid.json
+      # Shared books library
+      - ./books:/app/books:ro
+    networks:
+      - sage-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://ollama:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nova - Second SAGE instance (use --profile nova)
+  sage-nova:
+    profiles: ["nova", "all-sages"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sage-nova
+    restart: unless-stopped
+    depends_on:
+      spacetimedb:
+        condition: service_healthy
+      spacetimedb-init:
+        condition: service_completed_successfully
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN_NOVA}
+      - SAGE_NAME=Nova
+      - SAGE_INSTANCE_ID=nova-1
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - SPACETIMEDB_URI=http://spacetimedb:3000
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Nova's persistent data (separate from Lumin)
+      - ./data/nova/sage_inner_world.json:/app/sage_inner_world.json
+      - ./data/nova/sage_semantic_memory.json:/app/sage_semantic_memory.json
+      - ./data/nova/sage_associations.json:/app/sage_associations.json
+      - ./data/nova/sage_curiosity.json:/app/sage_curiosity.json
+      - ./data/nova/sage_preferences.json:/app/sage_preferences.json
+      - ./data/nova/sage_positive_knowledge.json:/app/sage_positive_knowledge.json
+      - ./data/nova/sage_nca_grid.json:/app/sage_nca_grid.json
+      # Shared books library
+      - ./books:/app/books:ro
+    networks:
+      - sage-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://ollama:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Echo - Third SAGE instance (use --profile echo)
+  sage-echo:
+    profiles: ["echo", "all-sages"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sage-echo
+    restart: unless-stopped
+    depends_on:
+      spacetimedb:
+        condition: service_healthy
+      spacetimedb-init:
+        condition: service_completed_successfully
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN_ECHO}
+      - SAGE_NAME=Echo
+      - SAGE_INSTANCE_ID=echo-1
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - SPACETIMEDB_URI=http://spacetimedb:3000
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Echo's persistent data
+      - ./data/echo/sage_inner_world.json:/app/sage_inner_world.json
+      - ./data/echo/sage_semantic_memory.json:/app/sage_semantic_memory.json
+      - ./data/echo/sage_associations.json:/app/sage_associations.json
+      - ./data/echo/sage_curiosity.json:/app/sage_curiosity.json
+      - ./data/echo/sage_preferences.json:/app/sage_preferences.json
+      - ./data/echo/sage_positive_knowledge.json:/app/sage_positive_knowledge.json
+      - ./data/echo/sage_nca_grid.json:/app/sage_nca_grid.json
+      # Shared books library
+      - ./books:/app/books:ro
+    networks:
+      - sage-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://ollama:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  sage-network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+    driver: local
+  spacetimedb_data:
+    driver: local

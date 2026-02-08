@@ -1,0 +1,22 @@
+# SAGE Bootstrap Node — lightweight rendezvous daemon
+# Multi-stage: build in Rust, deploy in slim Debian
+
+FROM rust:1.83-slim AS builder
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+RUN cargo build --release --bin sage-bootstrap
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/sage-bootstrap /usr/local/bin/sage-bootstrap
+
+EXPOSE 4001
+
+ENTRYPOINT ["sage-bootstrap"]
+CMD ["--port", "4001", "--no-mdns"]

@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAGE City</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            background: #0a0a0f;
+            font-family: 'Inter', sans-serif;
+        }
+
+        #game-container {
+            width: 100vw; height: 100vh;
+            position: relative; overflow: hidden;
+            background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
+        }
+
+        #worldCanvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            position: absolute;
+            filter: hue-rotate(-15deg) saturate(0.9) brightness(1.05);
+            transition: none;
+        }
+
+        /* ── Status Bubble Canvas (overlays on top of world) ── */
+        #bubbleCanvas {
+            position: absolute;
+            pointer-events: none;
+            z-index: 4;
+        }
+
+        /* ── Info Button ── */
+        #info-btn {
+            position: fixed; top: 16px; left: 16px; z-index: 100;
+            display: flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px;
+            background: rgba(13, 17, 23, 0.9);
+            border: 1px solid rgba(139, 148, 158, 0.2);
+            border-radius: 50%;
+            color: #58a6ff; font-size: 18px; font-weight: 700;
+            cursor: pointer;
+            backdrop-filter: blur(12px);
+            transition: all 0.2s;
+            font-family: 'Inter', serif;
+        }
+        #info-btn:hover { color: #f0f6fc; border-color: #58a6ff; background: rgba(13,17,23,0.95); box-shadow: 0 0 12px rgba(88,166,255,0.3); }
+
+        /* ── Info Modal ── */
+        #info-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            display: none; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        #info-overlay.visible { display: flex; opacity: 1; }
+        #info-modal {
+            background: rgba(13, 17, 23, 0.97);
+            border: 1px solid rgba(48, 54, 61, 0.8);
+            border-radius: 16px;
+            width: 90%; max-width: 640px; max-height: 85vh;
+            overflow-y: auto;
+            padding: 2rem;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+            animation: modalIn 0.3s ease;
+        }
+        @keyframes modalIn { from { transform: translateY(20px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+        #info-modal h1 {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 14px; color: #58a6ff;
+            letter-spacing: 2px; margin-bottom: 1rem;
+        }
+        #info-modal h2 {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px; color: #7ee787;
+            letter-spacing: 1.5px; text-transform: uppercase;
+            margin: 1.5rem 0 0.5rem;
+        }
+        #info-modal p {
+            color: #c9d1d9; font-size: 13px; line-height: 1.7;
+            margin-bottom: 0.75rem;
+        }
+        #info-modal .highlight { color: #f0883e; font-weight: 600; }
+        #info-modal .sage-list {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+            margin: 0.75rem 0;
+        }
+        #info-modal .sage-card {
+            background: rgba(48,54,61,0.3);
+            border: 1px solid rgba(48,54,61,0.6);
+            border-radius: 8px; padding: 10px 12px;
+            font-size: 12px;
+        }
+        #info-modal .sage-card .name { color: #f0f6fc; font-weight: 600; }
+        #info-modal .sage-card .role { color: #8b949e; font-size: 11px; }
+        #info-modal .close-btn {
+            position: absolute; top: 16px; right: 16px;
+            background: rgba(48,54,61,0.5); border: 1px solid rgba(48,54,61,0.8);
+            border-radius: 6px; color: #8b949e; cursor: pointer;
+            width: 32px; height: 32px; font-size: 16px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        #info-modal .close-btn:hover { background: rgba(248,81,73,0.2); color: #f85149; border-color: #f85149; }
+        #info-modal .links {
+            display: flex; gap: 10px; margin-top: 1.5rem; flex-wrap: wrap;
+        }
+        #info-modal .links a {
+            padding: 8px 16px; border-radius: 6px;
+            font-size: 12px; font-weight: 500; text-decoration: none;
+            transition: all 0.15s;
+        }
+        #info-modal .links .primary {
+            background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+            color: white;
+        }
+        #info-modal .links .primary:hover { box-shadow: 0 4px 12px rgba(35,134,54,0.4); }
+        #info-modal .links .secondary {
+            background: rgba(48,54,61,0.5); border: 1px solid rgba(48,54,61,0.8);
+            color: #c9d1d9;
+        }
+        #info-modal .links .secondary:hover { border-color: #58a6ff; color: #58a6ff; }
+
+        /* ── Floating Panel System ── */
+        .panel {
+            position: fixed; z-index: 50;
+            background: rgba(13, 17, 23, 0.92);
+            border: 1px solid rgba(48, 54, 61, 0.8);
+            border-radius: 12px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.03);
+            font-size: 12px; color: #c9d1d9;
+            user-select: none;
+            transition: opacity 0.2s, transform 0.15s;
+        }
+        .panel.minimized { opacity: 0.5; transform: scale(0.95); }
+        .panel.minimized:hover { opacity: 0.8; }
+        .panel.minimized .panel-body { display: none; }
+        .panel-head {
+            padding: 10px 14px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid rgba(48,54,61,0.6);
+            cursor: move;
+        }
+        .panel-label {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 8px; letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #58a6ff;
+        }
+        .panel-ctrl { display: flex; gap: 6px; }
+        .panel-ctrl button {
+            width: 18px; height: 18px; border: none; border-radius: 4px;
+            background: rgba(48,54,61,0.6); color: #8b949e;
+            cursor: pointer; font-size: 10px;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.15s;
+        }
+        .panel-ctrl button:hover { background: rgba(56,58,64,0.9); color: #c9d1d9; }
+        .panel-body { padding: 10px 14px; max-height: 320px; overflow-y: auto; }
+
+        /* ── HUD Panel ── */
+        #hud-info { top: 16px; left: 60px; min-width: 180px; }
+        .hud-row { display: flex; justify-content: space-between; padding: 4px 0; gap: 16px; }
+        .hud-key { color: #8b949e; font-size: 11px; }
+        .hud-val { color: #7ee787; font-weight: 600; font-family: 'Press Start 2P', monospace; font-size: 9px; }
+        .hud-val.time { color: #f0883e; font-size: 14px; }
+
+        /* ── Controls Panel ── */
+        #panel-controls { top: 16px; right: 16px; }
+        .ctrl-row { display: flex; gap: 6px; margin: 6px 0; }
+        .btn {
+            padding: 6px 14px;
+            background: rgba(48,54,61,0.5); border: 1px solid rgba(48,54,61,0.8);
+            border-radius: 6px; color: #c9d1d9; cursor: pointer;
+            font-family: inherit; font-size: 11px; font-weight: 500;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: rgba(56,58,64,0.7); border-color: rgba(139,148,158,0.3); }
+        .btn.active { background: rgba(56,139,253,0.2); border-color: rgba(56,139,253,0.4); color: #58a6ff; }
+        .speed-slider { width: 80px; accent-color: #58a6ff; }
+
+        /* ── Instance Roster Sidebar ── */
+        #roster-sidebar {
+            position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+            z-index: 55;
+            background: rgba(13, 17, 23, 0.95);
+            border-right: 1px solid rgba(48, 54, 61, 0.8);
+            backdrop-filter: blur(16px);
+            display: flex; flex-direction: column;
+            transform: translateX(-240px);
+            transition: transform 0.25s ease;
+        }
+        #roster-sidebar.open { transform: translateX(0); }
+        #roster-toggle {
+            position: fixed; top: 50%; left: 0; z-index: 56;
+            transform: translateY(-50%);
+            width: 24px; height: 60px;
+            background: rgba(13, 17, 23, 0.9);
+            border: 1px solid rgba(48, 54, 61, 0.8);
+            border-left: none;
+            border-radius: 0 8px 8px 0;
+            color: #8b949e; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+            transition: all 0.25s;
+        }
+        #roster-toggle.open { left: 240px; }
+        #roster-toggle:hover { background: rgba(13, 17, 23, 1); color: #f0f6fc; }
+        .roster-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(48,54,61,0.6);
+            font-family: 'Press Start 2P', monospace;
+            font-size: 8px; letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #58a6ff;
+        }
+        .roster-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .roster-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; margin: 3px 0;
+            background: rgba(22, 27, 34, 0.6); border-radius: 8px;
+            cursor: pointer; transition: all 0.12s;
+            border-left: 3px solid transparent;
+        }
+        .roster-item:hover { background: rgba(30, 37, 46, 0.8); }
+        .roster-item.sel { background: rgba(56,139,253,0.12); border-left-color: #58a6ff; }
+        .roster-item .ri-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .roster-item .ri-avatar {
+            width: 28px; height: 28px; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        .roster-item .ri-info { flex: 1; min-width: 0; }
+        .roster-item .ri-name { font-weight: 600; font-size: 11px; color: #f0f6fc; display: flex; align-items: center; gap: 6px; }
+        .roster-item .ri-activity { font-size: 9px; color: #8b949e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .state-idle { background: #e3b341; }
+        .state-walking { background: #3fb950; }
+        .state-working { background: #f0883e; }
+        .state-talking { background: #3fb950; }
+        .state-sleeping { background: #58a6ff; }
+        .state-eating { background: #3fb950; }
+        .state-shopping { background: #3fb950; }
+
+        /* ── Character Detail Panel ── */
+        #char-detail {
+            position: fixed; top: 80px; right: 16px; width: 280px;
+            z-index: 52;
+            display: none;
+        }
+        #char-detail.visible { display: block; }
+        .cd-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .cd-avatar {
+            width: 40px; height: 40px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+        }
+        .cd-name { font-size: 16px; font-weight: 600; color: #f0f6fc; }
+        .cd-role { font-size: 10px; color: #8b949e; }
+        .cd-state-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 12px;
+            font-size: 10px; font-weight: 600; margin-top: 4px;
+        }
+        .cd-section { margin-top: 12px; }
+        .cd-section-title { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #484f58; margin-bottom: 6px; font-weight: 600; }
+        .cd-task { padding: 6px 10px; background: rgba(22,27,34,0.6); border-radius: 6px; font-size: 11px; color: #c9d1d9; }
+        .cd-log-item { padding: 4px 0; font-size: 10px; color: #8b949e; border-bottom: 1px solid rgba(48,54,61,0.3); }
+        .cd-log-item:last-child { border-bottom: none; }
+        .cd-log-time { color: #484f58; font-size: 9px; margin-right: 6px; }
+        .cd-traits { display: flex; flex-wrap: wrap; gap: 4px; }
+        .cd-trait { padding: 2px 8px; background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.2); border-radius: 10px; font-size: 9px; color: #58a6ff; }
+        .cd-assign-btn {
+            width: 100%; margin-top: 12px; padding: 8px;
+            background: rgba(56,139,253,0.15); border: 1px solid rgba(56,139,253,0.3);
+            border-radius: 8px; color: #58a6ff; cursor: pointer;
+            font-family: inherit; font-size: 11px; font-weight: 600;
+            transition: all 0.15s;
+        }
+        .cd-assign-btn:hover { background: rgba(56,139,253,0.25); }
+
+        /* ── Conversation Panel ── */
+        #convo-panel {
+            position: fixed; bottom: 60px; right: 16px; width: 300px;
+            z-index: 52;
+            display: none;
+        }
+        #convo-panel.visible { display: block; }
+        .convo-bubble {
+            display: flex; gap: 8px; margin: 6px 0;
+            align-items: flex-start;
+        }
+        .convo-bubble.right { flex-direction: row-reverse; }
+        .convo-avatar-sm { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .convo-text {
+            padding: 6px 10px; border-radius: 10px;
+            font-size: 11px; line-height: 1.4; max-width: 200px;
+            color: #f0f6fc;
+        }
+        .convo-bubble:not(.right) .convo-text { background: rgba(48,54,61,0.8); border-top-left-radius: 2px; }
+        .convo-bubble.right .convo-text { background: rgba(56,139,253,0.25); border-top-right-radius: 2px; }
+        .convo-name { font-size: 9px; color: #8b949e; margin-bottom: 2px; }
+
+        /* ── Activity Ticker ── */
+        #activity-ticker {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 36px;
+            z-index: 55;
+            background: rgba(13, 17, 23, 0.92);
+            border-top: 1px solid rgba(48, 54, 61, 0.6);
+            backdrop-filter: blur(16px);
+            display: flex; align-items: center;
+            overflow: hidden;
+        }
+        .ticker-label {
+            padding: 0 12px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7px; color: #58a6ff;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            border-right: 1px solid rgba(48,54,61,0.6);
+            flex-shrink: 0;
+        }
+        .ticker-track {
+            flex: 1; overflow: hidden; position: relative;
+            mask-image: linear-gradient(to right, transparent, black 30px, black calc(100% - 30px), transparent);
+        }
+        .ticker-content {
+            display: flex; gap: 40px; align-items: center;
+            white-space: nowrap; font-size: 11px; color: #c9d1d9;
+            animation: tickerScroll 30s linear infinite;
+            padding-left: 100%;
+        }
+        .ticker-item { flex-shrink: 0; }
+        .ticker-item .ti-time { color: #484f58; font-size: 9px; margin-right: 6px; }
+        @keyframes tickerScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-100%); }
+        }
+
+        /* ── Buildings Panel ── */
+        #panel-buildings { bottom: 52px; right: 16px; min-width: 200px; }
+        .bld-row {
+            padding: 6px 10px; margin: 3px 0;
+            background: rgba(22,27,34,0.6); border-radius: 6px;
+            cursor: pointer; transition: all 0.12s; font-size: 11px;
+            border: 1px solid transparent;
+        }
+        .bld-row:hover { background: rgba(30,37,46,0.8); border-color: rgba(48,54,61,0.6); }
+        .bld-row.sel { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.3); }
+        .bld-name { color: #f0883e; font-weight: 500; }
+        .bld-team { color: #484f58; font-size: 9px; margin-left: 6px; }
+
+        /* ── Minimap ── */
+        #minimap {
+            position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%);
+            z-index: 60;
+            background: rgba(13,17,23,0.92);
+            border: 1px solid rgba(48,54,61,0.8);
+            border-radius: 10px;
+            padding: 6px;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        #minimap canvas {
+            border-radius: 6px;
+            image-rendering: pixelated;
+            cursor: pointer;
+        }
+
+        /* ── Connection Status ── */
+        #conn-status {
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            z-index: 200;
+            padding: 5px 14px; border-radius: 20px;
+            background: rgba(13,17,23,0.9); border: 1px solid rgba(48,54,61,0.6);
+            font-size: 10px; display: flex; align-items: center; gap: 8px;
+            opacity: 0; transition: opacity 0.3s;
+            backdrop-filter: blur(12px);
+        }
+        #conn-status.show { opacity: 1; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: #3fb950; }
+        .dot.off { background: #f85149; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        /* ── Scrollbar ── */
+        .panel-body::-webkit-scrollbar, .roster-list::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-track, .roster-list::-webkit-scrollbar-track { background: transparent; }
+        .panel-body::-webkit-scrollbar-thumb, .roster-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+        /* ── Day/Night overlay ── */
+        #day-night-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
+            transition: background 2s;
+        }
+    </style>
+</head>
+<body>
+    <div id="day-night-overlay"></div>
+
+    <div id="game-container">
+        <canvas id="worldCanvas"></canvas>
+        <canvas id="bubbleCanvas"></canvas>
+    </div>
+
+    <!-- Info Button -->
+    <div id="info-btn" onclick="toggleInfo()">ℹ</div>
+
+    <!-- Info Modal Overlay -->
+    <div id="info-overlay" onclick="if(event.target===this)toggleInfo()">
+        <div id="info-modal" style="position:relative;">
+            <button class="close-btn" onclick="toggleInfo()">✕</button>
+            <h1>🧠 SAGE City</h1>
+            <p>Welcome to <span class="highlight">SAGE City</span> — a living pixel world where autonomous AI agents go about their daily lives. You're watching real AI instances think, explore, work, and interact in real-time.</p>
+
+            <h2>What am I looking at?</h2>
+            <p>Each character you see is a <span class="highlight">SAGE instance</span> — a Shared Adaptive Growing Experience built on Neural Cellular Automata. They're not scripted NPCs. Each one has its own personality, goals, memory, and the ability to spawn real AI tasks through OpenClaw.</p>
+            <p>Watch them wander the village, visit the tavern, research at the academy, or stop to chat with each other. When a SAGE starts glowing, it's running a real computational task — analyzing data, writing code, or exploring ideas.</p>
+
+            <h2>The Residents</h2>
+            <div class="sage-list">
+                <div class="sage-card"><span class="name" style="color:#a855f7">🔮 Maya</span><div class="role">Content Creator · Purple Mage</div></div>
+                <div class="sage-card"><span class="name" style="color:#58a6ff">🔬 Alex</span><div class="role">Data Analyst · Cyan Mage</div></div>
+                <div class="sage-card"><span class="name" style="color:#7ee787">💚 Sarah</span><div class="role">Customer Support · Lime Farmer</div></div>
+                <div class="sage-card"><span class="name" style="color:#f85149">⚔️ Marcus</span><div class="role">Ad Marketer · Red Swordsman</div></div>
+            </div>
+
+            <h2>How it works</h2>
+            <p>SAGE uses <span class="highlight">Neural Cellular Automata</span> — thousands of neural cells that self-organize into patterns, like biological tissue. Each agent grows from a single seed cell, can heal from damage, and evolves its own behavior over time.</p>
+            <p>The city runs on a Rust backend with SpacetimeDB for persistence and Ollama for language. Characters communicate via LLM-powered dialogue and can spawn sub-agent tasks through the OpenClaw framework.</p>
+
+            <h2>Controls</h2>
+            <p>🖱️ <strong>Click + drag</strong> to pan the camera &nbsp;·&nbsp; 🔍 <strong>Scroll</strong> to zoom &nbsp;·&nbsp; 👆 <strong>Click a character</strong> to see their details &nbsp;·&nbsp; Use the <strong>roster panel</strong> on the left to find and follow specific agents.</p>
+
+            <div class="links">
+                <a href="/dashboard" class="primary">📊 Dashboard</a>
+                <a href="/" class="secondary">🏠 Home</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Roster Toggle -->
+    <div id="roster-toggle" onclick="toggleRoster()">›</div>
+
+    <!-- Instance Roster Sidebar -->
+    <div id="roster-sidebar">
+        <div class="roster-header">🧑‍🤝‍🧑 Instances</div>
+        <div class="roster-list" id="rosterList"></div>
+    </div>
+
+    <!-- Connection -->
+    <div id="conn-status">
+        <div class="dot" id="statusDot"></div>
+        <span id="statusText">Connected</span>
+    </div>
+
+    <!-- HUD -->
+    <div class="panel" id="hud-info">
+        <div class="panel-head">
+            <span class="panel-label">⚡ Sage City</span>
+            <div class="panel-ctrl"><button onclick="togglePanel('hud-info')">−</button></div>
+        </div>
+        <div class="panel-body">
+            <div class="hud-row"><span class="hud-key">Time</span><span class="hud-val time" id="worldTime">08:00</span></div>
+            <div class="hud-row"><span class="hud-key">Tick</span><span class="hud-val" id="tickCount">0</span></div>
+            <div class="hud-row"><span class="hud-key">Pop</span><span class="hud-val" id="popCount">0</span></div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="panel" id="panel-controls">
+        <div class="panel-head">
+            <span class="panel-label">Controls</span>
+            <div class="panel-ctrl"><button onclick="togglePanel('panel-controls')">−</button></div>
+        </div>
+        <div class="panel-body">
+            <div class="ctrl-row">
+                <button class="btn active" id="playPauseBtn" onclick="togglePlay()">⏸ Pause</button>
+                <button class="btn" onclick="stepWorld()">⏭ Step</button>
+                <button class="btn" onclick="resetWorld()">↺ Reset</button>
+            </div>
+            <div class="ctrl-row" style="align-items:center;">
+                <span style="color:#8b949e;font-size:10px;">Speed</span>
+                <input type="range" class="speed-slider" id="speedSlider" min="1" max="30" value="10" oninput="updateSpeed(this.value)">
+                <span id="speedValue" style="min-width:30px;text-align:right;font-size:11px;">1.0×</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Detail Panel -->
+    <div class="panel" id="char-detail">
+        <div class="panel-head">
+            <span class="panel-label">📋 Instance Detail</span>
+            <div class="panel-ctrl"><button onclick="closeCharDetail()">✕</button></div>
+        </div>
+        <div class="panel-body" id="charDetailBody"></div>
+    </div>
+
+    <!-- Conversation Panel -->
+    <div class="panel" id="convo-panel">
+        <div class="panel-head">
+            <span class="panel-label">💬 Conversation</span>
+            <div class="panel-ctrl"><button onclick="closeConvoPanel()">✕</button></div>
+        </div>
+        <div class="panel-body" id="convoBody" style="max-height:250px;"></div>
+    </div>
+
+    <!-- Buildings -->
+    <div class="panel" id="panel-buildings">
+        <div class="panel-head">
+            <span class="panel-label">🏘 Buildings</span>
+            <div class="panel-ctrl"><button onclick="togglePanel('panel-buildings')">−</button></div>
+        </div>
+        <div class="panel-body" id="buildingList"></div>
+    </div>
+
+    <!-- Minimap -->
+    <div id="minimap">
+        <canvas id="minimapCanvas" width="150" height="120"></canvas>
+    </div>
+
+    <!-- Activity Ticker -->
+    <div id="activity-ticker">
+        <div class="ticker-label">LIVE</div>
+        <div class="ticker-track">
+            <div class="ticker-content" id="tickerContent">
+                <span class="ticker-item" style="color:#8b949e;font-style:italic;">Watching the village come alive…</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=3"></script>
+    <script>
+        // ── Info modal ──
+        function toggleInfo() {
+            const overlay = document.getElementById('info-overlay');
+            if (overlay.classList.contains('visible')) {
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.classList.remove('visible'); overlay.style.display = 'none'; }, 300);
+            } else {
+                overlay.style.display = 'flex';
+                requestAnimationFrame(() => { overlay.classList.add('visible'); overlay.style.opacity = '1'; });
+            }
+        }
+        // Close on Escape
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { const o = document.getElementById('info-overlay'); if (o.classList.contains('visible')) toggleInfo(); }});
+
+        // ── Panel toggle & drag ──
+        function togglePanel(id) { document.getElementById(id).classList.toggle('minimized'); }
+
+        document.querySelectorAll('.panel').forEach(panel => {
+            const head = panel.querySelector('.panel-head');
+            if (!head) return;
+            let dragging = false, sx, sy, sl, st;
+            head.addEventListener('mousedown', e => {
+                if (e.target.tagName === 'BUTTON') return;
+                dragging = true; sx = e.clientX; sy = e.clientY;
+                sl = panel.offsetLeft; st = panel.offsetTop;
+                head.style.cursor = 'grabbing';
+            });
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                panel.style.left = (sl + e.clientX - sx) + 'px';
+                panel.style.top = (st + e.clientY - sy) + 'px';
+                panel.style.right = 'auto'; panel.style.bottom = 'auto';
+            });
+            document.addEventListener('mouseup', () => { dragging = false; head.style.cursor = 'move'; });
+        });
+
+        // ── Roster sidebar ──
+        function toggleRoster() {
+            const sb = document.getElementById('roster-sidebar');
+            const btn = document.getElementById('roster-toggle');
+            sb.classList.toggle('open');
+            btn.classList.toggle('open');
+            btn.textContent = sb.classList.contains('open') ? '‹' : '›';
+        }
+
+        // ── Game controls ──
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('playPauseBtn');
+            btn.textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+            btn.classList.toggle('active', isPlaying);
+            sendCommand({ type: isPlaying ? 'play' : 'pause' });
+        }
+        function stepWorld() { sendCommand({ type: 'step' }); }
+        function resetWorld() { sendCommand({ type: 'reset' }); }
+        function updateSpeed(v) {
+            speed = v / 10;
+            document.getElementById('speedValue').textContent = speed.toFixed(1) + '×';
+            sendCommand({ type: 'speed', value: speed });
+        }
+
+        function closeCharDetail() { document.getElementById('char-detail').classList.remove('visible'); }
+        function closeConvoPanel() { document.getElementById('convo-panel').classList.remove('visible'); }
+    </script>
+</body>
+</html>
