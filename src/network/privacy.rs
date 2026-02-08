@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use regex::Regex;
 
-use super::diff::KnowledgeDiff;
+use super::diff::{KnowledgeDiff, CellChange};
 
 // ─── Privacy Configuration ──────────────────────────────────────────────────
 

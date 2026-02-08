@@ -13,17 +13,23 @@ fn main() {
     let mut corpus_path: Option<String> = None;
     let mut epochs = 100;
     let mut demo = false;
+    let mut grid_size: Option<usize> = None;
+    let mut max_examples: Option<usize> = None;
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--corpus" => { i += 1; corpus_path = Some(args[i].clone()); }
             "--epochs" => { i += 1; epochs = args[i].parse().unwrap_or(100); }
+            "--grid-size" => { i += 1; grid_size = Some(args[i].parse().unwrap_or(8)); }
+            "--max-examples" => { i += 1; max_examples = Some(args[i].parse().unwrap_or(30)); }
             "--demo" => { demo = true; }
             "--help" | "-h" => {
                 eprintln!("sage-train: NCA token prediction trainer");
                 eprintln!("  --corpus <file>   Text corpus to train on");
                 eprintln!("  --epochs <n>      Training epochs (default: 100)");
+                eprintln!("  --grid-size <n>   NCA grid side length (default: 8)");
+                eprintln!("  --max-examples <n> Max training examples (default: 30)");
                 eprintln!("  --demo            Train on built-in Shakespeare excerpt");
                 return;
             }
@@ -47,7 +53,7 @@ fn main() {
     eprintln!("🧬 NCA Token Prediction Training");
     eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
 
-    let config = if demo && epochs == 100 {
+    let mut config = if demo && epochs == 100 && grid_size.is_none() && max_examples.is_none() {
         // Use fast defaults for demo mode
         TrainingConfig::default()
     } else {
@@ -56,6 +62,12 @@ fn main() {
             ..Default::default()
         }
     };
+    if let Some(gs) = grid_size {
+        config.grid_size = gs;
+    }
+    if let Some(me) = max_examples {
+        config.max_examples = me;
+    }
 
     match nca_predictor::train_nca(&corpus, &config, true) {
         Ok((predictor, accuracy, random_baseline)) => {
