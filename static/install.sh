@@ -20,28 +20,46 @@ esac
 
 echo "🔍 Detected: ${OS} ${ARCH}"
 
+# GitHub token for private repo (optional)
+GH_TOKEN="${SAGE_GH_TOKEN:-${GITHUB_TOKEN:-}}"
+AUTH_HEADER=""
+if [ -n "$GH_TOKEN" ]; then
+  AUTH_HEADER="Authorization: token ${GH_TOKEN}"
+  echo "🔑 Using GitHub token for authentication"
+else
+  echo "⚠️  No SAGE_GH_TOKEN or GITHUB_TOKEN set — this only works for public repos"
+fi
+
+curl_auth() {
+  if [ -n "$AUTH_HEADER" ]; then
+    curl -fSL -H "$AUTH_HEADER" "$@"
+  else
+    curl -fSL "$@"
+  fi
+}
+
 # Get latest version
 echo "📡 Fetching latest release..."
-VERSION=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+VERSION=$(curl_auth -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
 if [ -z "$VERSION" ]; then
-  echo "❌ Could not determine latest version"; exit 1
+  echo "❌ Could not determine latest version (is the repo public or SAGE_GH_TOKEN set?)"; exit 1
 fi
 echo "📦 Version: ${VERSION}"
 
-# Download
-ARCHIVE="sage-${VERSION}-${OS}-${ARCH}.tar.gz"
-URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE}"
+# Download binary
+BINARY="sage-${OS}-${ARCH}"
+URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "⬇️  Downloading ${URL}..."
-curl -fSL "$URL" -o "${TMPDIR}/${ARCHIVE}"
+echo "⬇️  Downloading ${BINARY}..."
+curl_auth "$URL" -o "${TMPDIR}/sage"
 
 # Install
 mkdir -p "$INSTALL_DIR"
 echo "📂 Installing to ${INSTALL_DIR}..."
-tar -xzf "${TMPDIR}/${ARCHIVE}" -C "$INSTALL_DIR"
-chmod +x "$INSTALL_DIR"/*
+cp "${TMPDIR}/sage" "$INSTALL_DIR/sage"
+chmod +x "$INSTALL_DIR/sage"
 
 # PATH setup
 if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
@@ -75,14 +93,11 @@ echo "  Shared Adaptive Growing Experience"
 echo "  The People's AI — Free. Local. Gets smarter together."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "  Binaries: ${INSTALL_DIR}"
-echo "  Version:  ${VERSION}"
+echo "  Binary:  ${INSTALL_DIR}/sage"
+echo "  Version: ${VERSION}"
 echo ""
-echo "  Next steps:"
-echo "    sage-node       Start a SAGE node"
-echo "    sage_chat        Interactive chat"
-echo "    sage-api         Start the API server"
-echo "    sage-bootstrap   Bootstrap your node"
+echo "  Get started:"
+echo "    sage --help"
 echo ""
 echo "  Restart your shell or run:"
 echo "    export PATH=\"${INSTALL_DIR}:\$PATH\""

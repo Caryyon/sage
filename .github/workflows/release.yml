@@ -10,7 +10,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARIES: sage-node sage_chat sage-api sage-bootstrap sage-bench sage-train
 
 jobs:
   build:
@@ -44,31 +43,27 @@ jobs:
 
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config nasm cmake
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev nasm cmake g++
 
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'
         run: brew install nasm cmake
 
-      - name: Build release binaries
-        run: cargo build --release
+      - name: Build sage binary
+        run: cargo build --release --bin sage-cli
 
-      - name: Package tarball
+      - name: Rename and upload binary
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          ARCHIVE="sage-${VERSION}-${{ matrix.target_os }}-${{ matrix.target_arch }}.tar.gz"
-          mkdir -p staging
-          for bin in $BINARIES; do
-            cp "target/release/${bin}" staging/
-          done
-          tar -czf "${ARCHIVE}" -C staging .
-          echo "ARCHIVE=${ARCHIVE}" >> $GITHUB_ENV
+          BINARY_NAME="sage-${{ matrix.target_os }}-${{ matrix.target_arch }}"
+          cp target/release/sage-cli "${BINARY_NAME}"
+          chmod +x "${BINARY_NAME}"
+          echo "BINARY_NAME=${BINARY_NAME}" >> $GITHUB_ENV
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sage-${{ matrix.target_os }}-${{ matrix.target_arch }}
-          path: ${{ env.ARCHIVE }}
+          path: ${{ env.BINARY_NAME }}
 
   release:
     needs: build
