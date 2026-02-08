@@ -299,18 +299,25 @@ fn run_update(quiet: bool) {
 
     let binary_name = format!("sage-{os}-{arch}");
     let binary_url = format!("https://github.com/{repo}/releases/download/{version}/{binary_name}");
-    let changelog_url = format!("https://github.com/{repo}/releases/tag/{version}");
+    let changelog_url = format!("https://api.github.com/repos/{repo}/releases/tags/{version}");
 
     println!("🔄 Checking for updates...");
 
     // Show changelog
     if !quiet {
-        match reqwest::blocking::get(&changelog_url) {
+        match client.get(&changelog_url).send() {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(text) = resp.text() {
-                    // Show first 40 lines
-                    let preview: String = text.lines().take(40).collect::<Vec<_>>().join("\n");
-                    println!("\n📋 Changelog:\n{preview}\n");
+                    // Extract "body" field from GitHub API JSON
+                    if let Some(body) = text.split("\"body\":\"").nth(1) {
+                        if let Some(body) = body.split("\",\"").next() {
+                            let body = body.replace("\\r\\n", "\n").replace("\\n", "\n");
+                            let preview: String = body.lines().take(20).collect::<Vec<_>>().join("\n");
+                            if !preview.is_empty() {
+                                println!("\n📋 Release notes:\n{preview}\n");
+                            }
+                        }
+                    }
                 }
             }
             _ => {} // changelog is optional
