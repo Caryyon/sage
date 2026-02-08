@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting Started — SAGE</title>
+    <meta name="description" content="Get started with SAGE — install, chat, and join the decentralized AI network in under a minute.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Nav */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 860px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo:hover { text-decoration: none; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* Content */
+        .content {
+            position: relative; z-index: 1;
+            max-width: 860px; margin: 0 auto;
+            padding: 88px 24px 80px;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: clamp(1.8rem, 4vw, 2.6rem);
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 8px;
+        }
+        .lead {
+            font-size: 0.9rem; color: var(--text-dim); margin-bottom: 48px;
+        }
+        h2 {
+            font-size: 1.3rem; font-weight: 700; margin: 56px 0 20px;
+            padding-bottom: 8px; border-bottom: 1px solid var(--border);
+        }
+        h3 {
+            font-size: 1rem; font-weight: 500; margin: 32px 0 12px; color: var(--cyan);
+        }
+        p { margin-bottom: 16px; font-size: 0.85rem; }
+        strong { color: var(--text); }
+        ul, ol { margin: 0 0 16px 24px; font-size: 0.85rem; }
+        li { margin-bottom: 6px; }
+        hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+
+        /* Code */
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0,255,213,0.08);
+            color: var(--cyan);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.82rem;
+        }
+        pre {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 16px 0 24px;
+            overflow-x: auto;
+            position: relative;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text);
+            font-size: 0.8rem;
+            line-height: 1.6;
+        }
+        pre .prompt { color: var(--text-dim); }
+        pre .output { color: var(--text-dim); }
+        pre .cmd { color: var(--cyan); }
+        pre .comment { color: #555; }
+        pre .highlight { color: var(--green); }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 0.8rem;
+        }
+        th, td {
+            padding: 10px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-dim);
+            font-weight: 400;
+            font-size: 0.7rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        td code { font-size: 0.76rem; }
+
+        /* Callout */
+        .callout {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--cyan);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 16px 0 24px;
+            font-size: 0.82rem;
+        }
+        .callout p { margin-bottom: 0; }
+
+        /* TOC */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 48px;
+        }
+        .toc h4 {
+            font-size: 0.7rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+        }
+        .toc ol { margin: 0; padding-left: 20px; }
+        .toc li { margin-bottom: 4px; }
+        .toc a { font-size: 0.82rem; }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 32px 24px;
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            position: relative; z-index: 1;
+        }
+        footer a { color: var(--text-dim); }
+        footer a:hover { color: var(--cyan); }
+
+        @media (max-width: 600px) {
+            .content { padding: 76px 16px 60px; }
+            pre { padding: 14px; }
+            table { font-size: 0.72rem; }
+            th, td { padding: 8px 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="logo">🌿 SAGE</a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/docs">Docs</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/YXThZcrPHc" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div class="content">
+
+<h1>🌿 Getting Started</h1>
+<p class="lead">Install SAGE, start chatting, and join the decentralized AI network — all in under a minute.</p>
+
+<div class="toc">
+    <h4>Contents</h4>
+    <ol>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#first-chat">First Chat</a></li>
+        <li><a href="#join-network">Join the Network</a></li>
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+        <li><a href="#api">OpenAI-Compatible API</a></li>
+        <li><a href="#commands">Commands Reference</a></li>
+        <li><a href="#updating">Updating</a></li>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ol>
+</div>
+
+<!-- Installation -->
+<h2 id="installation">📦 Installation</h2>
+<p>One command:</p>
+<pre><code><span class="cmd">curl -fsSL https://sage.lattice.black/install.sh | sh</span></code></pre>
+<p>This downloads the <code>sage</code> binary for your platform (Linux/macOS, x86_64/arm64) and installs it to <code>~/.sage/bin/sage</code>. It also adds <code>~/.sage/bin</code> to your PATH.</p>
+<p>After install, open a new terminal and verify:</p>
+<pre><code><span class="prompt">$</span> <span class="cmd">sage version</span>
+<span class="output">sage 0.1.0</span></code></pre>
+
+<!-- First Chat -->
+<h2 id="first-chat">💬 First Chat</h2>
+<pre><code><span class="cmd">sage chat</span></code></pre>
+<p>On first run, SAGE downloads <strong>SmolLM2 1.7B</strong> (~1 GB) — a small but capable language model that runs entirely on your CPU. No GPU needed.</p>
+<pre><code><span class="output">SAGE Chat — engine: SmolLM2-1.7B
+Brain: /home/you/.sage/brain.bin (0 active cells)
+Type your message, or /quit to exit.
+
+</span><span class="cmd">you></span> What is SAGE?
+<span class="highlight">sage></span> I'm SAGE — a decentralized AI running locally on your machine...</code></pre>
+<p>Type <code>/quit</code> or <code>/exit</code> to leave.</p>
+
+<h3>Using Ollama Instead</h3>
+<p>If you have <a href="https://ollama.com">Ollama</a> installed, use any Ollama model as the backend:</p>
+<pre><code><span class="cmd">sage chat --ollama</span>                          <span class="comment"># Uses qwen2.5:14b by default</span>
+<span class="cmd">sage chat --ollama --model llama3.2:3b</span>      <span class="comment"># Pick a different model</span>
+<span class="cmd">sage chat --ollama --ollama-url http://remote:11434</span></code></pre>
+
+<!-- Join the Network -->
+<h2 id="join-network">🔗 Join the Network</h2>
+<pre><code><span class="cmd">sage node start</span></code></pre>
+<pre><code><span class="output">🧠 SAGE Node starting...
+   Identity: 12D3KooW...
+   Brain: /home/you/.sage/brain.bin (42 active cells)
+   Gossip port: 0
+   Chat port: 19175
+   mDNS: enabled
+
+✅ Node running. Press Ctrl+C to stop.</span></code></pre>
+
+<p><strong>What happens:</strong></p>
+<ol>
+    <li><strong>LAN Discovery</strong> — mDNS finds other SAGE nodes on your local network</li>
+    <li><strong>Bootstrap Connection</strong> — Connects to <code>bootstrap.sage.lattice.black:4001</code> to find internet peers</li>
+    <li><strong>Knowledge Sync</strong> — Exchanges compressed knowledge diffs with peers</li>
+    <li><strong>Brain Saves</strong> — Periodically saves your brain file to disk</li>
+</ol>
+
+<h3>Node Options</h3>
+<pre><code><span class="cmd">sage node start --port 9000</span>          <span class="comment"># Set gossip port (default: random)</span>
+<span class="cmd">sage node start --chat-port 19175</span>    <span class="comment"># Set chat port (default: 19175)</span>
+<span class="cmd">sage node start --sync-interval 600</span>  <span class="comment"># Sync every 10 min (default: 300s)</span>
+<span class="cmd">sage node start --no-mdns</span>            <span class="comment"># Disable LAN discovery</span></code></pre>
+
+<h3>Check Status &amp; Stop</h3>
+<pre><code><span class="cmd">sage node status</span>     <span class="comment"># Check if node is running</span>
+<span class="cmd">sage node stop</span>       <span class="comment"># Stop the node</span></code></pre>
+
+<!-- How It Works -->
+<h2 id="how-it-works">🧠 How It Works</h2>
+<ol>
+    <li><strong>You chat</strong> with your local SAGE instance</li>
+    <li><strong>Conversations become knowledge</strong> — encoded into a Neural Cellular Automata (NCA) grid, a compact 32×32 grid (~128 KB)</li>
+    <li><strong>Knowledge is shared as diffs</strong> — tiny compressed updates (200–2000 bytes) representing <em>what was learned</em>, not what was said</li>
+    <li><strong>Diffs flow via gossip</strong> — peer-to-peer, no central server</li>
+    <li><strong>Your raw conversations never leave your machine</strong></li>
+</ol>
+<div class="callout">
+    <p>The more people run SAGE, the more knowledge flows through the network, and the smarter every node becomes.</p>
+</div>
+
+<!-- Configuration -->
+<h2 id="configuration">⚙️ Configuration</h2>
+<p>Config lives at <code>~/.sage/config.toml</code>. View it:</p>
+<pre><code><span class="cmd">sage config</span>          <span class="comment"># Print current config</span>
+<span class="cmd">sage config --path</span>   <span class="comment"># Print config file path</span></code></pre>
+
+<h3>Example Config</h3>
+<pre><code><span class="comment">[network]</span>
+bootstrap = "bootstrap.sage.lattice.black:4001"
+listen_port = 0
+chat_port = 19175
+sync_interval = 300
+mdns = true
+
+<span class="comment">[privacy]</span>
+shared_channels = [8, 9, 10, 11, 12, 13, 14, 15]
+min_conversations_before_share = 5
+dp_epsilon = 1.0
+private_topics = ["health", "finance"]</code></pre>
+<p>Set <code>SAGE_HOME</code> environment variable to change the data directory (default: <code>~/.sage</code>).</p>
+
+<!-- API -->
+<h2 id="api">🔌 OpenAI-Compatible API</h2>
+<p>SAGE exposes an OpenAI-compatible API at <code>localhost:19176/v1</code>:</p>
+<pre><code><span class="comment"># Set environment (works with most tools)</span>
+<span class="cmd">export OPENAI_API_BASE=http://localhost:19176/v1</span>
+<span class="cmd">export OPENAI_API_KEY=not-needed</span>
+
+<span class="comment"># curl example</span>
+<span class="cmd">curl http://localhost:19176/v1/chat/completions</span> \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sage",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</code></pre>
+<p>Works with <strong>Continue</strong>, <strong>Open WebUI</strong>, <strong>LangChain</strong>, and any tool that speaks the OpenAI protocol. No API key required.</p>
+
+<!-- Commands -->
+<h2 id="commands">📋 Commands Reference</h2>
+<table>
+    <thead>
+        <tr><th>Command</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>sage chat</code></td><td>Interactive chat (default command)</td></tr>
+        <tr><td><code>sage chat --ollama</code></td><td>Chat using Ollama backend</td></tr>
+        <tr><td><code>sage chat --ollama --model &lt;name&gt;</code></td><td>Chat with specific Ollama model</td></tr>
+        <tr><td><code>sage node start</code></td><td>Start the network node</td></tr>
+        <tr><td><code>sage node stop</code></td><td>Stop the running node</td></tr>
+        <tr><td><code>sage node status</code></td><td>Show node status</td></tr>
+        <tr><td><code>sage config</code></td><td>Show current configuration</td></tr>
+        <tr><td><code>sage config --path</code></td><td>Print config file path</td></tr>
+        <tr><td><code>sage update</code></td><td>Update to latest version</td></tr>
+        <tr><td><code>sage update --quiet</code></td><td>Update without changelog</td></tr>
+        <tr><td><code>sage version</code></td><td>Print version info</td></tr>
+    </tbody>
+</table>
+
+<!-- Updating -->
+<h2 id="updating">🔄 Updating</h2>
+<pre><code><span class="cmd">sage update</span></code></pre>
+<p>Downloads the latest binary, shows the changelog, and migrates your brain file if needed. Your data in <code>~/.sage</code> is always preserved. Use <code>--quiet</code> to skip the changelog.</p>
+
+<!-- Troubleshooting -->
+<h2 id="troubleshooting">🔧 Troubleshooting</h2>
+
+<h3>"command not found: sage"</h3>
+<p>Make sure <code>~/.sage/bin</code> is in your PATH:</p>
+<pre><code><span class="cmd">export PATH="$HOME/.sage/bin:$PATH"</span></code></pre>
+
+<h3>Model download is slow</h3>
+<p>SmolLM2 (~1 GB) downloads on first <code>sage chat</code>. This only happens once.</p>
+
+<h3>Node won't connect to peers</h3>
+<ul>
+    <li>Check your firewall allows outbound connections</li>
+    <li>Verify <code>bootstrap.sage.lattice.black:4001</code> is reachable</li>
+    <li>Try <code>sage node start --no-mdns</code> if mDNS causes issues</li>
+</ul>
+
+<h3>Brain file corruption</h3>
+<p>Delete and let SAGE create a fresh one:</p>
+<pre><code><span class="cmd">rm ~/.sage/brain.bin</span></code></pre>
+<p>You'll re-sync from the network when you start a node.</p>
+
+<h3>Change data directory</h3>
+<pre><code><span class="cmd">export SAGE_HOME=/path/to/custom/sage</span></code></pre>
+
+<hr>
+
+<p style="text-align: center; color: var(--text-dim); font-size: 0.82rem;">
+    <a href="https://github.com/Caryyon/sage">GitHub</a> · 
+    <a href="https://discord.gg/YXThZcrPHc">Discord</a> · 
+    <a href="/">sage.lattice.black</a>
+</p>
+
+</div>
+
+<footer>
+    Built with 🐺 by the SAGE community
+</footer>
+
+</body>
+</html>
