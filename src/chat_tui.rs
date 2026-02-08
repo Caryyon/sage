@@ -358,42 +358,26 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
         raw_lines.push(Line::from(""));
     }
 
+    // Wrap lines at the reduced width (accounting for brain panel) so text
+    // never hides behind it. Lines below the brain panel get full width.
+    let reduced_width = if has_brain { inner_width.saturating_sub(brain_w) } else { inner_width };
+
+    // We wrap everything at the reduced width for simplicity — this ensures
+    // no text ever goes behind the brain. Below the brain they just have extra
+    // space, which is fine.
     let mut wrapped_lines: Vec<Line<'static>> = Vec::new();
     for line in raw_lines {
-        wrapped_lines.extend(wrap_line(line, inner_width));
+        wrapped_lines.extend(wrap_line(line, reduced_width.max(20)));
     }
 
     let total = wrapped_lines.len();
     let scroll = if total > chat_height { total - chat_height } else { 0 };
 
-    if has_brain {
-        let reduced_width = inner_width.saturating_sub(brain_w);
-        let visible_start = scroll;
-        let visible_end = std::cmp::min(scroll + chat_height, wrapped_lines.len());
-        let mut new_visible: Vec<Line<'static>> = Vec::new();
-
-        for i in visible_start..visible_end {
-            let vis_row = new_visible.len();
-            if vis_row < brain_h && reduced_width > 0 {
-                let mut line = wrapped_lines[i].clone();
-                truncate_line(&mut line, reduced_width);
-                new_visible.push(line);
-            } else {
-                new_visible.push(wrapped_lines[i].clone());
-            }
-        }
-
-        let chat = Paragraph::new(new_visible)
-            .block(block)
-            .style(Style::default().bg(BG));
-        f.render_widget(chat, area);
-    } else {
-        let chat = Paragraph::new(wrapped_lines)
-            .block(block)
-            .style(Style::default().bg(BG))
-            .scroll((scroll as u16, 0));
-        f.render_widget(chat, area);
-    }
+    let visible: Vec<Line<'static>> = wrapped_lines.into_iter().skip(scroll).take(chat_height).collect();
+    let chat = Paragraph::new(visible)
+        .block(block)
+        .style(Style::default().bg(BG));
+    f.render_widget(chat, area);
 }
 
 fn ui(f: &mut Frame, state: &AppState) {
