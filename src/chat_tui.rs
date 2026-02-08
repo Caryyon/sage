@@ -22,6 +22,18 @@ use std::time::{Duration, Instant};
 
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
+use crate::inference::ollama::OllamaEngine;
+
+/// Engine selection mode for the TUI
+#[derive(Clone, Debug)]
+pub enum EngineMode {
+    /// Auto-detect: prefer Ollama if running, fall back to embedded
+    Auto,
+    /// Force Ollama (error if not available)
+    ForceOllama,
+    /// Force embedded SmolLM2 (skip Ollama check)
+    ForceEmbedded,
+}
 
 // --- Theme Colors ---
 const CYAN: Color = Color::Rgb(0x00, 0xff, 0xd5);
@@ -415,9 +427,10 @@ fn ui(f: &mut Frame, state: &AppState) {
     f.render_widget(header, chunks[0]);
 
     // Status bar
+    let engine_color = if state.engine_name.contains("Ollama") { CYAN } else { ORANGE };
     let status = Paragraph::new(Line::from(vec![
-        Span::styled(" ◉ ", Style::default().fg(GREEN)),
-        Span::styled(&state.engine_name, Style::default().fg(DIM_GREEN)),
+        Span::styled(" ◉ ", Style::default().fg(engine_color)),
+        Span::styled(&state.engine_name, Style::default().fg(engine_color)),
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("knowledge:", Style::default().fg(DIM)),
         Span::styled(format!("{}", state.active_cells), Style::default().fg(PURPLE)),
@@ -476,14 +489,37 @@ fn simple_hash(s: &str) -> usize {
 }
 
 /// Run the ratatui TUI chat interface with local inference.
-pub fn run(prefer_ollama: bool, model: &str, ollama_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let brain_path = default_brain_path();
     let knowledge = NCAKnowledge::new();
 
-    let engine: Arc<dyn InferenceEngine> = Arc::from(if prefer_ollama {
-        inference::engine_with_preference(true, Some(model), Some(ollama_url))
-    } else {
-        inference::default_engine()
+    let engine: Arc<dyn InferenceEngine> = Arc::from(match engine_mode {
+        EngineMode::ForceOllama => {
+            let ollama = OllamaEngine::new(Some(model.to_string()), Some(ollama_url.to_string()));
+            if !ollama.is_available() {
+                return Err(format!(
+                    "Ollama is not running at {}. Start it with `ollama serve` or remove --ollama flag.",
+                    ollama_url
+                ).into());
+            }
+            eprintln!("🔗 Using Ollama (forced)");
+            Box::new(ollama) as Box<dyn InferenceEngine>
+        }
+        EngineMode::ForceEmbedded => {
+            eprintln!("🧠 Using embedded SmolLM2 (forced)");
+            inference::default_engine()
+        }
+        EngineMode::Auto => {
+            // Auto-detect: try Ollama first, fall back to embedded
+            let ollama = OllamaEngine::new(Some(model.to_string()), Some(ollama_url.to_string()));
+            if ollama.is_available() {
+                eprintln!("🔗 Ollama detected, using as default engine");
+                Box::new(ollama) as Box<dyn InferenceEngine>
+            } else {
+                eprintln!("ℹ️  Ollama not detected, using embedded SmolLM2");
+                inference::default_engine()
+            }
+        }
     });
 
     let engine_name = engine.name().to_string();

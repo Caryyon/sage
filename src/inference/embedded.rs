@@ -75,7 +75,7 @@ impl EmbeddedLLM {
             device,
             temperature: 0.7,
             top_p: 0.9,
-            repeat_penalty: 1.1,
+            repeat_penalty: 1.3,
             repeat_last_n: 64,
         })
     }
@@ -185,15 +185,14 @@ impl EmbeddedLLM {
             &all_tokens[all_tokens.len().saturating_sub(self.repeat_last_n)..],
         )?;
 
-        let next_token = logits_processor.sample(&logits)?;
+        let mut next_token = logits_processor.sample(&logits)?;
         all_tokens.push(next_token);
 
         if next_token == eos_token {
             return Ok(generated);
         }
 
-        if let Some(text) = self.tokenizer.id_to_token(next_token) {
-            let text = text.replace("▁", " ").replace("<0x0A>", "\n");
+        if let Ok(text) = self.tokenizer.decode(&[next_token], false) {
             generated.push_str(&text);
             if let Some(ref mut cb) = callback {
                 cb(&text);
@@ -217,15 +216,14 @@ impl EmbeddedLLM {
                 &all_tokens[all_tokens.len().saturating_sub(self.repeat_last_n)..],
             )?;
 
-            let next_token = logits_processor.sample(&logits)?;
+            next_token = logits_processor.sample(&logits)?;
             all_tokens.push(next_token);
 
             if next_token == eos_token {
                 break;
             }
 
-            if let Some(text) = self.tokenizer.id_to_token(next_token) {
-                let text = text.replace("▁", " ").replace("<0x0A>", "\n");
+            if let Ok(text) = self.tokenizer.decode(&[next_token], false) {
                 generated.push_str(&text);
                 if let Some(ref mut cb) = callback {
                     cb(&text);

@@ -27,13 +27,16 @@ struct Cli {
 enum Commands {
     /// Interactive chat with your local SAGE instance
     Chat {
-        /// Use Ollama backend instead of embedded LLM
-        #[arg(long)]
+        /// Force Ollama backend (error if not running)
+        #[arg(long, conflicts_with = "embedded")]
         ollama: bool,
-        /// Ollama model to use (only with --ollama)
+        /// Force embedded SmolLM2 (skip Ollama auto-detection)
+        #[arg(long, conflicts_with = "ollama")]
+        embedded: bool,
+        /// Ollama model to use
         #[arg(short, long, default_value = "qwen2.5:14b")]
         model: String,
-        /// Ollama API URL (only with --ollama)
+        /// Ollama API URL
         #[arg(long, default_value = "http://localhost:11434")]
         ollama_url: String,
     },
@@ -92,11 +95,20 @@ fn main() {
 
     match cli.command {
         None | Some(Commands::Chat { .. }) => {
-            let (ollama, model, ollama_url) = match cli.command {
-                Some(Commands::Chat { ollama, model, ollama_url }) => (ollama, model, ollama_url),
-                _ => (false, "qwen2.5:14b".to_string(), "http://localhost:11434".to_string()),
+            let (ollama, embedded, model, ollama_url) = match cli.command {
+                Some(Commands::Chat { ollama, embedded, model, ollama_url }) => (ollama, embedded, model, ollama_url),
+                _ => (false, false, "qwen2.5:14b".to_string(), "http://localhost:11434".to_string()),
             };
-            run_chat(ollama, &model, &ollama_url);
+
+            // Determine engine mode: force-ollama, force-embedded, or auto-detect
+            let engine_mode = if ollama {
+                sage::chat_tui::EngineMode::ForceOllama
+            } else if embedded {
+                sage::chat_tui::EngineMode::ForceEmbedded
+            } else {
+                sage::chat_tui::EngineMode::Auto
+            };
+            run_chat(engine_mode, &model, &ollama_url);
         }
         Some(Commands::Version) => {
             println!("sage {VERSION}");
@@ -130,8 +142,8 @@ fn main() {
 }
 
 /// Launch the interactive TUI chat with brain visualization.
-fn run_chat(prefer_ollama: bool, model: &str, ollama_url: &str) {
-    if let Err(e) = sage::chat_tui::run(prefer_ollama, model, ollama_url) {
+fn run_chat(engine_mode: sage::chat_tui::EngineMode, model: &str, ollama_url: &str) {
+    if let Err(e) = sage::chat_tui::run(engine_mode, model, ollama_url) {
         eprintln!("Chat error: {e}");
         std::process::exit(1);
     }
