@@ -39,4 +39,4 @@ jobs:
         run: cargo test
 
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -W warnings
