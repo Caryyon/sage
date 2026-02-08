@@ -254,13 +254,21 @@ fn wrap_line(line: Line<'_>, max_width: usize) -> Vec<Line<'static>> {
                 current_width += remaining.len();
                 break;
             } else {
-                let (take, rest) = remaining.split_at(available);
-                if !take.is_empty() {
-                    current_spans.push(Span::styled(take.to_string(), style));
+                // Try to break at a word boundary (last space within available width)
+                let chunk = &remaining[..available];
+                let break_at = if let Some(pos) = chunk.rfind(' ') {
+                    if pos > 0 { pos + 1 } else { available } // break after the space
+                } else {
+                    available // no space found, hard break
+                };
+                let (take, rest) = remaining.split_at(break_at);
+                let take_trimmed = take.trim_end();
+                if !take_trimmed.is_empty() {
+                    current_spans.push(Span::styled(take_trimmed.to_string(), style));
                 }
                 result.push(Line::from(std::mem::take(&mut current_spans)));
                 current_width = 0;
-                remaining = rest;
+                remaining = rest.trim_start();
             }
         }
     }
