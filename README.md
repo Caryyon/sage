@@ -10,7 +10,7 @@ Think of it like **BitTorrent for intelligence** — each node learns locally, a
 
 ```bash
 # Install SAGE
-curl -fsSL https://sage.lattice.black/install.sh | sh
+curl -fsSL https://sage.lattice.black/install.sh | bash
 
 # Start chatting
 sage chat

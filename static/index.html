@@ -712,7 +712,7 @@
 
     <div class="hero-install">
         <div class="install-cmd" id="heroCopy">
-            <code>curl -fsSL https://sage.lattice.black/install.sh | sh</code>
+            <code>curl -fsSL https://sage.lattice.black/install.sh | bash</code>
             <button class="copy-btn" onclick="copyInstall(event)">Copy</button>
         </div>
     </div>
@@ -948,7 +948,7 @@
             <h2>Ready to join?</h2>
             <p class="sub">Install SAGE in one command. Start chatting in 30 seconds.</p>
             <div class="install-cmd" id="startCopy">
-                <code>curl -fsSL https://sage.lattice.black/install.sh | sh</code>
+                <code>curl -fsSL https://sage.lattice.black/install.sh | bash</code>
                 <button class="copy-btn" onclick="copyInstall(event)">Copy</button>
             </div>
             <div class="get-started-links">
@@ -976,7 +976,7 @@
 // Copy install command
 function copyInstall(e) {
     e.stopPropagation();
-    const cmd = 'curl -fsSL https://sage.lattice.black/install.sh | sh';
+    const cmd = 'curl -fsSL https://sage.lattice.black/install.sh | bash';
     navigator.clipboard.writeText(cmd).then(() => {
         const btn = e.target;
         btn.textContent = 'Copied!';

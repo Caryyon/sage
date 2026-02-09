@@ -9,7 +9,7 @@ SAGE is a decentralized AI that runs locally on your machine and shares knowledg
 One command:
 
 ```bash
-curl -fsSL https://sage.lattice.black/install.sh | sh
+curl -fsSL https://sage.lattice.black/install.sh | bash
 ```
 
 This downloads the `sage` binary for your platform (Linux/macOS, x86_64/arm64) and installs it to `~/.sage/bin/sage`. It also adds `~/.sage/bin` to your PATH.
