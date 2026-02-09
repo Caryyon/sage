@@ -11,6 +11,27 @@
 | 5 | Frankenstein | 32×32 | 50 | 23.33% | 0.0977% | 238.9× | 1m45s |
 | 6 | Pride & Prejudice | 32×32 | 50 | 6.67% | 0.0977% | 68.3× | 1m45s |
 
+## Reservoir Computing Results (2026-02-08)
+
+| # | Corpus | Grid | Strategy | Readout Epochs | Top-1 | Top-5 | Signal (Top-1) |
+|---|--------|------|----------|----------------|-------|-------|----------------|
+| R1 | Shakespeare (demo) | 8×8 | FlatState (512 features) | 50 | 100.00% | 100.00% | 64.0× random |
+
+### Reservoir Computing Approach
+Instead of reading activations directly from token-mapped cells (ES approach), the reservoir approach:
+1. Treats the NCA grid as a fixed dynamical system (reservoir)
+2. Runs NCA steps to let information propagate
+3. Extracts a feature vector from the full grid state
+4. Trains a linear readout layer (W·features + bias) with Adam optimizer + cross-entropy loss
+
+**Key advantage:** The linear readout can be trained with gradient descent (fast, exact) rather than evolution strategy (slow, approximate). NCA weights stay frozen — only the readout is trained.
+
+**Feature strategies:**
+- **FlatState:** Flatten all cell channels → grid_size² × 8 features (e.g., 512 for 8×8)
+- **SpatialStats:** Per-channel mean/std/max/min + per-quadrant means → 64 features (compact)
+
+**Result:** On the Shakespeare demo, reservoir with FlatState achieved 100% top-1 accuracy on 20 training examples in just 50 readout epochs — compared to ES-only's 50% top-5 accuracy after 30 ES epochs. The linear readout can perfectly separate the NCA's internal representations.
+
 ### Notes
 - Default `--demo` uses 30 examples from a Shakespeare excerpt (~531 tokens, 257 vocab)
 - Corpus mode uses 30 examples from the file with a 1024-token BPE vocabulary

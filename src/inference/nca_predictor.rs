@@ -25,7 +25,7 @@ use std::path::PathBuf;
 const NCA_GRID_SIZE: usize = 181; // 181*181 = 32761 cells ≥ 32K vocab
 /// Smaller grid for training (16×16 = 256 cells, sufficient for demo vocab)
 const TRAINING_GRID_SIZE: usize = 8;
-const NCA_CHANNELS: usize = 8; // Per-cell channels: [activation, embedding x4, hidden x3]
+pub const NCA_CHANNELS: usize = 8; // Per-cell channels: [activation, embedding x4, hidden x3]
 const ACTIVATION_CH: usize = 0;
 
 /// Default NCA update steps per prediction
@@ -369,6 +369,22 @@ impl NcaPredictor {
             }
         }
         probs.len() - 1
+    }
+
+    /// Run NCA steps on input tokens and return the full grid state.
+    /// Used by reservoir computing to extract features from NCA dynamics.
+    pub fn run_and_get_state(&mut self, input_tokens: &[usize]) -> Vec<Vec<[f64; NCA_CHANNELS]>> {
+        self.clear_grid();
+        self.activate_tokens(input_tokens);
+        for _ in 0..self.steps {
+            self.nca_step();
+        }
+        self.grid.clone()
+    }
+
+    /// Get the grid size
+    pub fn grid_size(&self) -> usize {
+        self.grid_size
     }
 
     /// Get the weights (for training)

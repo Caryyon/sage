@@ -76,6 +76,10 @@ name = "sage-train"
 path = "src/bin/sage_train.rs"
 
 [[bin]]
+name = "sage-reservoir"
+path = "src/bin/sage_reservoir.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 

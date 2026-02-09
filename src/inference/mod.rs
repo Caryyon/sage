@@ -9,6 +9,7 @@ pub mod ollama;
 pub mod embeddings;
 pub mod distributed;
 pub mod nca_predictor;
+pub mod reservoir;
 
 use std::error::Error;
 
