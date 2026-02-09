@@ -80,6 +80,10 @@ name = "sage-reservoir"
 path = "src/bin/sage_reservoir.rs"
 
 [[bin]]
+name = "sage-criticality"
+path = "src/bin/sage_criticality.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 

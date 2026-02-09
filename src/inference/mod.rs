@@ -10,6 +10,7 @@ pub mod embeddings;
 pub mod distributed;
 pub mod nca_predictor;
 pub mod reservoir;
+pub mod criticality;
 
 use std::error::Error;
 

@@ -312,7 +312,7 @@ impl NcaPredictor {
     }
 
     /// Run NCA steps and return activation levels for all vocab tokens
-    fn run_and_read(&mut self, input_tokens: &[usize]) -> Vec<f64> {
+    pub fn run_and_read(&mut self, input_tokens: &[usize]) -> Vec<f64> {
         self.clear_grid();
         self.activate_tokens(input_tokens);
 
