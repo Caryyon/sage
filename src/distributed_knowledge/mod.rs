@@ -29,7 +29,10 @@ use serde::{Serialize, Deserialize};
 // ── Brain file versioning ──────────────────────────────────────────────────
 
 /// Current brain file schema version.
-pub const BRAIN_VERSION: u32 = 2;
+/// v1: raw grid, no header
+/// v2: BrainHeader + grid (basic versioning)
+/// v3: channel partitioning (24 shared + 8 private)
+pub const BRAIN_VERSION: u32 = 3;
 /// Magic bytes identifying a SAGE brain file.
 pub const BRAIN_MAGIC: [u8; 4] = *b"SAGE";
 
@@ -417,6 +420,22 @@ fn text_store_path_for(brain_path: &str) -> String {
         let parent = p.parent().unwrap_or(std::path::Path::new("."));
         parent.join("text_store.bin").to_string_lossy().to_string()
     }
+}
+
+/// Inspect a brain file and return its header info without loading the full grid.
+pub fn brain_info(path: &str) -> Result<BrainHeader, String> {
+    let data = std::fs::read(path)
+        .map_err(|e| format!("Read error: {}", e))?;
+    let header_size = BrainHeader::serialized_size();
+    if data.len() < header_size {
+        return Err("File too small for brain header (possibly legacy v1)".into());
+    }
+    let header: BrainHeader = bincode::deserialize(&data[..header_size])
+        .map_err(|e| format!("Header parse error: {}", e))?;
+    if header.magic != BRAIN_MAGIC {
+        return Err("Not a SAGE brain file (bad magic bytes, possibly legacy v1)".into());
+    }
+    Ok(header)
 }
 
 /// Get the default brain persistence path
