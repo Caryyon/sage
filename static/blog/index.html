@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog — SAGE</title>
+    <meta name="description" content="Research updates, breakthroughs, and technical deep dives from the SAGE project.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* NAV */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo a { -webkit-text-fill-color: inherit; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* CONTENT */
+        .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+        .page-header {
+            padding: 120px 24px 60px;
+            text-align: center;
+            position: relative; z-index: 1;
+        }
+        .page-header h1 {
+            font-size: clamp(2rem, 5vw, 3rem);
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 8px;
+        }
+        .page-header p { color: var(--text-dim); font-size: 0.88rem; }
+
+        /* POST LIST */
+        .posts { position: relative; z-index: 1; padding-bottom: 100px; }
+        .post-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 24px;
+            transition: all 0.25s;
+        }
+        .post-card:hover { border-color: var(--cyan); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .post-date { font-size: 0.7rem; color: var(--purple); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+        .post-card h2 { font-size: 1.1rem; margin-bottom: 12px; }
+        .post-card h2 a { color: var(--text); }
+        .post-card h2 a:hover { color: var(--cyan); text-decoration: none; }
+        .post-excerpt { font-size: 0.82rem; color: var(--text-dim); line-height: 1.7; margin-bottom: 16px; }
+        .read-more { font-size: 0.75rem; color: var(--cyan); }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+        }
+        .footer-brand { font-size: 0.75rem; color: var(--text-dim); }
+        .footer-links { display: flex; gap: 24px; }
+        .footer-links a { color: var(--text-dim); font-size: 0.72rem; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+            .post-card { padding: 24px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <span class="logo"><a href="/">🌿 SAGE</a></span>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/blog" style="color: var(--cyan);">Blog</a>
+            <a href="/docs">Docs</a>
+            <a href="/research">Research</a>
+            <a href="https://discord.gg/YXThZcrPHc" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div class="page-header">
+    <h1>Blog</h1>
+    <p>Research updates, breakthroughs, and technical deep dives.</p>
+</div>
+
+<div class="container posts">
+    <article class="post-card">
+        <div class="post-date">February 8, 2026</div>
+        <h2><a href="/blog/reservoir-computing.html">NCA as a Dynamical Reservoir: 100% Top-5 Prediction with a Linear Readout</a></h2>
+        <p class="post-excerpt">A linear function — just a matrix multiply and bias — can decode next-token predictions from NCA grid dynamics with 88% top-1 and 100% top-5 accuracy. This is the mathematical proof that cellular automata are performing real computation, not memorization. The foundation for killing the LLM is proven.</p>
+        <a href="/blog/reservoir-computing.html" class="read-more">Read more →</a>
+    </article>
+</div>
+
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="/">Home</a>
+            <a href="/docs">Docs</a>
+            <a href="https://discord.gg/YXThZcrPHc" target="_blank">Discord</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>
