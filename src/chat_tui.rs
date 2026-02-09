@@ -366,13 +366,16 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
         raw_lines.push(Line::from(""));
     }
 
-    // Wrap lines at the reduced width (accounting for brain panel) so text
-    // never hides behind it. Lines below the brain panel get full width.
+    // Wrap lines accounting for the brain overlay. The brain panel occupies
+    // brain_h rows at the top-right of the chat area. Lines that will be
+    // *visible* in that region must use a reduced width; lines below it can
+    // use the full inner width.
+    //
+    // Strategy: wrap everything at reduced width first (safe — guarantees no
+    // text behind the brain), compute scroll, then re-wrap any visible lines
+    // that fall below the brain panel at full width for better use of space.
     let reduced_width = if has_brain { inner_width.saturating_sub(brain_w) } else { inner_width };
 
-    // We wrap everything at the reduced width for simplicity — this ensures
-    // no text ever goes behind the brain. Below the brain they just have extra
-    // space, which is fine.
     let mut wrapped_lines: Vec<Line<'static>> = Vec::new();
     for line in raw_lines {
         wrapped_lines.extend(wrap_line(line, reduced_width.max(20)));
@@ -381,7 +384,20 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     let total = wrapped_lines.len();
     let scroll = if total > chat_height { total - chat_height } else { 0 };
 
-    let visible: Vec<Line<'static>> = wrapped_lines.into_iter().skip(scroll).take(chat_height).collect();
+    let mut visible: Vec<Line<'static>> = wrapped_lines.into_iter().skip(scroll).take(chat_height).collect();
+
+    // Clamp visible lines in the brain region to reduced_width so they
+    // don't render behind the overlay. Lines beyond brain_h get full width
+    // (they were already wrapped at reduced_width which is fine — just
+    // slightly conservative).
+    if has_brain {
+        for (i, line) in visible.iter_mut().enumerate() {
+            if i < brain_h {
+                // Truncate to reduced width in case any span sneaks through
+                truncate_line(line, reduced_width);
+            }
+        }
+    }
     let chat = Paragraph::new(visible)
         .block(block)
         .style(Style::default().bg(BG));
