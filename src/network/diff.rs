@@ -4,6 +4,7 @@
 //! Only changed cells/channels are included (sparse representation).
 
 use serde::{Deserialize, Serialize};
+use crate::grid::is_shared_channel;
 
 /// A single cell-channel change using normalized coordinates (0.0–1.0).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -75,6 +76,10 @@ impl KnowledgeDiff {
         for row in 0..height {
             for col in 0..width {
                 for ch in 0..num_channels {
+                    // Only sync shared channels — private channels stay local
+                    if !is_shared_channel(ch) {
+                        continue;
+                    }
                     let ov = old[row][col][ch];
                     let nv = new[row][col][ch];
                     if (nv - ov).abs() > threshold {

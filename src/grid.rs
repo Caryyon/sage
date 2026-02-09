@@ -12,6 +12,25 @@ pub const NUM_COMM_CHANNELS: usize = 2;  // Cross-node communication channels
 pub const NUM_META_CHANNELS: usize = 2;  // Metadata channels (timestamp, confidence)
 pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + NUM_ENV_CHANNELS + NUM_MEMORY_CHANNELS + NUM_KNOWLEDGE_CHANNELS + NUM_COMM_CHANNELS + NUM_META_CHANNELS;  // 32 total
 
+// ── Channel Partitioning (shared vs private) ───────────────────────────────
+// For p2p knowledge sharing: shared channels sync via gossip, private stay local.
+// Layout: channels 0..23 are shared (synced across nodes), channels 24..31 are private.
+pub const NUM_SHARED_CHANNELS: usize = 24;
+pub const NUM_PRIVATE_CHANNELS: usize = 8;
+pub const PRIVATE_CHANNELS_START: usize = NUM_SHARED_CHANNELS; // Channel 24
+
+/// Returns true if the given channel index is shared (synced via gossip).
+#[inline]
+pub fn is_shared_channel(channel: usize) -> bool {
+    channel < NUM_SHARED_CHANNELS
+}
+
+/// Returns true if the given channel index is private (local only).
+#[inline]
+pub fn is_private_channel(channel: usize) -> bool {
+    channel >= PRIVATE_CHANNELS_START && channel < NUM_CHANNELS
+}
+
 // Channel indices
 pub const FOOD_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS;  // Channel 20
 pub const TOXIN_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + 1;  // Channel 21
@@ -432,4 +451,38 @@ pub fn grid_to_ascii(grid: &Grid) -> String {
         result.push('\n');
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_channel_counts() {
+        assert_eq!(NUM_CHANNELS, 32, "Total channels should be 32");
+        assert_eq!(NUM_SHARED_CHANNELS + NUM_PRIVATE_CHANNELS, NUM_CHANNELS,
+            "Shared + private should equal total");
+    }
+
+    #[test]
+    fn test_channel_partitioning() {
+        // Channels 0..23 are shared
+        for ch in 0..NUM_SHARED_CHANNELS {
+            assert!(is_shared_channel(ch), "Channel {} should be shared", ch);
+            assert!(!is_private_channel(ch), "Channel {} should not be private", ch);
+        }
+        // Channels 24..31 are private
+        for ch in PRIVATE_CHANNELS_START..NUM_CHANNELS {
+            assert!(is_private_channel(ch), "Channel {} should be private", ch);
+            assert!(!is_shared_channel(ch), "Channel {} should not be shared", ch);
+        }
+    }
+
+    #[test]
+    fn test_grid_new_dimensions() {
+        let grid = Grid::new(64, 64);
+        assert_eq!(grid.width, 64);
+        assert_eq!(grid.height, 64);
+        assert_eq!(grid.cells[0][0].len(), NUM_CHANNELS);
+    }
 }
