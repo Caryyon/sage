@@ -11,7 +11,7 @@ use sage::inference::nca_predictor::{
 };
 use sage::inference::reservoir::{
     default_readout_path, extract_features, train_reservoir_readout,
-    FeatureStrategy, ReservoirConfig, ReservoirReadout,
+    train_standalone_readout, FeatureStrategy, ReservoirConfig, ReservoirReadout,
 };
 use std::fs;
 
@@ -25,6 +25,7 @@ fn main() {
 
     match args[1].as_str() {
         "train" => cmd_train(&args[2..]),
+        "standalone" => cmd_standalone(&args[2..]),
         "eval" => cmd_eval(&args[2..]),
         "compare" => cmd_compare(&args[2..]),
         "--demo" => cmd_demo(),
@@ -40,8 +41,9 @@ fn print_help() {
     eprintln!("sage-reservoir: Reservoir computing with linear readout for NCA");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  train    Train NCA (ES) then train linear readout");
-    eprintln!("  eval     Evaluate a trained readout on a corpus");
+    eprintln!("  train      Train NCA (ES) then train linear readout");
+    eprintln!("  standalone Train linear readout on RANDOM NCA (no ES training)");
+    eprintln!("  eval       Evaluate a trained readout on a corpus");
     eprintln!("  compare  Side-by-side comparison: reservoir vs ES-only");
     eprintln!("  --demo   Quick demo on Shakespeare excerpt");
     eprintln!();
@@ -298,6 +300,48 @@ fn cmd_compare(args: &[String]) {
     eprintln!("\n━━━ Summary ━━━");
     eprintln!("   ES-only top-5:  {:.2}% ({:.1}× random)", es_acc * 100.0, es_acc / es_random);
     eprintln!("   Random baseline: {:.4}%", es_random * 100.0);
+}
+
+fn cmd_standalone(args: &[String]) {
+    let opts = parse_opts(args);
+    let corpus = load_corpus(&opts);
+
+    eprintln!("🧪 Standalone Linear Readout (Random NCA Reservoir)");
+    eprintln!("   This tests whether NCA grid dynamics encode language structure");
+    eprintln!("   WITHOUT any NCA weight training. Pure reservoir computing.");
+    eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
+
+    let rc = ReservoirConfig {
+        readout_epochs: opts.readout_epochs,
+        learning_rate: opts.lr,
+        feature_strategy: opts.strategy,
+        max_examples: opts.max_examples,
+        context_window: 5,
+        ..Default::default()
+    };
+
+    match train_standalone_readout(&corpus, opts.grid_size, 3, &rc, true) {
+        Ok((readout, top1, top5, random)) => {
+            eprintln!("\n✅ Standalone readout training complete!");
+            eprintln!("   Top-1 accuracy: {:.2}% ({:.1}× random)", top1 * 100.0, top1 / random);
+            eprintln!("   Top-5 accuracy: {:.2}% ({:.1}× random)", top5 * 100.0, top5 / random);
+            eprintln!("   Random baseline: {:.4}%", random * 100.0);
+
+            if top1 / random > 1.5 {
+                eprintln!("   🎉 SIGNAL DETECTED! Random NCA dynamics encode structure!");
+            }
+
+            let path = default_readout_path();
+            match readout.save(&path) {
+                Ok(()) => eprintln!("   💾 Readout saved to {}", path.display()),
+                Err(e) => eprintln!("   ❌ Failed to save readout: {}", e),
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Standalone readout training failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn cmd_demo() {

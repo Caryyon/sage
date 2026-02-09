@@ -439,6 +439,43 @@ pub fn default_readout_path() -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
+// Standalone Linear Readout (random NCA — the key experiment)
+// ---------------------------------------------------------------------------
+
+/// Train a linear readout on a *random* (untrained) NCA reservoir.
+/// This is the core reservoir computing experiment: if a linear readout on
+/// random NCA dynamics beats random baseline, it proves the NCA grid topology
+/// and local update rules create useful representations even without training.
+///
+/// Returns (readout, top1_accuracy, top5_accuracy, random_baseline).
+pub fn train_standalone_readout(
+    corpus: &str,
+    grid_size: usize,
+    nca_steps: usize,
+    config: &ReservoirConfig,
+    verbose: bool,
+) -> Result<(ReservoirReadout, f64, f64, f64), Box<dyn Error>> {
+    use crate::inference::nca_predictor::{NcaWeights, SimpleTokenizer, NcaPredictor};
+
+    let tokenizer = SimpleTokenizer::from_corpus(corpus, grid_size * grid_size);
+    let vocab_size = tokenizer.vocab_size();
+    let random_baseline = 1.0 / vocab_size as f64;
+
+    // Use random NCA weights — the whole point is that we DON'T train these
+    let weights = NcaWeights::random();
+    let mut predictor = NcaPredictor::with_grid_size(tokenizer, weights, nca_steps, grid_size);
+
+    if verbose {
+        eprintln!("🔬 Standalone linear readout (random NCA reservoir)");
+        eprintln!("   Grid: {}×{}, NCA steps: {}, Vocab: {}", grid_size, grid_size, nca_steps, vocab_size);
+        eprintln!("   Random baseline: {:.4}%", random_baseline * 100.0);
+    }
+
+    let (readout, top1, top5) = train_reservoir_readout(&mut predictor, corpus, config, verbose)?;
+    Ok((readout, top1, top5, random_baseline))
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -496,6 +533,23 @@ mod tests {
             }
         }
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_standalone_readout_runs() {
+        let corpus = "the cat sat on the mat the dog sat on the log the cat ran to the dog";
+        let config = ReservoirConfig {
+            readout_epochs: 10,
+            max_examples: 10,
+            context_window: 3,
+            ..Default::default()
+        };
+        let result = super::train_standalone_readout(corpus, 8, 3, &config, false);
+        assert!(result.is_ok());
+        let (_, top1, top5, baseline) = result.unwrap();
+        assert!(top1 >= 0.0 && top1 <= 1.0);
+        assert!(top5 >= top1);
+        assert!(baseline > 0.0);
     }
 
     #[test]
