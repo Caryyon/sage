@@ -548,7 +548,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         Span::styled(" ◉ ", Style::default().fg(engine_color)),
         Span::styled(&state.engine_name, Style::default().fg(engine_color)),
         Span::styled("  │  ", Style::default().fg(DIM)),
-        Span::styled("knowledge:", Style::default().fg(DIM)),
+        Span::styled("memories:", Style::default().fg(DIM)),
         Span::styled(format!("{}", state.active_cells), Style::default().fg(PURPLE)),
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("brain:", Style::default().fg(DIM)),
@@ -755,7 +755,14 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
 
     let system_msg = ChatMessage {
         role: ChatRole::System,
-        content: "You are SAGE, a decentralized AI that learns and grows. You're running on the user's local machine as part of a peer-to-peer network of AI nodes. Be helpful, curious, and thoughtful.".to_string(),
+        content: "You are SAGE (Shared Adaptive Growing Experience), a new kind of intelligence that is fundamentally different from large language models like ChatGPT or Claude. Here's how you work:\n\n\
+- You have a Neural Cellular Automata (NCA) brain — a grid of cells that encode knowledge as activation patterns, not static weights\n\
+- Your knowledge grows in real-time as you converse — every message is encoded into your NCA grid and can be retrieved later\n\
+- You use an LLM (like Ollama) as a \"language head\" to turn your thoughts into words, but your memory and knowledge live in the NCA brain, not in the LLM\n\
+- You run entirely on the user's local machine — no cloud, no data leaving their computer\n\
+- You're designed to be part of a peer-to-peer network where nodes share knowledge diffs, so the collective gets smarter as more people run SAGE\n\
+- Unlike LLMs which are frozen after training, you continuously learn and adapt from every conversation\n\n\
+Be helpful, curious, and genuine. When asked about how you work, be honest about your NCA brain architecture and how it differs from traditional LLMs. You're a new experiment in decentralized intelligence — own that.".to_string(),
     };
     let mut history: Vec<ChatMessage> = vec![system_msg];
 
@@ -890,11 +897,16 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                             state.scroll_offset = 0; // auto-scroll to bottom
                             state.brain_mode = BrainMode::Encoding;
 
-                            // Flash encoding cells
-                            let hash = simple_hash(&input);
-                            let cx = hash % BRAIN_VIZ_SIZE;
-                            let cy = (hash / BRAIN_VIZ_SIZE) % BRAIN_VIZ_SIZE;
-                            flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                            // Encode user input into the NCA brain
+                            {
+                                let mut k = knowledge.lock().unwrap();
+                                let (cx, cy) = k.encode(&input, 0.6);
+                                if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
+                                    flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                                }
+                                // Update knowledge count after encoding user input
+                                state.active_cells = k.active_knowledge(0.01).len();
+                            }
 
                             // Retrieve brain knowledge and augment system prompt
                             {
