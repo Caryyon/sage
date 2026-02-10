@@ -55,6 +55,33 @@ use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowle
 use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
 use crate::inference::ollama::OllamaEngine;
 
+/// Query the NCA brain for knowledge relevant to the user's input.
+/// Returns a context string to prepend to the system prompt, or None if nothing useful found.
+fn retrieve_brain_knowledge(knowledge: &NCAKnowledge, query: &str) -> Option<String> {
+    let results = knowledge.query(query, 5);
+    if results.is_empty() {
+        return None;
+    }
+
+    // Filter to results that have actual text and meaningful relevance
+    let relevant: Vec<_> = results.iter()
+        .filter(|r| r.text.is_some() && r.relevance > 0.05)
+        .collect();
+
+    if relevant.is_empty() {
+        return None;
+    }
+
+    let mut context = String::from("## Recalled Knowledge (from your NCA brain)\n");
+    for (i, r) in relevant.iter().enumerate() {
+        if let Some(ref text) = r.text {
+            context.push_str(&format!("{}. [relevance={:.2}] {}\n", i + 1, r.relevance, text));
+        }
+    }
+    context.push_str("\nUse the above recalled knowledge to inform your response if relevant. If none of it is relevant, ignore it.\n");
+    Some(context)
+}
+
 /// Engine selection mode for the TUI
 #[derive(Clone, Debug)]
 pub enum EngineMode {
@@ -557,7 +584,14 @@ fn simple_hash(s: &str) -> usize {
 /// Run the ratatui TUI chat interface with local inference.
 pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let brain_path = default_brain_path();
-    let knowledge = NCAKnowledge::new();
+    let mut knowledge = NCAKnowledge::new();
+    // Load existing brain if available
+    if std::path::Path::new(&brain_path).exists() {
+        match knowledge.load(&brain_path) {
+            Ok(()) => eprintln!("🧠 Loaded brain from {}", brain_path),
+            Err(e) => eprintln!("⚠️  Failed to load brain: {}", e),
+        }
+    }
 
     let engine: Arc<dyn InferenceEngine> = Arc::from(match engine_mode {
         EngineMode::ForceOllama => {
@@ -592,11 +626,12 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
     });
 
     let engine_name = engine.name().to_string();
-    let active_cells = knowledge.active_knowledge(0.01).len();
+    let knowledge = Arc::new(std::sync::Mutex::new(knowledge));
+    let active_cells = knowledge.lock().unwrap().active_knowledge(0.01).len();
 
     // Build brain grid from NCA knowledge
     let mut brain_grid = vec![vec![0.0f64; GRID_SIZE]; GRID_SIZE];
-    let active = knowledge.active_knowledge(0.01);
+    let active = knowledge.lock().unwrap().active_knowledge(0.01);
     for entry in &active {
         let (x, y) = entry.position;
         if x < GRID_SIZE && y < GRID_SIZE {
@@ -684,16 +719,21 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                         }
                         history.push(ChatMessage {
                             role: ChatRole::Assistant,
-                            content: response,
+                            content: response.clone(),
                         });
                         state.generating = false;
                         state.brain_mode = BrainMode::Idle;
 
-                        // Flash retrieval cells
-                        let hash = simple_hash(&state.messages.last().map(|m| m.content.as_str()).unwrap_or(""));
-                        let cx = (hash / 7) % GRID_SIZE;
-                        let cy = (hash / 13) % GRID_SIZE;
-                        flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Retrieving);
+                        // Encode the response into the brain
+                        {
+                            let mut k = knowledge.lock().unwrap();
+                            let (cx, cy) = k.encode(&response, 0.8);
+                            if cx < GRID_SIZE && cy < GRID_SIZE {
+                                flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                            }
+                            // Update active cell count
+                            state.active_cells = k.active_knowledge(0.01).len();
+                        }
                     }
                     InferenceMsg::Error(e) => {
                         if let Some(last) = state.messages.last_mut() {
@@ -711,6 +751,25 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         // Decay flashes
         decay_flashes(&mut state.brain_flashes);
         state.frame_counter += 1;
+
+        // Refresh brain grid visualization periodically (every 60 frames ≈ 3s)
+        if state.frame_counter % 60 == 0 {
+            if let Ok(k) = knowledge.try_lock() {
+                let active = k.active_knowledge(0.01);
+                // Reset grid
+                for row in state.brain_grid.iter_mut() {
+                    for cell in row.iter_mut() {
+                        *cell = 0.0;
+                    }
+                }
+                for entry in &active {
+                    let (x, y) = entry.position;
+                    if x < GRID_SIZE && y < GRID_SIZE {
+                        state.brain_grid[y][x] = entry.relevance as f64;
+                    }
+                }
+            }
+        }
 
         // Draw
         terminal.draw(|f| ui(f, &state))?;
@@ -750,6 +809,43 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                             let cx = hash % GRID_SIZE;
                             let cy = (hash / GRID_SIZE) % GRID_SIZE;
                             flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+
+                            // Retrieve brain knowledge and augment system prompt
+                            {
+                                let k = knowledge.lock().unwrap();
+                                if let Some(brain_context) = retrieve_brain_knowledge(&k, &input) {
+                                    // Augment the system message with retrieved knowledge
+                                    if let Some(sys) = history.first_mut() {
+                                        if sys.role == ChatRole::System && !sys.content.contains("## Recalled Knowledge") {
+                                            sys.content = format!("{}\n\n{}", sys.content, brain_context);
+                                        } else if sys.role == ChatRole::System {
+                                            // Replace previous recalled knowledge section
+                                            if let Some(pos) = sys.content.find("\n\n## Recalled Knowledge") {
+                                                sys.content.truncate(pos);
+                                                sys.content = format!("{}\n\n{}", sys.content, brain_context);
+                                            }
+                                        }
+                                    }
+
+                                    // Flash retrieval cells in the brain visualization
+                                    let results = k.query(&input, 3);
+                                    for r in &results {
+                                        let (rx, ry) = r.position;
+                                        if rx < GRID_SIZE && ry < GRID_SIZE {
+                                            flash_nearby_cells(&mut state.brain_flashes, rx, ry, BrainMode::Retrieving);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Encode user query into brain
+                            {
+                                let mut k = knowledge.lock().unwrap();
+                                let (cx, cy) = k.encode(&input, 0.7);
+                                if cx < GRID_SIZE && cy < GRID_SIZE {
+                                    flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                                }
+                            }
 
                             // Run streaming inference in background thread
                             history.push(ChatMessage {
@@ -824,6 +920,15 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                     _ => {}
                 }
             }
+        }
+    }
+
+    // Save brain before exit
+    {
+        let k = knowledge.lock().unwrap();
+        match k.save(&brain_path) {
+            Ok(()) => eprintln!("🧠 Brain saved to {}", brain_path),
+            Err(e) => eprintln!("⚠️  Failed to save brain: {}", e),
         }
     }
 
