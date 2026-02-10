@@ -11,24 +11,24 @@ fn strip_emoji(s: &str) -> String {
             // Filter out emoji ranges and misc symbols
             let cp = *c as u32;
             cp < 0x2600 // Below symbols range
-            || (cp >= 0x2700 && cp < 0x2800) // Dingbats (some are fine)
-            || (cp >= 0xFE00 && cp < 0xFE10) // Variation selectors
+            || (0x2700..0x2800).contains(&cp) // Dingbats (some are fine)
+            || (0xFE00..0xFE10).contains(&cp) // Variation selectors
             || !(
-                (cp >= 0x1F600 && cp <= 0x1F64F)  // Emoticons
-                || (cp >= 0x1F300 && cp <= 0x1F5FF) // Misc symbols & pictographs
-                || (cp >= 0x1F680 && cp <= 0x1F6FF) // Transport & map
-                || (cp >= 0x1F700 && cp <= 0x1F77F) // Alchemical
-                || (cp >= 0x1F780 && cp <= 0x1F7FF) // Geometric extended
-                || (cp >= 0x1F800 && cp <= 0x1F8FF) // Supplemental arrows
-                || (cp >= 0x1F900 && cp <= 0x1F9FF) // Supplemental symbols
-                || (cp >= 0x1FA00 && cp <= 0x1FA6F) // Chess symbols
-                || (cp >= 0x1FA70 && cp <= 0x1FAFF) // Symbols extended-A
-                || (cp >= 0x2600 && cp <= 0x26FF)   // Misc symbols
-                || (cp >= 0x2700 && cp <= 0x27BF)   // Dingbats
-                || (cp >= 0xFE00 && cp <= 0xFE0F)   // Variation selectors
-                || (cp >= 0x200D && cp <= 0x200D)   // ZWJ
+                (0x1F600..=0x1F64F).contains(&cp)  // Emoticons
+                || (0x1F300..=0x1F5FF).contains(&cp) // Misc symbols & pictographs
+                || (0x1F680..=0x1F6FF).contains(&cp) // Transport & map
+                || (0x1F700..=0x1F77F).contains(&cp) // Alchemical
+                || (0x1F780..=0x1F7FF).contains(&cp) // Geometric extended
+                || (0x1F800..=0x1F8FF).contains(&cp) // Supplemental arrows
+                || (0x1F900..=0x1F9FF).contains(&cp) // Supplemental symbols
+                || (0x1FA00..=0x1FA6F).contains(&cp) // Chess symbols
+                || (0x1FA70..=0x1FAFF).contains(&cp) // Symbols extended-A
+                || (0x2600..=0x26FF).contains(&cp)   // Misc symbols
+                || (0x2700..=0x27BF).contains(&cp)   // Dingbats
+                || (0xFE00..=0xFE0F).contains(&cp)   // Variation selectors
+                || cp == 0x200D   // ZWJ
                 || cp == 0x20E3                      // Combining enclosing keycap
-                || (cp >= 0xE0020 && cp <= 0xE007F) // Tags
+                || (0xE0020..=0xE007F).contains(&cp) // Tags
             )
         })
         .collect()
@@ -466,7 +466,7 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let total = wrapped_lines.len();
-    let max_scroll = if total > chat_height { total - chat_height } else { 0 };
+    let max_scroll = total.saturating_sub(chat_height);
     // scroll_offset is from bottom: 0 = latest, clamped to max
     let effective_offset = state.scroll_offset.min(max_scroll);
     let scroll = max_scroll.saturating_sub(effective_offset);
@@ -660,7 +660,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
     for entry in &active {
         let (x, y) = entry.position;
         if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
-            brain_grid[y][x] = entry.relevance as f64;
+            brain_grid[y][x] = entry.relevance;
         }
     }
 
@@ -839,7 +839,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         state.frame_counter += 1;
 
         // Refresh brain grid visualization periodically (every 60 frames ≈ 3s)
-        if state.frame_counter % 60 == 0 {
+        if state.frame_counter.is_multiple_of(60) {
             if let Ok(k) = knowledge.try_lock() {
                 let active = k.active_knowledge(0.01);
                 // Reset grid
@@ -851,7 +851,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                 for entry in &active {
                     let (x, y) = entry.position;
                     if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
-                        state.brain_grid[y][x] = entry.relevance as f64;
+                        state.brain_grid[y][x] = entry.relevance;
                     }
                 }
             }

@@ -599,7 +599,7 @@ impl HybridTracker {
         if nca_was_correct { self.correct += 1; }
 
         // Every 100 predictions, check if we should promote NCA
-        if self.predictions % 100 == 0 && self.predictions > 0 {
+        if self.predictions.is_multiple_of(100) && self.predictions > 0 {
             let accuracy = self.correct as f64 / self.predictions as f64;
             if accuracy > self.config.promotion_threshold {
                 self.config.nca_weight = (self.config.nca_weight + self.config.promotion_rate).min(1.0);

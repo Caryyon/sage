@@ -267,7 +267,7 @@ async fn handle_client(
                     ))
                 };
 
-                let total_sources = if peer_responded > 0 { peer_responded + 1 } else { if local_count > 0 { 1 } else { 0 } };
+                let total_sources = if peer_responded > 0 { peer_responded + 1 } else if local_count > 0 { 1 } else { 0 };
                 (ctx, peer_result.peers_queried, total_sources)
             };
             let _ = (dist_peer_count, dist_source_count); // used for future status reporting

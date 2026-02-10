@@ -136,6 +136,12 @@ pub struct OpenClawBridge {
     task_counter: Arc<RwLock<u64>>,
 }
 
+impl Default for OpenClawBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpenClawBridge {
     pub fn new() -> Self {
         let config = OpenClawConfig::from_default_path();

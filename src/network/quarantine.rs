@@ -36,6 +36,12 @@ pub struct Quarantine {
     items: Vec<QuarantinedDiff>,
 }
 
+impl Default for Quarantine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Quarantine {
     pub fn new() -> Self {
         Self { items: Vec::new() }

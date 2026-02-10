@@ -379,11 +379,7 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let total = wrapped_lines.len();
-    let scroll = if total > chat_height {
-        total - chat_height
-    } else {
-        0
-    };
+    let scroll = total.saturating_sub(chat_height);
 
     if has_brain {
         let reduced_width = inner_width.saturating_sub(brain_w);

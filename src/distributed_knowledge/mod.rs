@@ -175,6 +175,12 @@ pub struct NCAKnowledge {
     timestamp_counter: f64,
 }
 
+impl Default for NCAKnowledge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NCAKnowledge {
     pub fn new() -> Self {
         Self {

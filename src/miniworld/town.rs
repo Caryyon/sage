@@ -352,7 +352,7 @@ pub fn create_default_town() -> World {
                     .iter()
                     .any(|&(nx, ny)| {
                         if nx < W && ny < H {
-                            world.get_tile(nx, ny).map_or(false, |t| t.ground == GroundTile::Water)
+                            world.get_tile(nx, ny).is_some_and(|t| t.ground == GroundTile::Water)
                         } else { false }
                     });
                 if adj_water {

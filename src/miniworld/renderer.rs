@@ -183,11 +183,10 @@ impl LayeredRenderer {
                 let dist_y = (py + dy) as i32 - center_y as i32;
                 let dist = ((dist_x * dist_x + dist_y * dist_y) as f32).sqrt();
 
-                if dist <= radius as f32 {
-                    if px + dx < img.width() && py + dy < img.height() {
+                if dist <= radius as f32
+                    && px + dx < img.width() && py + dy < img.height() {
                         img.put_pixel(px + dx, py + dy, color);
                     }
-                }
             }
         }
     }
@@ -272,11 +271,10 @@ impl LayeredRenderer {
                 let dist_x = ((px + dx) as i32 - center_x as i32).abs();
                 let dist_y = ((py + dy) as i32 - center_y as i32).abs();
 
-                if dist_x + dist_y < (size / 2) as i32 {
-                    if px + dx < img.width() && py + dy < img.height() {
+                if dist_x + dist_y < (size / 2) as i32
+                    && px + dx < img.width() && py + dy < img.height() {
                         img.put_pixel(px + dx, py + dy, color);
                     }
-                }
             }
         }
     }
@@ -374,11 +372,10 @@ impl LayeredRenderer {
                 let dist_y = (py + dy) as i32 - center_y as i32;
                 let dist = ((dist_x * dist_x + dist_y * dist_y) as f32).sqrt();
 
-                if dist <= radius as f32 {
-                    if px + dx < img.width() && py + dy < img.height() {
+                if dist <= radius as f32
+                    && px + dx < img.width() && py + dy < img.height() {
                         img.put_pixel(px + dx, py + dy, color);
                     }
-                }
             }
         }
 

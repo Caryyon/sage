@@ -99,7 +99,7 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
     let mut quad_counts = [0usize; 4];
     for (r, row) in grid.iter().enumerate() {
         for (c, cell) in row.iter().enumerate() {
-            let q = if r < half { if c < half { 0 } else { 1 } } else { if c < half { 2 } else { 3 } };
+            let q = if r < half { if c < half { 0 } else { 1 } } else if c < half { 2 } else { 3 };
             quad_counts[q] += 1;
             for ch in 0..NCA_CHANNELS {
                 quad_sums[q][ch] += cell[ch];

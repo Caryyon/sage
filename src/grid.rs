@@ -28,7 +28,7 @@ pub fn is_shared_channel(channel: usize) -> bool {
 /// Returns true if the given channel index is private (local only).
 #[inline]
 pub fn is_private_channel(channel: usize) -> bool {
-    channel >= PRIVATE_CHANNELS_START && channel < NUM_CHANNELS
+    (PRIVATE_CHANNELS_START..NUM_CHANNELS).contains(&channel)
 }
 
 // Channel indices
@@ -86,8 +86,8 @@ impl Grid {
 
         // Create a larger, more diverse seed region with random values
         let seed_radius = 4;  // Increased from 2 to 4 (9x9 region)
-        for dy in -(seed_radius as i32)..=(seed_radius as i32) {
-            for dx in -(seed_radius as i32)..=(seed_radius as i32) {
+        for dy in -seed_radius..=seed_radius {
+            for dx in -seed_radius..=seed_radius {
                 let y = (center_y as i32 + dy) as usize;
                 let x = (center_x as i32 + dx) as usize;
 
@@ -410,8 +410,8 @@ pub fn perceive(grid: &Grid, y: usize, x: usize) -> Vec<f64> {
 
         for dy_offset in -1..=1 {
             for dx_offset in -1..=1 {
-                let ny = (y as i32 + dy_offset) as i32;
-                let nx = (x as i32 + dx_offset) as i32;
+                let ny = (y as i32 + dy_offset);
+                let nx = (x as i32 + dx_offset);
                 let cell = grid.get_cell(ny, nx);
                 let val = cell[channel];
 

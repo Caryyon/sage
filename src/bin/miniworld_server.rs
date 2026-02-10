@@ -302,20 +302,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         openclaw,
     });
 
-    let research_topics = vec![
-        "neural architecture search", "self-supervised learning", "meta-learning strategies",
+    let research_topics = ["neural architecture search", "self-supervised learning", "meta-learning strategies",
         "curiosity-driven exploration", "emergent behavior in multi-agent systems",
-        "transformer attention mechanisms", "reinforcement learning from human feedback",
-    ];
-    let coding_projects = vec![
-        "pattern recognition module", "memory consolidation system", "adaptive learning rate scheduler",
-        "distributed training pipeline", "knowledge graph builder", "autonomous code reviewer",
-    ];
-    let analysis_subjects = vec![
-        "training loss convergence patterns", "agent interaction dynamics",
+        "transformer attention mechanisms", "reinforcement learning from human feedback"];
+    let coding_projects = ["pattern recognition module", "memory consolidation system", "adaptive learning rate scheduler",
+        "distributed training pipeline", "knowledge graph builder", "autonomous code reviewer"];
+    let analysis_subjects = ["training loss convergence patterns", "agent interaction dynamics",
         "resource allocation efficiency", "learning transfer between domains",
-        "population diversity metrics", "novelty search effectiveness",
-    ];
+        "population diversity metrics", "novelty search effectiveness"];
 
     // Simulation loop
     let sim_state = state.clone();
@@ -338,18 +332,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let char_ids: Vec<String> = world.characters.keys().cloned().collect();
                 for id in char_ids {
                     if let Some(character) = world.characters.get_mut(&id) {
-                        if character.state == CharacterState::Idle && character.destination.is_none() {
-                            if rand::random::<f32>() < 0.05 {
+                        if character.state == CharacterState::Idle && character.destination.is_none()
+                            && rand::random::<f32>() < 0.05 {
                                 character.wander(w, h);
                             }
-                        }
                     }
                 }
                 world.tick
             };
 
             // Periodically spawn OpenClaw tasks
-            if task_poll_counter % 10 == 0 {
+            if task_poll_counter.is_multiple_of(10) {
                 let char_states: Vec<(String, CharacterState, String)> = {
                     let world = sim_state.world.read().await;
                     world.characters.iter().map(|(id, c)| {

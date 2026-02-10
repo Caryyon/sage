@@ -278,7 +278,7 @@ mod tests {
     fn test_serialize_roundtrip() {
         let old = make_grid(2, 2, 2, 0.0);
         let mut new = make_grid(2, 2, 2, 0.0);
-        new[1][0][1] = 3.14;
+        new[1][0][1] = std::f64::consts::PI;
 
         let diff = KnowledgeDiff::compute(&old, &new, "node-a".into(), 42, 0.9, 1e-9);
         let bytes = diff.to_bytes();

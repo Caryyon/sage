@@ -101,6 +101,12 @@ pub struct TrustStore {
     pub peers: HashMap<String, PeerTrust>,
 }
 
+impl Default for TrustStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TrustStore {
     pub fn new() -> Self {
         Self {
@@ -150,6 +156,12 @@ impl TrustStore {
 pub struct RateLimiter {
     /// peer_id -> list of timestamps of recent diffs
     windows: HashMap<String, Vec<Instant>>,
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RateLimiter {

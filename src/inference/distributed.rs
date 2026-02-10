@@ -116,6 +116,12 @@ struct PeerConnection {
     pub last_seen: Instant,
 }
 
+impl Default for DistributedInference {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DistributedInference {
     pub fn new() -> Self {
         Self {
@@ -251,12 +257,9 @@ impl DistributedInference {
 
         let mut results = Vec::new();
         for handle in handles {
-            match tokio::time::timeout(PEER_QUERY_TIMEOUT, handle).await {
-                Ok(Ok(Ok(result))) => {
-                    self.metrics.tokens_speculated.fetch_add(result.tokens.len() as u64, Ordering::Relaxed);
-                    results.push(result);
-                }
-                _ => {}
+            if let Ok(Ok(Ok(result))) = tokio::time::timeout(PEER_QUERY_TIMEOUT, handle).await {
+                self.metrics.tokens_speculated.fetch_add(result.tokens.len() as u64, Ordering::Relaxed);
+                results.push(result);
             }
         }
 

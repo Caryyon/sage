@@ -33,6 +33,12 @@ pub struct TextStore {
     total_bytes: usize,
 }
 
+impl Default for TextStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TextStore {
     pub fn new() -> Self {
         Self {

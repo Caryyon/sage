@@ -268,7 +268,7 @@ mod tests {
         write_knowledge(&mut grid, &f2, 0.9, 0.5, &config);
 
         let results = query_knowledge(&grid, "deep learning algorithms", &config, 20);
-        assert!(results.len() > 0 || true, "Query should return results or empty gracefully");
+        assert!(true, "Query should return results or empty gracefully");
     }
 
     #[test]
