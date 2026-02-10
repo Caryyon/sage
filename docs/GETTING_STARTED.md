@@ -281,6 +281,6 @@ sage chat  # Uses /path/to/custom/sage/brain.bin etc.
 ## 🔗 Links
 
 - **GitHub:** [github.com/Caryyon/sage](https://github.com/Caryyon/sage)
-- **Discord:** [discord.gg/YXThZcrPHc](https://discord.gg/YXThZcrPHc)
+- **Discord:** [discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
 - **Website:** [whatssage.ai](https://whatssage.ai)
 - **Technical Details:** [DISTRIBUTED.md](./DISTRIBUTED.md)

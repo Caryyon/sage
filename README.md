@@ -81,7 +81,7 @@ Works with [Continue](https://continue.dev), [Cursor](https://cursor.sh), [Open 
 
 ## Community
 
-- 💬 [Discord](https://discord.gg/YXThZcrPHc)
+- 💬 [Discord](https://discord.gg/U999zZUuUV)
 - 📖 [Getting Started](docs/GETTING_STARTED.md)
 - 📚 [Documentation](docs/)
 
