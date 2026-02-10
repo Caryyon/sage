@@ -104,7 +104,7 @@ const BG: Color = Color::Rgb(0x0a, 0x0a, 0x0f);
 const DIM: Color = Color::Rgb(0x44, 0x44, 0x55);
 const ORANGE: Color = Color::Rgb(0xff, 0xa5, 0x00);
 
-const GRID_SIZE: usize = 32;
+const BRAIN_VIZ_SIZE: usize = 32;  // Visualization grid for the brain panel
 
 // --- Chat Messages ---
 #[derive(Clone)]
@@ -174,7 +174,7 @@ fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, m
         for dx in -radius..=radius {
             let nx = cx as i32 + dx;
             let ny = cy as i32 + dy;
-            if nx >= 0 && nx < GRID_SIZE as i32 && ny >= 0 && ny < GRID_SIZE as i32 {
+            if nx >= 0 && nx < BRAIN_VIZ_SIZE as i32 && ny >= 0 && ny < BRAIN_VIZ_SIZE as i32 {
                 let dist = ((dx * dx + dy * dy) as f64).sqrt();
                 let intensity = (1.0 - dist / (radius as f64 + 1.0)).max(0.0);
                 let cell = &mut flashes[ny as usize][nx as usize];
@@ -219,16 +219,16 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
     let blocks = ['·', '░', '▒', '▓', '█'];
     let grid_height = (inner.height as usize).saturating_sub(2);
     let grid_width = inner.width as usize;
-    let x_scale = GRID_SIZE as f64 / grid_width as f64;
-    let y_scale = GRID_SIZE as f64 / grid_height as f64;
+    let x_scale = BRAIN_VIZ_SIZE as f64 / grid_width as f64;
+    let y_scale = BRAIN_VIZ_SIZE as f64 / grid_height as f64;
     let pulse = (state.frame_counter as f64 * 0.05).sin() * 0.15 + 0.15;
 
     let mut lines: Vec<Line> = Vec::new();
     for row in 0..grid_height {
         let mut spans: Vec<Span> = Vec::new();
         for col in 0..grid_width {
-            let gx = (col as f64 * x_scale).min((GRID_SIZE - 1) as f64) as usize;
-            let gy = (row as f64 * y_scale).min((GRID_SIZE - 1) as f64) as usize;
+            let gx = (col as f64 * x_scale).min((BRAIN_VIZ_SIZE - 1) as f64) as usize;
+            let gy = (row as f64 * y_scale).min((BRAIN_VIZ_SIZE - 1) as f64) as usize;
 
             let activation = state.brain_grid[gy][gx].min(1.0);
             let flash = &state.brain_flashes[gy][gx];
@@ -655,19 +655,19 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
     let active_cells = knowledge.lock().unwrap().active_knowledge(0.01).len();
 
     // Build brain grid from NCA knowledge
-    let mut brain_grid = vec![vec![0.0f64; GRID_SIZE]; GRID_SIZE];
+    let mut brain_grid = vec![vec![0.0f64; BRAIN_VIZ_SIZE]; BRAIN_VIZ_SIZE];
     let active = knowledge.lock().unwrap().active_knowledge(0.01);
     for entry in &active {
         let (x, y) = entry.position;
-        if x < GRID_SIZE && y < GRID_SIZE {
+        if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
             brain_grid[y][x] = entry.relevance as f64;
         }
     }
 
     let now = Instant::now();
-    let brain_flashes: Vec<Vec<CellFlash>> = (0..GRID_SIZE)
+    let brain_flashes: Vec<Vec<CellFlash>> = (0..BRAIN_VIZ_SIZE)
         .map(|_| {
-            (0..GRID_SIZE)
+            (0..BRAIN_VIZ_SIZE)
                 .map(|_| CellFlash {
                     intensity: 0.0,
                     mode: BrainMode::Idle,
@@ -814,7 +814,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                         {
                             let mut k = knowledge.lock().unwrap();
                             let (cx, cy) = k.encode(&response, 0.8);
-                            if cx < GRID_SIZE && cy < GRID_SIZE {
+                            if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
                                 flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
                             }
                             // Update active cell count
@@ -850,7 +850,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                 }
                 for entry in &active {
                     let (x, y) = entry.position;
-                    if x < GRID_SIZE && y < GRID_SIZE {
+                    if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
                         state.brain_grid[y][x] = entry.relevance as f64;
                     }
                 }
@@ -892,8 +892,8 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
 
                             // Flash encoding cells
                             let hash = simple_hash(&input);
-                            let cx = hash % GRID_SIZE;
-                            let cy = (hash / GRID_SIZE) % GRID_SIZE;
+                            let cx = hash % BRAIN_VIZ_SIZE;
+                            let cy = (hash / BRAIN_VIZ_SIZE) % BRAIN_VIZ_SIZE;
                             flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
 
                             // Retrieve brain knowledge and augment system prompt
@@ -917,7 +917,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                                     let results = k.query(&input, 3);
                                     for r in &results {
                                         let (rx, ry) = r.position;
-                                        if rx < GRID_SIZE && ry < GRID_SIZE {
+                                        if rx < BRAIN_VIZ_SIZE && ry < BRAIN_VIZ_SIZE {
                                             flash_nearby_cells(&mut state.brain_flashes, rx, ry, BrainMode::Retrieving);
                                         }
                                     }
@@ -928,7 +928,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                             {
                                 let mut k = knowledge.lock().unwrap();
                                 let (cx, cy) = k.encode(&input, 0.7);
-                                if cx < GRID_SIZE && cy < GRID_SIZE {
+                                if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
                                     flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
                                 }
                             }
@@ -1042,7 +1042,7 @@ fn handle_command(state: &mut AppState, cmd: &str) {
                 content: format!(
                     "┌─ SAGE Status ──────────────────\n│ Engine:     {}\n│ Grid:       {}×{}\n│ Knowledge:  {} active cells\n│ Brain:      {}\n└────────────────────────────────",
                     state.engine_name,
-                    GRID_SIZE, GRID_SIZE,
+                    crate::grid::GRID_SIZE, crate::grid::GRID_SIZE,
                     state.active_cells,
                     state.brain_path,
                 ),
