@@ -530,7 +530,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(DIM_GREEN))
-            .title_top(
+            .title_bottom(
                 Line::from(vec![
                     Span::styled(format!(" {} ", peer_icon), Style::default().fg(peer_color)),
                     Span::styled(format!("{} peers ", peer_str), Style::default().fg(peer_color)),
@@ -717,7 +717,25 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                 .nth(1)?
                 .to_string();
             let latest = tag.trim_start_matches('v');
-            if latest != cv {
+            // Parse as semver-like: compare base versions, ignore pre-release suffixes
+            // e.g. "0.2.1-alpha" should NOT be considered newer than "0.2.1"
+            let parse_ver = |s: &str| -> (u32, u32, u32) {
+                let base = s.split('-').next().unwrap_or(s);
+                let parts: Vec<u32> = base.split('.').filter_map(|p| p.parse().ok()).collect();
+                (
+                    parts.first().copied().unwrap_or(0),
+                    parts.get(1).copied().unwrap_or(0),
+                    parts.get(2).copied().unwrap_or(0),
+                )
+            };
+            let current_ver = parse_ver(&cv);
+            let latest_ver = parse_ver(latest);
+            let latest_is_prerelease = latest.contains('-');
+            // Only notify if latest base version is strictly greater,
+            // or same base version and latest is NOT a pre-release while current IS
+            let is_newer = latest_ver > current_ver
+                || (latest_ver == current_ver && cv.contains('-') && !latest_is_prerelease);
+            if is_newer {
                 Some(format!("🆕 Update available: v{} → {} — run `sage update` to upgrade", cv, tag))
             } else {
                 None
