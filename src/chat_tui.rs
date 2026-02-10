@@ -51,6 +51,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+extern crate reqwest;
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
 use crate::inference::ollama::OllamaEngine;
@@ -693,6 +694,40 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         peer_count: 0,
     };
 
+    // Check for updates (non-blocking, 3s timeout)
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let update_msg: Option<String> = {
+        let cv = current_version.clone();
+        std::thread::spawn(move || -> Option<String> {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(3))
+                .user_agent("sage")
+                .build()
+                .ok()?;
+            let body = client
+                .get("https://api.github.com/repos/Caryyon/sage/releases/latest")
+                .send()
+                .ok()?
+                .text()
+                .ok()?;
+            let tag = body
+                .split("\"tag_name\"")
+                .nth(1)?
+                .split('"')
+                .nth(1)?
+                .to_string();
+            let latest = tag.trim_start_matches('v');
+            if latest != cv {
+                Some(format!("🆕 Update available: v{} → {} — run `sage update` to upgrade", cv, tag))
+            } else {
+                None
+            }
+        })
+        .join()
+        .ok()
+        .flatten()
+    };
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -705,6 +740,14 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         content: "You are SAGE, a decentralized AI that learns and grows. You're running on the user's local machine as part of a peer-to-peer network of AI nodes. Be helpful, curious, and thoughtful.".to_string(),
     };
     let mut history: Vec<ChatMessage> = vec![system_msg];
+
+    // Show update notification if available
+    if let Some(msg) = update_msg {
+        state.messages.push(TuiChatMessage {
+            role: Role::System,
+            content: msg,
+        });
+    }
 
     // Channel for streaming inference tokens
     enum InferenceMsg {
