@@ -9,7 +9,7 @@ SAGE is a decentralized AI that runs locally on your machine and shares knowledg
 One command:
 
 ```bash
-curl -fsSL https://sage.lattice.black/install.sh | bash
+curl -fsSL https://whatssage.ai/install.sh | bash
 ```
 
 This downloads the `sage` binary for your platform (Linux/macOS, x86_64/arm64) and installs it to `~/.sage/bin/sage`. It also adds `~/.sage/bin` to your PATH.
@@ -78,7 +78,7 @@ This starts your SAGE node and connects it to the decentralized network:
 **What happens when your node starts:**
 
 1. **LAN Discovery** — mDNS finds other SAGE nodes on your local network automatically
-2. **Bootstrap Connection** — Connects to `bootstrap.sage.lattice.black:4001` to find peers on the internet
+2. **Bootstrap Connection** — Connects to `bootstrap.whatssage.ai:4001` to find peers on the internet
 3. **Knowledge Sync** — Your node exchanges compressed knowledge diffs with peers
 4. **Brain Saves** — Your brain file is periodically saved to disk
 
@@ -139,7 +139,7 @@ sage config --path   # Print config file path
 
 ```toml
 [network]
-bootstrap = "bootstrap.sage.lattice.black:4001"
+bootstrap = "bootstrap.whatssage.ai:4001"
 listen_port = 0          # 0 = random
 chat_port = 19175
 sync_interval = 300      # seconds
@@ -252,7 +252,7 @@ The SmolLM2 model (~1 GB) downloads on first `sage chat`. If it's slow, check yo
 ### Node won't connect to peers
 
 - Check your firewall allows outbound connections on the gossip port
-- Make sure `bootstrap.sage.lattice.black:4001` is reachable
+- Make sure `bootstrap.whatssage.ai:4001` is reachable
 - Try `sage node start --no-mdns` if mDNS is causing issues on your network
 
 ### "No running SAGE node found"
@@ -282,5 +282,5 @@ sage chat  # Uses /path/to/custom/sage/brain.bin etc.
 
 - **GitHub:** [github.com/Caryyon/sage](https://github.com/Caryyon/sage)
 - **Discord:** [discord.gg/YXThZcrPHc](https://discord.gg/YXThZcrPHc)
-- **Website:** [sage.lattice.black](https://sage.lattice.black)
+- **Website:** [whatssage.ai](https://whatssage.ai)
 - **Technical Details:** [DISTRIBUTED.md](./DISTRIBUTED.md)

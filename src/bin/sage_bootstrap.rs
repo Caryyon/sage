@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   mDNS:     {}", if cli.no_mdns { "disabled" } else { "enabled" });
     println!();
     println!("   Nodes should connect to:");
-    println!("   /dns4/bootstrap.sage.lattice.black/tcp/{}/p2p/{local_peer_id}", cli.port);
+    println!("   /dns4/bootstrap.whatssage.ai/tcp/{}/p2p/{local_peer_id}", cli.port);
     println!();
 
     let mut peer_count: usize = 0;

@@ -81,7 +81,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
   mkdir -p "$SAGE_HOME"
   cat > "$CONFIG_FILE" <<'TOML'
 [network]
-bootstrap = ["bootstrap.sage.lattice.black:4001"]
+bootstrap = ["bootstrap.whatssage.ai:4001"]
 TOML
   echo "📝 Created default config at ${CONFIG_FILE}"
 fi

@@ -58,7 +58,7 @@ spec:
       protocol: TCP
   type: ClusterIP
 ---
-# Traefik TCP IngressRoute for bootstrap.sage.lattice.black:4001
+# Traefik TCP IngressRoute for bootstrap.whatssage.ai:4001
 apiVersion: traefik.io/v1alpha1
 kind: IngressRouteTCP
 metadata:

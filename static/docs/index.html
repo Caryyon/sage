@@ -237,7 +237,7 @@
 <!-- Installation -->
 <h2 id="installation">📦 Installation</h2>
 <p>One command:</p>
-<pre><code><span class="cmd">curl -fsSL https://sage.lattice.black/install.sh | bash</span></code></pre>
+<pre><code><span class="cmd">curl -fsSL https://whatssage.ai/install.sh | bash</span></code></pre>
 <p>This downloads the <code>sage</code> binary for your platform (Linux/macOS, x86_64/arm64) and installs it to <code>~/.sage/bin/sage</code>. It also adds <code>~/.sage/bin</code> to your PATH.</p>
 <p>After install, open a new terminal and verify:</p>
 <pre><code><span class="prompt">$</span> <span class="cmd">sage version</span>
@@ -276,7 +276,7 @@ Type your message, or /quit to exit.
 <p><strong>What happens:</strong></p>
 <ol>
     <li><strong>LAN Discovery</strong> — mDNS finds other SAGE nodes on your local network</li>
-    <li><strong>Bootstrap Connection</strong> — Connects to <code>bootstrap.sage.lattice.black:4001</code> to find internet peers</li>
+    <li><strong>Bootstrap Connection</strong> — Connects to <code>bootstrap.whatssage.ai:4001</code> to find internet peers</li>
     <li><strong>Knowledge Sync</strong> — Exchanges compressed knowledge diffs with peers</li>
     <li><strong>Brain Saves</strong> — Periodically saves your brain file to disk</li>
 </ol>
@@ -312,7 +312,7 @@ Type your message, or /quit to exit.
 
 <h3>Example Config</h3>
 <pre><code><span class="comment">[network]</span>
-bootstrap = "bootstrap.sage.lattice.black:4001"
+bootstrap = "bootstrap.whatssage.ai:4001"
 listen_port = 0
 chat_port = 19175
 sync_interval = 300
@@ -380,7 +380,7 @@ private_topics = ["health", "finance"]</code></pre>
 <h3>Node won't connect to peers</h3>
 <ul>
     <li>Check your firewall allows outbound connections</li>
-    <li>Verify <code>bootstrap.sage.lattice.black:4001</code> is reachable</li>
+    <li>Verify <code>bootstrap.whatssage.ai:4001</code> is reachable</li>
     <li>Try <code>sage node start --no-mdns</code> if mDNS causes issues</li>
 </ul>
 
@@ -397,7 +397,7 @@ private_topics = ["health", "finance"]</code></pre>
 <p style="text-align: center; color: var(--text-dim); font-size: 0.82rem;">
     <a href="https://github.com/Caryyon/sage">GitHub</a> · 
     <a href="https://discord.gg/YXThZcrPHc">Discord</a> · 
-    <a href="/">sage.lattice.black</a>
+    <a href="/">whatssage.ai</a>
 </p>
 
 </div>
