@@ -46,6 +46,14 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install nasm cmake
 
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION%-alpha}"
+          VERSION="${VERSION%-beta}"
+          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
+          echo "Building version: ${VERSION}"
+
       - name: Build sage binary
         run: cargo build --release --bin sage-cli
 
