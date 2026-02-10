@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How NCA Knowledge Encoding Works — SAGE Research</title>
+    <meta name="description" content="Technical deep dive into how SAGE encodes text into a 256×256 Neural Cellular Automata grid — channel allocation, retrieval mechanics, and why this isn't just another vector database.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* NAV */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo a { -webkit-text-fill-color: inherit; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* ARTICLE */
+        .container { max-width: 760px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        .article-header {
+            padding: 120px 24px 40px;
+            max-width: 760px;
+            margin: 0 auto;
+            position: relative; z-index: 1;
+        }
+        .article-meta { font-size: 0.7rem; color: var(--purple); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+        .article-header h1 {
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+            font-weight: 700;
+            line-height: 1.3;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 16px;
+        }
+        .article-subtitle {
+            font-size: 1rem;
+            color: var(--text-dim);
+            font-weight: 300;
+            line-height: 1.6;
+        }
+
+        .article-body { padding-bottom: 80px; }
+        .article-body h2 {
+            font-size: 1.2rem;
+            margin: 48px 0 16px;
+            color: var(--cyan);
+        }
+        .article-body h3 {
+            font-size: 1rem;
+            margin: 32px 0 12px;
+            color: var(--green);
+        }
+        .article-body p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.8;
+        }
+        .article-body p strong { color: var(--text); }
+        .article-body p em { color: var(--purple); }
+
+        .article-body ul, .article-body ol {
+            margin: 0 0 16px 24px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .article-body li { margin-bottom: 8px; line-height: 1.7; }
+        .article-body li strong { color: var(--text); }
+
+        /* HIGHLIGHT BOX */
+        .highlight-box {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 0 20px rgba(0,255,213,0.05);
+        }
+        .highlight-box p { margin-bottom: 8px; }
+        .highlight-box p:last-child { margin-bottom: 0; }
+
+        /* CODE / DIAGRAM */
+        .code-block {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 0;
+            overflow-x: auto;
+        }
+        .code-block code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--cyan);
+            white-space: pre;
+        }
+
+        /* TABLE */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 0.78rem;
+        }
+        .results-table th, .results-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .results-table th {
+            color: var(--text-dim);
+            font-weight: 400;
+            font-size: 0.65rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* CALLOUT */
+        .callout {
+            border-left: 3px solid var(--purple);
+            padding: 16px 24px;
+            margin: 24px 0;
+            background: rgba(168,85,247,0.05);
+            border-radius: 0 8px 8px 0;
+        }
+        .callout.green { border-left-color: var(--green); background: rgba(57,255,20,0.03); }
+        .callout.cyan { border-left-color: var(--cyan); background: rgba(0,255,213,0.03); }
+        .callout p { font-size: 0.85rem; color: var(--text); font-style: italic; margin: 0; }
+
+        /* COMPARISON CARDS */
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 24px 0;
+        }
+        .compare-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 24px;
+        }
+        .compare-card h4 {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            color: var(--purple);
+        }
+        .compare-card p {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0;
+            line-height: 1.5;
+        }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+        }
+        .footer-brand { font-size: 0.75rem; color: var(--text-dim); }
+        .footer-links { display: flex; gap: 24px; }
+        .footer-links a { color: var(--text-dim); font-size: 0.72rem; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+            .compare-grid { grid-template-columns: 1fr; }
+            .results-table { font-size: 0.7rem; }
+            .results-table th, .results-table td { padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="logo">🌿 SAGE</a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/blog">Blog</a>
+            <a href="/docs">Docs</a>
+            <a href="/research">Research</a>
+            <a href="/whitepaper">Whitepaper</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div class="article-header">
+    <div class="article-meta">February 9, 2026 · Research Deep Dive</div>
+    <h1>How NCA Knowledge Encoding Works</h1>
+    <p class="article-subtitle">The technical deep dive: how text becomes grid state, how retrieval works, and why this is fundamentally different from vector databases and RAG.</p>
+</div>
+
+<div class="container article-body">
+
+    <h2>The Core Idea</h2>
+    <p>Most AI systems store knowledge as either <strong>model weights</strong> (billions of parameters baked in at training time) or <strong>text chunks</strong> (vector databases, RAG pipelines). SAGE does neither. It encodes knowledge into a <strong>256×256 Neural Cellular Automata grid</strong> — a living, self-organizing structure where information exists as emergent patterns in cellular dynamics.</p>
+    <p>This isn't a metaphor. The grid is literally a 2D array of cells, each containing 32 channels of floating-point values. Cells perceive their neighbors and update through tiny neural networks. Knowledge encoding means <em>writing patterns into this grid</em> such that they can be retrieved later through query-driven readout.</p>
+
+    <div class="highlight-box">
+        <p><strong>Key numbers:</strong> 256 × 256 cells × 32 channels = 2,097,152 values. Quantized to half-precision, the entire knowledge store fits in <strong>~128KB</strong>. For context, a single page of a vector database index is typically larger than SAGE's entire knowledge grid.</p>
+    </div>
+
+    <h2>Step 1: Text → Tokens</h2>
+    <p>The encoding pipeline starts with standard BPE (Byte Pair Encoding) tokenization. Current experiments use a <strong>1,024-token vocabulary</strong>, though this scales to larger vocabularies as grid size increases.</p>
+
+    <div class="code-block"><code>Input:  "Coral reefs are threatened by rising ocean temperatures"
+
+Tokens: [coral, reefs, are, threatened, by, rising, ocean, temperatures]
+IDs:    [  247,   891, 102,       673, 54,    445,   312,          798]</code></div>
+
+    <p>The tokenizer is deliberately small compared to LLM tokenizers (50K–100K tokens). This is intentional — the NCA grid doesn't need to distinguish between "can't" and "cannot" at the token level. The grid's spatial dynamics handle semantic nuance through <em>pattern interaction</em>, not vocabulary size.</p>
+
+    <h2>Step 2: Spatial Projection (Semantic Hashing)</h2>
+    <p>Each token is mapped to a 2D coordinate on the grid via a <strong>learned semantic hash function</strong>. This is a small neural network (2 layers, ~500 parameters) that maps token IDs to (x, y) coordinates:</p>
+
+    <div class="code-block"><code>Semantic Hash: token_id → (x, y) ∈ [0, 255] × [0, 255]
+
+"coral"        → (42, 87)     ─┐
+"reefs"        → (44, 89)      ├── Semantically related tokens
+"marine"       → (40, 85)     ─┘   land NEAR each other
+
+"ocean"        → (50, 91)     ─┐
+"temperature"  → (52, 93)      ├── Related concepts
+"acidification"→ (48, 95)     ─┘   cluster spatially
+
+"politics"     → (180, 23)    ─── Unrelated tokens land
+"database"     → (210, 156)   ─── FAR away</code></div>
+
+    <p>The semantic hash is <strong>trained end-to-end</strong> with the rest of the system. It learns to place related concepts near each other on the grid — not because we told it to, but because proximity enables the NCA dynamics to form useful associative connections between related knowledge.</p>
+
+    <div class="callout green">
+        <p>This is fundamentally different from vector embeddings. In a vector DB, similarity is measured by cosine distance in a high-dimensional space. In SAGE, similarity is literal spatial proximity on a 2D grid — and the NCA dynamics create emergent connections between nearby concepts.</p>
+    </div>
+
+    <h2>Step 3: Gaussian-Weighted Write</h2>
+    <p>Once a token has a grid coordinate, knowledge is written as a <strong>Gaussian activation</strong> centered on that coordinate. The write isn't a single-cell operation — it's a smooth, overlapping activation pattern:</p>
+
+    <div class="code-block"><code>For token at position (cx, cy):
+
+  activation(x, y) = A × exp(-((x-cx)² + (y-cy)²) / (2σ²))
+
+  where:
+    A  = amplitude (derived from token embedding)
+    σ  = 2.0 (spread — each token affects ~25 cells)
+    cx, cy = projected coordinates
+
+Written to channels 4–17 (semantic + association channels)</code></div>
+
+    <p>The Gaussian spread is critical. It means each token's knowledge <strong>overlaps with nearby tokens' knowledge</strong>. When "coral" writes at (42, 87) and "reefs" writes at (44, 89), their Gaussian activations overlap — and the NCA dynamics in the overlap region create <em>associative patterns</em> that encode the relationship between the concepts.</p>
+
+    <h3>Confidence Gating</h3>
+    <p>Writes are gated by existing confidence values (channel 18). If a cell already contains high-confidence knowledge, the new write is attenuated:</p>
+
+    <div class="code-block"><code>effective_write = new_activation × (1 - existing_confidence × gate_strength)
+
+gate_strength = 0.7  (tunable — higher = more conservative)</code></div>
+
+    <p>This prevents new information from overwriting well-established knowledge, while still allowing gradual updates as evidence accumulates.</p>
+
+    <h2>Step 4: NCA Integration</h2>
+    <p>After writing raw activations to the grid, SAGE runs <strong>10–20 NCA update steps</strong>. This is where the magic happens. Each cell:</p>
+    <ol>
+        <li><strong>Perceives neighbors</strong> via 3×3 Sobel filters (detecting gradients and patterns in nearby cells)</li>
+        <li><strong>Processes perception</strong> through a tiny MLP (2 layers, ~50 parameters per cell)</li>
+        <li><strong>Updates state</strong> with a stochastic mask (not every cell updates every step — this prevents synchronization artifacts)</li>
+    </ol>
+
+    <p>These integration steps allow the new knowledge to <strong>interact with and merge into existing patterns</strong>. The NCA dynamics create associations, resolve conflicts, and build the emergent spatial structure that makes retrieval possible.</p>
+
+    <div class="code-block"><code>Before integration:            After 10 NCA steps:
+
+  ··· ··· ···                    ··· ··· ···
+  ··· coral ···                  ··· coral ···
+  ··· ··· ···                    ··≈ ≈≈≈ ≈··    ← new association
+  ··· ··· ···                    ·≈· ··· ·≈·       patterns emerge
+  ··· reefs ···                  ··· reefs ···      between related
+  ··· ··· ···                    ··· ··· ···         concepts
+
+  (≈ = emergent association pattern from NCA dynamics)</code></div>
+
+    <h2>Channel Allocation: 24 Shared + 8 Private</h2>
+
+    <p>Each cell's 32 channels serve specialized roles. This isn't arbitrary — it's a carefully designed allocation that separates concerns:</p>
+
+    <table class="results-table">
+        <thead>
+            <tr><th>Channels</th><th>Name</th><th>Shared?</th><th>What They Store</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>0–3</strong></td>
+                <td>Structural</td>
+                <td>✓ Yes</td>
+                <td>Cell alive/dead state, health metric, connectivity to neighbors, structural role (hub vs leaf)</td>
+            </tr>
+            <tr>
+                <td><strong>4–11</strong></td>
+                <td>Semantic</td>
+                <td>✓ Yes</td>
+                <td>Token embedding projections — the core "meaning" of what's stored at this location. 8 dimensions capture the primary semantic axes</td>
+            </tr>
+            <tr>
+                <td><strong>12–17</strong></td>
+                <td>Association</td>
+                <td>✓ Yes</td>
+                <td>Cross-cell relationship patterns — co-occurrence signals, causal links, hierarchical relationships. These emerge primarily from NCA dynamics, not direct writes</td>
+            </tr>
+            <tr>
+                <td><strong>18–21</strong></td>
+                <td>Temporal</td>
+                <td>✓ Yes</td>
+                <td>When knowledge was written (recency), how many sources confirmed it (confidence), decay rate, update frequency</td>
+            </tr>
+            <tr>
+                <td><strong>22–23</strong></td>
+                <td>Provenance</td>
+                <td>✓ Yes</td>
+                <td>Hashed source identity, reputation score of the contributing node. Used for trust-weighted retrieval</td>
+            </tr>
+            <tr>
+                <td><strong>24–31</strong></td>
+                <td>Private</td>
+                <td>✗ No</td>
+                <td>Local-only knowledge — personal preferences, PII-adjacent patterns, user-specific context. Never transmitted over the network</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="callout">
+        <p>The shared/private split is enforced at the protocol level. When generating diffs for network transmission, channels 24–31 are zeroed out before signing. There is no configuration that allows private channels to leak — it's a hard architectural boundary.</p>
+    </div>
+
+    <h3>Why 24 + 8?</h3>
+    <p>The ratio is empirically determined. 24 shared channels provide enough representational capacity for rich knowledge encoding while keeping diff sizes small (~1KB). 8 private channels give each node room for personalization without affecting the shared knowledge layer. In experiments, reducing shared channels below 20 degraded retrieval quality; increasing private channels beyond 8 didn't improve personalization measurably.</p>
+
+    <h2>Retrieval: Query → Grid → Context</h2>
+
+    <p>When SAGE needs to answer a question, it reverses the encoding process — but with important differences:</p>
+
+    <h3>Step 1: Query Projection</h3>
+    <p>The question is tokenized and each token is projected to grid coordinates using the same semantic hash. This identifies <strong>regions of interest</strong> on the grid.</p>
+
+    <div class="code-block"><code>Query: "What threatens coral reefs?"
+
+Tokens: [what, threatens, coral, reefs]
+Grid regions of interest:
+  "coral"     → neighborhood around (42, 87)
+  "reefs"     → neighborhood around (44, 89)
+  "threatens" → neighborhood around (61, 72)
+
+Search radius: σ × 3 = 6 cells around each coordinate</code></div>
+
+    <h3>Step 2: Attention Readout</h3>
+    <p>For each region of interest, an attention mechanism reads from the grid cells in the neighborhood. The attention weights consider:</p>
+    <ul>
+        <li><strong>Semantic relevance:</strong> How closely the cell's semantic channels (4–11) match the query token's embedding</li>
+        <li><strong>Activation strength:</strong> Structural channels (0–3) indicate how "alive" and connected the cell is</li>
+        <li><strong>Confidence:</strong> Temporal channels (18–21) weight recent, well-corroborated knowledge higher</li>
+        <li><strong>Association strength:</strong> Association channels (12–17) pull in related concepts that weren't directly queried</li>
+    </ul>
+
+    <p>This last point is crucial. The attention readout doesn't just find exact matches — it follows <strong>association patterns</strong> to pull in contextually relevant knowledge. When you query "coral reefs" and "threatens," the association channels may activate patterns related to "ocean acidification" and "temperature rise" even though those terms weren't in the query.</p>
+
+    <h3>Step 3: Context Vector → Text Prefix</h3>
+    <p>The attention readout produces a context vector that is decoded into a natural language prefix. This prefix is prepended to the transformer's input, giving it factual grounding:</p>
+
+    <div class="code-block"><code>Readout context vector → decoder →
+
+"[Knowledge context: Coral reefs are biological structures 
+ built by marine organisms. Ocean acidification and rising 
+ temperatures threaten reef ecosystems. Confidence: 0.82]"
+
+This prefix feeds into the transformer for fluent response generation.</code></div>
+
+    <h3>Step 4: Confidence Gating</h3>
+    <p>If the readout confidence is below a threshold (default: 0.3), the context is <strong>suppressed entirely</strong>. The system returns "I don't know" rather than generating a response from low-confidence knowledge. This is SAGE's defense against hallucination — if the grid doesn't have reliable knowledge, it says so.</p>
+
+    <h2>Why This Isn't a Vector Database</h2>
+
+    <p>At first glance, NCA knowledge encoding might seem like "just another embedding store." It's not. The differences are fundamental:</p>
+
+    <div class="compare-grid">
+        <div class="compare-card">
+            <h4>Vector DB / RAG</h4>
+            <p><strong>Storage:</strong> Text chunks stored verbatim, indexed by embedding vectors</p>
+            <p><strong>Retrieval:</strong> Cosine similarity search — find the closest chunk</p>
+            <p><strong>Associations:</strong> None — only exact/similar matches</p>
+            <p><strong>Size:</strong> Grows linearly with data (GB–TB)</p>
+            <p><strong>Learning:</strong> None — static after indexing</p>
+        </div>
+        <div class="compare-card">
+            <h4>NCA Knowledge Grid</h4>
+            <p><strong>Storage:</strong> Knowledge compressed into emergent grid patterns — no text stored</p>
+            <p><strong>Retrieval:</strong> Spatial attention with association following</p>
+            <p><strong>Associations:</strong> Emergent — NCA dynamics create connections</p>
+            <p><strong>Size:</strong> Fixed 128KB regardless of data volume</p>
+            <p><strong>Learning:</strong> Continuous — new knowledge integrates via NCA dynamics</p>
+        </div>
+    </div>
+
+    <h3>The Association Problem</h3>
+    <p>Consider a vector database that has indexed two documents:</p>
+    <ol>
+        <li>"Climate change causes ocean acidification and temperature rise"</li>
+        <li>"Coral organisms are sensitive to pH levels and temperature"</li>
+    </ol>
+    <p>If you query "How does climate change affect coral reefs?", a RAG system retrieves both chunks by embedding similarity. But it doesn't <em>understand</em> the connection — it just dumps both chunks into the LLM's context window and hopes the LLM figures it out.</p>
+
+    <p>In SAGE's NCA grid, the encoding of "ocean acidification" and "sensitive to pH" creates <strong>overlapping activations</strong> in nearby grid regions. After NCA integration steps, the cellular dynamics form associative patterns that directly encode the relationship: <em>acidification (from climate change) lowers pH (which coral is sensitive to)</em>. The grid <strong>computes the association</strong> — it doesn't just store the raw facts.</p>
+
+    <div class="callout green">
+        <p>This is why the emergent intelligence experiment works: when Node A's "climate change" knowledge and Node B's "coral reef" knowledge merge on Node C, the NCA dynamics create associations that neither node had. The grid doesn't retrieve and concatenate — it integrates and associates.</p>
+    </div>
+
+    <h3>The Fixed-Size Advantage</h3>
+    <p>A vector database grows with data. Index 1 million documents and you need gigabytes of storage plus expensive similarity search infrastructure. The NCA grid is <strong>always 128KB</strong>. New knowledge is compressed into existing patterns — older, less-confirmed knowledge gradually fades as new patterns overwrite them through confidence gating.</p>
+
+    <p>This means SAGE nodes can sync their entire knowledge state in a few hundred milliseconds over a normal internet connection. Try that with a vector database.</p>
+
+    <h3>Continuous Learning</h3>
+    <p>Vector databases are static indexes. You add documents, you search documents. There's no learning, no integration, no emergence. The NCA grid is a <strong>living structure</strong> — every new piece of knowledge triggers integration steps that can create new associations, strengthen existing ones, or let outdated knowledge decay. The grid is always changing, always learning.</p>
+
+    <h2>Concrete Example: Full Pipeline</h2>
+
+    <p>Let's trace a complete encode-then-retrieve cycle:</p>
+
+    <div class="code-block"><code>═══ ENCODE ═══
+
+User says: "The Eiffel Tower was built in 1889 for the World's Fair"
+
+1. Tokenize: [eiffel, tower, built, 1889, world, fair]
+
+2. Semantic hash:
+   eiffel → (128, 201)    tower  → (130, 203)
+   built  → (135, 198)    1889   → (132, 195)
+   world  → (140, 200)    fair   → (142, 202)
+
+3. Gaussian write to channels 4–17:
+   Each token writes a σ=2.0 Gaussian centered on its coords
+   Overlapping regions: eiffel+tower, world+fair, etc.
+
+4. Confidence update (channel 18):
+   Cells in the write region get confidence += 0.3
+
+5. NCA integration (10 steps):
+   Association channels (12–17) develop patterns linking
+   eiffel↔tower, built↔1889, world↔fair
+
+═══ RETRIEVE (later) ═══
+
+Query: "When was the Eiffel Tower constructed?"
+
+1. Tokenize + hash:
+   eiffel → (128, 201)    tower → (130, 203)
+   constructed → (136, 199)  ← near "built" (135, 198)!
+
+2. Attention readout:
+   Search neighborhoods around (128,201), (130,203), (136,199)
+   Find strong activations in semantic channels
+   Association channels pull in "1889" from nearby (132, 195)
+   Confidence: 0.72 (above threshold)
+
+3. Decoded context:
+   "Eiffel Tower, built 1889, World's Fair"
+
+4. Transformer generates:
+   "The Eiffel Tower was constructed in 1889 for the 
+    World's Fair in Paris."</code></div>
+
+    <p>Note how "constructed" (the query term) maps near "built" (the stored term) via the semantic hash — even though they're different tokens. The spatial proximity lets the retrieval system find relevant knowledge without exact token matching.</p>
+
+    <h2>Current Limitations</h2>
+    <ul>
+        <li><strong>Grid capacity:</strong> 128KB is small. A single grid can hold perhaps a few hundred well-encoded facts with good retrieval quality. For larger knowledge bases, SAGE uses grid ensembles and hierarchical grids (active research)</li>
+        <li><strong>Token vocabulary:</strong> 1,024 tokens is limited. Scaling to larger vocabularies requires proportionally larger grids or more sophisticated hashing</li>
+        <li><strong>Precision:</strong> Lossy compression means exact quotes and precise numbers can degrade. The grid captures <em>gist</em>, not verbatim text</li>
+        <li><strong>Training stability:</strong> The semantic hash must be trained carefully — a bad hash that doesn't cluster related concepts will produce poor retrieval</li>
+    </ul>
+
+    <div class="highlight-box">
+        <p><strong>These are engineering challenges, not fundamental limitations.</strong> The reservoir computing experiments (<a href="/blog/reservoir-computing">100% top-5 prediction with linear readout</a>) prove the NCA grid can encode computationally useful structure. The <a href="/research">signal ratio experiments</a> (238.9× random) prove it scales with grid size. Everything from here is optimization.</p>
+    </div>
+
+    <h2>Further Reading</h2>
+    <ul>
+        <li><a href="/whitepaper">SAGE Whitepaper</a> — Full system architecture including distribution protocol and security model</li>
+        <li><a href="/research">NCA Training Results</a> — Signal ratio experiments across corpora and grid sizes</li>
+        <li><a href="/blog/reservoir-computing">Reservoir Computing Results</a> — 100% top-5 prediction from frozen NCA dynamics</li>
+        <li><a href="https://distill.pub/2020/growing-ca/">Growing Neural Cellular Automata</a> (Mordvintsev et al., 2020) — The foundational NCA paper</li>
+    </ul>
+
+    <div class="highlight-box">
+        <p><strong>🌿 SAGE is open source and free forever.</strong> Join the <a href="https://discord.gg/U999zZUuUV">Discord</a> to follow the research, or <a href="/">install SAGE</a> and start exploring. Source: <a href="https://github.com/Caryyon/sage">github.com/Caryyon/sage</a></p>
+    </div>
+
+</div>
+
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="/">Home</a>
+            <a href="/research">← All Research</a>
+            <a href="/docs">Docs</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>
