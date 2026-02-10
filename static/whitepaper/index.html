@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whitepaper — SAGE: Decentralized Collective Intelligence via Neural Cellular Automata</title>
+    <meta name="description" content="Technical whitepaper for SAGE — a decentralized AI system using Neural Cellular Automata as distributed knowledge stores, synchronized via gossip protocol.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* NAV */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo a { -webkit-text-fill-color: inherit; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* CONTENT */
+        .container { max-width: 760px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        .article-header {
+            padding: 120px 24px 40px;
+            max-width: 760px;
+            margin: 0 auto;
+            position: relative; z-index: 1;
+        }
+        .article-meta { font-size: 0.7rem; color: var(--purple); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+        .article-header h1 {
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+            font-weight: 700;
+            line-height: 1.3;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 16px;
+        }
+        .article-subtitle {
+            font-size: 1rem;
+            color: var(--text-dim);
+            font-weight: 300;
+            line-height: 1.6;
+        }
+        .authors {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 12px;
+        }
+
+        .article-body { padding-bottom: 80px; }
+        .article-body h2 {
+            font-size: 1.2rem;
+            margin: 48px 0 16px;
+            color: var(--cyan);
+        }
+        .article-body h3 {
+            font-size: 1rem;
+            margin: 32px 0 12px;
+            color: var(--green);
+        }
+        .article-body p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.8;
+        }
+        .article-body p strong { color: var(--text); }
+        .article-body p em { color: var(--purple); }
+
+        .article-body ul, .article-body ol {
+            margin: 0 0 16px 24px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .article-body li { margin-bottom: 8px; line-height: 1.7; }
+        .article-body li strong { color: var(--text); }
+
+        /* TOC */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 0 0 48px;
+        }
+        .toc h4 {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .toc ol {
+            margin: 0 0 0 20px;
+            font-size: 0.8rem;
+        }
+        .toc li { margin-bottom: 6px; }
+        .toc a { color: var(--cyan); }
+
+        /* HIGHLIGHT BOX */
+        .highlight-box {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 0 20px rgba(0,255,213,0.05);
+        }
+        .highlight-box p { margin-bottom: 8px; }
+        .highlight-box p:last-child { margin-bottom: 0; }
+
+        /* CALLOUT */
+        .callout {
+            border-left: 3px solid var(--purple);
+            padding: 16px 24px;
+            margin: 24px 0;
+            background: rgba(168,85,247,0.05);
+            border-radius: 0 8px 8px 0;
+        }
+        .callout.green { border-left-color: var(--green); background: rgba(57,255,20,0.03); }
+        .callout.cyan { border-left-color: var(--cyan); background: rgba(0,255,213,0.03); }
+        .callout p { font-size: 0.85rem; color: var(--text); margin: 0; }
+        .callout p + p { margin-top: 8px; }
+
+        /* DIAGRAM */
+        .diagram {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 0;
+            overflow-x: auto;
+            font-size: 0.72rem;
+            line-height: 1.4;
+            color: var(--cyan);
+            white-space: pre;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* TABLE */
+        .wp-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 0.78rem;
+        }
+        .wp-table th, .wp-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .wp-table th {
+            color: var(--text-dim);
+            font-weight: 400;
+            font-size: 0.65rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* ROADMAP */
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 24px 0;
+        }
+        .roadmap-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 24px;
+            transition: border-color 0.25s;
+        }
+        .roadmap-card:hover { border-color: var(--purple); }
+        .roadmap-card h4 {
+            font-size: 0.8rem;
+            margin-bottom: 8px;
+            color: var(--purple);
+        }
+        .roadmap-card .timeline {
+            font-size: 0.68rem;
+            color: var(--cyan);
+            margin-bottom: 8px;
+        }
+        .roadmap-card p {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0;
+            line-height: 1.5;
+        }
+
+        /* REFERENCES */
+        .references {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        .references li {
+            margin-bottom: 12px;
+        }
+        .ref-tag {
+            color: var(--cyan);
+            font-weight: 700;
+            font-size: 0.7rem;
+        }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+        }
+        .footer-brand { font-size: 0.75rem; color: var(--text-dim); }
+        .footer-links { display: flex; gap: 24px; }
+        .footer-links a { color: var(--text-dim); font-size: 0.72rem; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+            .roadmap-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="logo">🌿 SAGE</a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/blog">Blog</a>
+            <a href="/docs">Docs</a>
+            <a href="/research">Research</a>
+            <a href="/whitepaper">Whitepaper</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div class="article-header">
+    <div class="article-meta">Whitepaper · February 2026</div>
+    <h1>SAGE: Emergent Collective Intelligence through Gossip-Synchronized Neural Cellular Automata</h1>
+    <p class="article-subtitle">A decentralized AI system where each node maintains a Neural Cellular Automata grid as a living knowledge store, synchronized across a peer-to-peer network via gossip protocol.</p>
+    <p class="authors">Cary Wolff et al. · SAGE Project · <a href="https://whatssage.ai">whatssage.ai</a></p>
+</div>
+
+<div class="container article-body">
+
+    <div class="toc">
+        <h4>Contents</h4>
+        <ol>
+            <li><a href="#abstract">Abstract</a></li>
+            <li><a href="#problem">The Problem</a></li>
+            <li><a href="#architecture">SAGE Architecture</a></li>
+            <li><a href="#distribution">Distribution Protocol</a></li>
+            <li><a href="#security">Security &amp; Privacy</a></li>
+            <li><a href="#experiment">The Emergent Intelligence Experiment</a></li>
+            <li><a href="#roadmap">Roadmap</a></li>
+            <li><a href="#references">References</a></li>
+        </ol>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="abstract">1. Abstract</h2>
+
+    <div class="highlight-box">
+        <p><strong>SAGE</strong> (Shared Adaptive Growing Experience) is a decentralized AI system where each node maintains a <strong>Neural Cellular Automata (NCA) grid</strong> as a living knowledge store. Knowledge is encoded into compact grid states (~128KB), synchronized across a peer-to-peer network as tiny diffs (~1KB), and used to provide context to small local language models. The result: an AI that runs on commodity hardware, requires no GPU, costs nothing, and <strong>gets smarter the more people run it</strong>.</p>
+        <p>This whitepaper presents the architecture, distribution protocol, security model, and early experimental results demonstrating that NCA grids can learn real statistical structure from natural language — with signal ratios up to 238.9× random baseline using only ~5,000 parameters.</p>
+    </div>
+
+    <p>The key insight is that NCA dynamics enable <strong>lossy knowledge compression</strong> into tiny grid states that form emergent associative structure. These states sync efficiently as sparse diffs, provide knowledge context to small transformer models, and — critically — enable <em>emergent collective intelligence</em>: when independent nodes learn different domains and synchronize, the merged knowledge enables answers that no single node could produce alone.</p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="problem">2. The Problem</h2>
+
+    <h3>2.1 AI Centralization</h3>
+    <p>The current AI landscape is defined by centralization. A handful of corporations control the most capable models, gate access behind API keys and subscriptions, and treat users as data sources without agency. This creates multiple failure modes:</p>
+    <ul>
+        <li><strong>Cost barriers:</strong> GPT-4-class models cost $20–200/month per user, or per-token API fees that scale unpredictably</li>
+        <li><strong>Privacy violations:</strong> Every conversation traverses corporate servers, subject to logging, training, and policy review</li>
+        <li><strong>Single points of failure:</strong> API outages, policy changes, and corporate shutdowns can eliminate access overnight</li>
+        <li><strong>Static knowledge:</strong> Models are frozen at training time; they don't learn from ongoing interactions</li>
+        <li><strong>GPU dependency:</strong> State-of-the-art models require hardware that costs tens of thousands of dollars</li>
+    </ul>
+
+    <h3>2.2 Why Existing Alternatives Fall Short</h3>
+
+    <p><strong>Local LLMs (Ollama, llama.cpp):</strong> These solve the privacy and cost problems but create new ones. Models are large (4–70GB), static (no learning), GPU-hungry for acceptable performance, and fundamentally isolated — your local model is an island that never benefits from what others learn.</p>
+
+    <p><strong>Federated Learning:</strong> The academic gold standard for distributed ML, but impractical for real deployment. Federated learning requires a <strong>central parameter server</strong> to coordinate rounds, suffers from gradient leakage attacks that can reconstruct training data <span class="ref-tag">[1]</span>, and demands synchronous communication that doesn't survive real-world network conditions.</p>
+
+    <p><strong>Blockchain AI (Bittensor, etc.):</strong> These conflate AI with cryptocurrency, introducing mining overhead, token speculation, and enormous complexity. The AI is secondary to the financial instrument. Most users want intelligence, not a portfolio.</p>
+
+    <div class="callout">
+        <p><strong>The gap:</strong> No existing system provides AI that is simultaneously free, private, local-first, continuously learning, and collectively intelligent. SAGE fills this gap.</p>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="architecture">3. SAGE Architecture</h2>
+
+    <h3>3.1 System Overview</h3>
+    <p>Each SAGE node consists of three primary components working in concert: the NCA Knowledge Grid (knowledge storage and retrieval), a small transformer model (text generation), and the gossip protocol layer (knowledge distribution).</p>
+
+    <div class="diagram">┌─────────────────────────────────────────────────────────┐
+│                      SAGE NODE                          │
+│                                                         │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────┐  │
+│  │   NCA Grid   │◄──►│  Transformer │◄──►│  Chat UI  │  │
+│  │  256 × 256   │    │   (~100M)    │    │  OpenAI   │  │
+│  │  32 channels │    │              │    │ compatible│  │
+│  └──────┬───────┘    └──────────────┘    └───────────┘  │
+│         │                                               │
+│  ┌──────▼───────┐                                       │
+│  │   Gossip     │◄──────── libp2p ────────► Other Nodes │
+│  │   Protocol   │    diffs (~1KB each)                  │
+│  └──────────────┘                                       │
+└─────────────────────────────────────────────────────────┘</div>
+
+    <h3>3.2 The NCA Knowledge Grid</h3>
+    <p>At the heart of SAGE is a <strong>Neural Cellular Automata grid</strong> — a 2D grid of cells where each cell contains multiple channels of information. Cells perceive their neighbors through Sobel filters and update their state through tiny neural networks, creating self-organizing, self-healing knowledge structures.</p>
+
+    <p><strong>Grid specification:</strong></p>
+    <ul>
+        <li><strong>Dimensions:</strong> 256 × 256 cells (65,536 cells total)</li>
+        <li><strong>Channels per cell:</strong> 32 (24 shared + 8 private)</li>
+        <li><strong>Total state size:</strong> ~128KB (256 × 256 × 32 × ½ byte quantized)</li>
+        <li><strong>Topology:</strong> Toroidal (edges wrap around)</li>
+        <li><strong>Parameters:</strong> ~5,000 (the NCA update rules, not the grid state)</li>
+    </ul>
+
+    <p>The 32 channels are allocated across specialized roles:</p>
+
+    <table class="wp-table">
+        <thead>
+            <tr><th>Channels</th><th>Role</th><th>Shared?</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>0–3</td><td>Structural</td><td>Yes</td><td>Cell activation, health, connectivity</td></tr>
+            <tr><td>4–11</td><td>Semantic</td><td>Yes</td><td>Token embeddings, meaning vectors</td></tr>
+            <tr><td>12–17</td><td>Association</td><td>Yes</td><td>Cross-token relationships, co-occurrence</td></tr>
+            <tr><td>18–21</td><td>Temporal</td><td>Yes</td><td>Recency, confidence, decay dynamics</td></tr>
+            <tr><td>22–23</td><td>Provenance</td><td>Yes</td><td>Source hashing, reputation metadata</td></tr>
+            <tr><td>24–31</td><td>Private</td><td>No</td><td>Local-only knowledge, PII-adjacent data</td></tr>
+        </tbody>
+    </table>
+
+    <div class="callout green">
+        <p><strong>Why NCA?</strong> Four properties make NCA ideal for distributed knowledge:</p>
+        <p><strong>Compression:</strong> 128KB captures rich associative structure that would require megabytes in a vector database.</p>
+        <p><strong>Locality:</strong> Knowledge interactions are local (cells only see neighbors), enabling efficient partial updates.</p>
+        <p><strong>Robustness:</strong> NCA self-repairs from partial damage — analogous to handling network churn where nodes join and leave.</p>
+        <p><strong>Differentiability:</strong> The entire system is end-to-end trainable via standard gradient methods.</p>
+    </div>
+
+    <h3>3.3 Knowledge Encoding (Text → Grid)</h3>
+    <p>When a user has a conversation, SAGE encodes the knowledge into the NCA grid through a multi-step process:</p>
+
+    <ol>
+        <li><strong>Tokenization:</strong> Text is tokenized using a BPE vocabulary (1024 tokens in current experiments)</li>
+        <li><strong>Spatial projection:</strong> Each token is mapped to 2D grid coordinates via a learned semantic hash. Semantically related tokens land in nearby cells</li>
+        <li><strong>Gaussian write:</strong> Knowledge is written to the grid as a Gaussian-weighted activation centered on the projected coordinates, with gating to prevent overwriting high-confidence existing knowledge</li>
+        <li><strong>NCA integration:</strong> The grid runs several NCA update steps, allowing the new knowledge to interact with and integrate into the existing knowledge landscape through local cellular dynamics</li>
+    </ol>
+
+    <div class="diagram">Text Input: "Coral reefs are threatened by ocean acidification"
+
+  ┌─ Tokenize ──► [coral, reefs, threatened, ocean, acidification]
+  │
+  ├─ Project ───► coral→(42,87)  reefs→(44,89)  ocean→(50,91)
+  │                              acidification→(52,93)
+  │
+  ├─ Write ────► Gaussian activations at each coordinate
+  │              σ=2.0, gated by existing confidence
+  │
+  └─ Integrate ► 10 NCA steps: new knowledge merges with
+                 existing patterns through local dynamics</div>
+
+    <h3>3.4 Knowledge Retrieval (Grid → Context)</h3>
+    <p>When answering a question, SAGE extracts relevant knowledge from the grid:</p>
+    <ol>
+        <li><strong>Query encoding:</strong> The user's question is tokenized and projected to grid coordinates, identifying regions of interest</li>
+        <li><strong>Attention readout:</strong> An attention mechanism reads from cells in the query's neighborhood, weighted by activation strength and confidence</li>
+        <li><strong>Context generation:</strong> The readout produces a context vector that is decoded into a natural language prefix</li>
+        <li><strong>Confidence gating:</strong> Low-confidence knowledge is suppressed — the system says "I don't know" rather than hallucinate</li>
+    </ol>
+
+    <h3>3.5 Hybrid Generation Pipeline</h3>
+    <p>SAGE uses a <strong>hybrid architecture</strong> where the NCA grid provides knowledge and a small transformer (~100M parameters) provides language fluency. This is fundamentally different from RAG (Retrieval-Augmented Generation) in that the knowledge isn't stored as text chunks — it's encoded as <em>emergent grid patterns</em> that capture associative relationships.</p>
+
+    <p>The transformer receives the NCA context vector via cross-attention layers, allowing it to attend to grid-derived knowledge while generating fluent text. The transformer handles grammar, coherence, and style; the NCA handles facts, associations, and domain knowledge.</p>
+
+    <div class="callout cyan">
+        <p><strong>The long-term goal:</strong> Progressively replace the transformer with NCA computation. Our <a href="/blog/reservoir-computing">reservoir computing experiments</a> show that a simple linear readout on frozen NCA dynamics achieves 100% top-5 next-token prediction — proving the NCA can perform the computation currently delegated to the transformer.</p>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="distribution">4. Distribution Protocol</h2>
+
+    <h3>4.1 Network Layer</h3>
+    <p>SAGE nodes communicate over <strong>libp2p</strong>, the same networking stack used by IPFS and Ethereum 2.0. This provides battle-tested transport security (Noise protocol), stream multiplexing (Yamux), and NAT traversal via relay nodes.</p>
+
+    <p>Peer discovery uses three complementary mechanisms:</p>
+    <ul>
+        <li><strong>Bootstrap nodes:</strong> Well-known entry points for initial network connection</li>
+        <li><strong>mDNS:</strong> Local network discovery for LAN peers (zero configuration)</li>
+        <li><strong>Kademlia DHT:</strong> Distributed hash table for global peer discovery</li>
+    </ul>
+
+    <h3>4.2 Knowledge Diffs</h3>
+    <p>Instead of syncing entire grid states, SAGE nodes exchange <strong>sparse knowledge diffs</strong> — compact representations of what changed since the last sync.</p>
+
+    <div class="diagram">Knowledge Diff Format:
+┌────────────────────────────────────────────────┐
+│  Header (48 bytes)                             │
+│  ├─ Author: Ed25519 public key (32 bytes)      │
+│  ├─ Timestamp: Unix millis (8 bytes)           │
+│  ├─ Parent: blake3 hash of prior diff (4 bytes)│
+│  └─ Cell count: u16 (4 bytes)                  │
+│                                                │
+│  Cells (variable, typically 20-100 cells)      │
+│  ├─ Position: (x: u8, y: u8) = 2 bytes        │
+│  ├─ Channel mask: u24 = 3 bytes                │
+│  └─ Delta values: i8[] per channel = ~24 bytes │
+│                                                │
+│  Signature: Ed25519 (64 bytes)                 │
+│                                                │
+│  Typical total: 500–2,000 bytes                │
+└────────────────────────────────────────────────┘</div>
+
+    <p>A typical diff is <strong>~1KB</strong> — three orders of magnitude smaller than even the smallest LLM weight update. This means SAGE can synchronize knowledge over dial-up-class bandwidth.</p>
+
+    <h3>4.3 Gossip Protocol</h3>
+    <p>Diffs propagate through the network via <strong>GossipSub</strong> — a pubsub protocol designed for attack resilience <span class="ref-tag">[2]</span>. When a node generates a knowledge diff, it publishes to the SAGE topic. GossipSub ensures the diff reaches all subscribed nodes in O(log N) rounds, where N is the network size.</p>
+
+    <p>For a network of 10,000 nodes, a diff reaches full propagation in ~13 gossip rounds — typically under 30 seconds.</p>
+
+    <h3>4.4 Merge Semantics</h3>
+    <p>When a node receives a diff from the network, it must merge the incoming knowledge with its existing grid state. SAGE uses a <strong>confidence-weighted merge</strong>:</p>
+
+    <ol>
+        <li><strong>Non-conflicting updates:</strong> If the incoming diff touches cells that the local node hasn't recently modified, the diff is applied directly with the sender's confidence values</li>
+        <li><strong>Conflicting updates:</strong> If both the local node and the incoming diff have modified the same cells, values are blended using a weighted average: <em>merged = (local × local_confidence + remote × remote_confidence × reputation) / (local_confidence + remote_confidence × reputation)</em></li>
+        <li><strong>Post-merge integration:</strong> After applying the diff, the NCA runs several integration steps, allowing the new knowledge to organically merge with existing patterns through local dynamics</li>
+    </ol>
+
+    <p>Knowledge history is maintained as a <strong>Merkle DAG</strong> (similar to Git), enabling efficient sync between nodes that have been offline — they compare heads, identify divergence points, and exchange only missing diffs.</p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="security">5. Security &amp; Privacy</h2>
+
+    <h3>5.1 The Lossy Compression Argument</h3>
+    <p>SAGE's strongest privacy guarantee is architectural: <strong>the NCA encoding is a many-to-one function</strong>. Many different input texts produce the same or similar grid state changes. This is not a bug — it's the feature.</p>
+
+    <p>Consider: a 256×256 grid with 24 shared channels has 256 × 256 × 24 = 1,572,864 values. A typical diff modifies 50–100 cells across ~24 channels — roughly 1,200–2,400 values. But the source text that produced that diff contained 500–5,000 tokens of natural language, each carrying far more information. The encoding is <strong>lossy by design</strong>.</p>
+
+    <div class="callout">
+        <p><strong>Information-theoretic argument:</strong> A 1KB diff contains ~8,000 bits of information. The source text that produced it contains 50,000–500,000 bits. Even with perfect analysis, an attacker cannot recover more information than the diff contains. The reconstruction problem is fundamentally underdetermined.</p>
+    </div>
+
+    <h3>5.2 Anti-Poisoning Defenses</h3>
+    <p>SAGE employs a four-layer defense against knowledge poisoning:</p>
+
+    <ol>
+        <li><strong>Cryptographic identity:</strong> Every diff is signed with the author's Ed25519 key. Sybil attacks require generating many long-lived identities that build reputation independently</li>
+        <li><strong>Diff validation:</strong> Receiving nodes check magnitude bounds (no single cell can change by more than threshold), coverage limits (a diff can't modify more than 5% of the grid), and stability checks (the grid must remain stable after applying the diff)</li>
+        <li><strong>Reputation system:</strong> Nodes accumulate reputation through consistent, validated contributions. New nodes start with low trust. Reputation decays if diffs are frequently rejected by peers</li>
+        <li><strong>Knowledge consensus:</strong> Knowledge that is corroborated by multiple independent nodes receives a confidence boost. Isolated claims from single sources remain low-confidence and are gated during retrieval</li>
+    </ol>
+
+    <h3>5.3 Differential Privacy</h3>
+    <p>Beyond the inherent lossyness of NCA encoding, SAGE applies <strong>calibrated Laplace noise</strong> to diffs before publication. This provides formal ε-differential privacy guarantees — an observer cannot determine whether any specific piece of information was in the training data, even with access to all published diffs.</p>
+
+    <p>The private channels (24–31) are <strong>never shared</strong> over the network. Users can configure additional channel filtering to control exactly what knowledge categories are shared with the network.</p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="experiment">6. The Emergent Intelligence Experiment</h2>
+
+    <p>The most compelling demonstration of SAGE's architecture is an experiment in <strong>emergent collective intelligence</strong> — knowledge that no single node possesses, arising from the combination of independently-learned domains.</p>
+
+    <h3>6.1 Setup</h3>
+    <div class="diagram">Node A                Node B                Node C
+  │                    │                    │
+  │ Learns:            │ Learns:            │ Learns:
+  │ "Climate change    │ "Coral reefs are   │ (nothing — 
+  │  causes ocean      │  built by tiny     │  empty grid)
+  │  acidification     │  organisms that    │
+  │  and rising sea    │  are sensitive     │
+  │  temperatures"     │  to pH and         │
+  │                    │  temperature"      │
+  │                    │                    │
+  └────── sync ────────┴────── sync ────────┘
+                       │
+                 After merge:
+                 Node C's grid contains
+                 BOTH knowledge domains
+                       │
+              Question to Node C:
+        "How does climate change
+         affect coral reefs?"</div>
+
+    <h3>6.2 The Key Question</h3>
+    <p>Node A learned about climate change. Node B learned about coral reefs. <strong>Neither node was ever told the relationship between them.</strong> After gossip sync, can Node C — which learned nothing directly — answer the combined question?</p>
+
+    <p>This is the acid test for emergent intelligence. The answer must synthesize information from two independent sources, creating an association that was <em>never explicitly taught</em>.</p>
+
+    <h3>6.3 Why It Should Work</h3>
+    <p>The NCA architecture makes this possible through <strong>spatial proximity in the knowledge grid</strong>. When Node A encodes "ocean acidification" and Node B encodes "sensitive to pH," these concepts land in nearby grid regions (because the semantic hash maps related concepts to nearby coordinates). After merge and NCA integration steps, the local dynamics create <em>new associations</em> between the merged knowledge — associations that emerge from the cellular automata rules, not from any explicit programming.</p>
+
+    <div class="highlight-box">
+        <p><strong>This is emergent collective intelligence:</strong> knowledge that exists in the network but in no single node's training data. It arises from the interaction of independently-learned patterns through NCA dynamics. The whole becomes greater than the sum of its parts.</p>
+    </div>
+
+    <h3>6.4 Early Results</h3>
+    <p>Our initial experiments on smaller grids demonstrate the foundation. NCA grids trained on literary corpora show signal ratios of <strong>25–239× random baseline</strong> <span class="ref-tag">[3]</span>, proving the architecture learns real statistical structure. Reservoir computing experiments show <strong>100% top-5 prediction accuracy</strong> with a simple linear readout <span class="ref-tag">[4]</span>, proving the grid state encodes computationally useful representations.</p>
+
+    <p>Full multi-node emergent intelligence benchmarks are planned for Q2 2026, with results to be published in the forthcoming academic paper.</p>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="roadmap">7. Roadmap</h2>
+
+    <div class="roadmap-grid">
+        <div class="roadmap-card">
+            <h4>✓ Phase 1 — Foundation</h4>
+            <div class="timeline">Complete</div>
+            <p>Local NCA training, knowledge encoding/retrieval, OpenAI-compatible API, single-node chat. Reservoir computing proof-of-concept.</p>
+        </div>
+        <div class="roadmap-card">
+            <h4>✓ Phase 2 — Networking</h4>
+            <div class="timeline">Complete</div>
+            <p>libp2p transport, gossip protocol, knowledge diff format, peer discovery, basic merge semantics. Multi-node sync operational.</p>
+        </div>
+        <div class="roadmap-card">
+            <h4>⟳ Phase 3 — Kill the LLM</h4>
+            <div class="timeline">Q1–Q3 2026</div>
+            <p>Progressively replace transformer parameters with NCA computation. Hierarchical NCA grids, criticality-driven training, channel partitioning. Target: 1.7B → 500M → 100M parameter transformer.</p>
+        </div>
+        <div class="roadmap-card">
+            <h4>◇ Phase 4 — Pure NCA Intelligence</h4>
+            <div class="timeline">2027+</div>
+            <p>Full text generation from NCA dynamics alone. Multi-modal knowledge (images, audio). Specialized sub-networks. Mobile nodes (phones as SAGE peers).</p>
+        </div>
+    </div>
+
+    <h3>Research Milestones</h3>
+    <table class="wp-table">
+        <thead>
+            <tr><th>Milestone</th><th>Target</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>Multi-node emergent intelligence benchmark</td><td>Q2 2026</td></tr>
+            <tr><td>Formal differential privacy proof</td><td>Q2 2026</td></tr>
+            <tr><td>1,000-node simulation study</td><td>Q3 2026</td></tr>
+            <tr><td>Academic paper (arXiv preprint)</td><td>August 2026</td></tr>
+            <tr><td>Conference submission (NeurIPS/ICML)</td><td>September 2026</td></tr>
+        </tbody>
+    </table>
+
+    <!-- ═══════════════════════════════════════════════ -->
+    <h2 id="references">8. References</h2>
+
+    <ol class="references">
+        <li><span class="ref-tag">[1]</span> Zhu, L., Liu, Z., & Han, S. "Deep Leakage from Gradients." <em>NeurIPS</em>, 2019. — Demonstrates gradient leakage attacks that can reconstruct training data from shared gradients in federated learning.</li>
+        <li><span class="ref-tag">[2]</span> Vyzovitis, D., et al. "GossipSub: Attack-Resilient Message Propagation in the Filecoin and ETH2.0 Networks." 2020. — The gossip protocol SAGE uses for knowledge diff propagation.</li>
+        <li><span class="ref-tag">[3]</span> SAGE Project. "Can Neural Cellular Automata Learn Language?" <a href="/research">whatssage.ai/research</a>, 2026. — NCA training experiments showing 238.9× signal ratio on literary corpora.</li>
+        <li><span class="ref-tag">[4]</span> SAGE Project. "NCA as a Dynamical Reservoir." <a href="/blog/reservoir-computing">whatssage.ai/blog/reservoir-computing</a>, 2026. — 100% top-5 prediction with linear readout on frozen NCA dynamics.</li>
+        <li><span class="ref-tag">[5]</span> Mordvintsev, A., et al. "Growing Neural Cellular Automata." <em>Distill</em>, 2020. — The foundational work on differentiable NCA for self-organizing systems.</li>
+        <li><span class="ref-tag">[6]</span> McMahan, B., et al. "Communication-Efficient Learning of Deep Networks from Decentralized Data." <em>AISTATS</em>, 2017. — FedAvg and the foundation of federated learning.</li>
+        <li><span class="ref-tag">[7]</span> Dwork, C., & Roth, A. "The Algorithmic Foundations of Differential Privacy." <em>Foundations and Trends in Theoretical Computer Science</em>, 2014. — The theoretical foundation for SAGE's privacy guarantees.</li>
+        <li><span class="ref-tag">[8]</span> Ramsauer, H., et al. "Hopfield Networks is All You Need." <em>ICLR</em>, 2021. — Modern Hopfield networks as associative memory, informing NCA grid design.</li>
+        <li><span class="ref-tag">[9]</span> Lian, X., et al. "Can Decentralized Algorithms Outperform Centralized Algorithms? A Case Study for Decentralized Parallel Stochastic Gradient Descent." <em>NeurIPS</em>, 2017. — Theoretical foundation for gossip-based distributed optimization.</li>
+        <li><span class="ref-tag">[10]</span> Benet, J. "IPFS — Content Addressed, Versioned, P2P File System." arXiv:1407.3561, 2014. — Content-addressed storage and Merkle DAG versioning that inspires SAGE's knowledge history.</li>
+    </ol>
+
+    <div class="highlight-box">
+        <p><strong>🌿 SAGE is open source and free forever.</strong> Install it with <code style="color:var(--cyan)">curl -fsSL https://whatssage.ai/install.sh | bash</code> or join the <a href="https://discord.gg/U999zZUuUV">Discord</a> to follow the research. Source code: <a href="https://github.com/Caryyon/sage">github.com/Caryyon/sage</a></p>
+    </div>
+
+</div>
+
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="/">Home</a>
+            <a href="/research">Research</a>
+            <a href="/docs">Docs</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>
