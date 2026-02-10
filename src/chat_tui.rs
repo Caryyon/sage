@@ -3,6 +3,37 @@
 //! This module provides the rich terminal UI that runs inference locally
 //! (embedded SmolLM2 or Ollama) with the NCA brain visualization grid.
 
+/// Strip emoji and other non-ASCII symbols that cause TUI rendering issues
+fn strip_emoji(s: &str) -> String {
+    s.chars()
+        .filter(|c| {
+            // Keep ASCII, extended Latin, common punctuation
+            // Filter out emoji ranges and misc symbols
+            let cp = *c as u32;
+            cp < 0x2600 // Below symbols range
+            || (cp >= 0x2700 && cp < 0x2800) // Dingbats (some are fine)
+            || (cp >= 0xFE00 && cp < 0xFE10) // Variation selectors
+            || !(
+                (cp >= 0x1F600 && cp <= 0x1F64F)  // Emoticons
+                || (cp >= 0x1F300 && cp <= 0x1F5FF) // Misc symbols & pictographs
+                || (cp >= 0x1F680 && cp <= 0x1F6FF) // Transport & map
+                || (cp >= 0x1F700 && cp <= 0x1F77F) // Alchemical
+                || (cp >= 0x1F780 && cp <= 0x1F7FF) // Geometric extended
+                || (cp >= 0x1F800 && cp <= 0x1F8FF) // Supplemental arrows
+                || (cp >= 0x1F900 && cp <= 0x1F9FF) // Supplemental symbols
+                || (cp >= 0x1FA00 && cp <= 0x1FA6F) // Chess symbols
+                || (cp >= 0x1FA70 && cp <= 0x1FAFF) // Symbols extended-A
+                || (cp >= 0x2600 && cp <= 0x26FF)   // Misc symbols
+                || (cp >= 0x2700 && cp <= 0x27BF)   // Dingbats
+                || (cp >= 0xFE00 && cp <= 0xFE0F)   // Variation selectors
+                || (cp >= 0x200D && cp <= 0x200D)   // ZWJ
+                || cp == 0x20E3                      // Combining enclosing keycap
+                || (cp >= 0xE0020 && cp <= 0xE007F) // Tags
+            )
+        })
+        .collect()
+}
+
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
@@ -598,6 +629,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         // Check for inference result
         if state.generating {
             if let Ok(response) = rx.try_recv() {
+                let response = strip_emoji(&response);
                 if let Some(last) = state.messages.last_mut() {
                     if matches!(last.role, Role::Sage) {
                         last.content = response.clone();
