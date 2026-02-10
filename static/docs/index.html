@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Getting Started — SAGE</title>
-    <meta name="description" content="Get started with SAGE — install, chat, and join the decentralized AI network in under a minute.">
+    <meta name="description" content="Get started with SAGE — install, chat, and join the decentralized AI network.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -127,6 +127,39 @@
         pre .comment { color: #555; }
         pre .highlight { color: var(--green); }
 
+        /* Install box with copy */
+        .install-box {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 16px 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .install-box code {
+            background: none;
+            color: var(--cyan);
+            font-size: 0.88rem;
+            flex: 1;
+        }
+        .install-box .copy-btn {
+            background: rgba(0,255,213,0.1);
+            border: 1px solid rgba(0,255,213,0.2);
+            color: var(--cyan);
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .install-box .copy-btn:hover { background: rgba(0,255,213,0.2); }
+        .install-box .copy-btn.copied { background: rgba(57,255,20,0.2); border-color: var(--green); color: var(--green); }
+
         /* Table */
         table {
             width: 100%;
@@ -158,7 +191,10 @@
             margin: 16px 0 24px;
             font-size: 0.82rem;
         }
+        .callout.warning { border-left-color: #fbbf24; }
+        .callout.green { border-left-color: var(--green); }
         .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 8px; }
 
         /* TOC */
         .toc {
@@ -196,6 +232,8 @@
             pre { padding: 14px; }
             table { font-size: 0.72rem; }
             th, td { padding: 8px 10px; }
+            .install-box { flex-direction: column; }
+            .install-box code { font-size: 0.75rem; word-break: break-all; }
         }
     </style>
 </head>
@@ -223,181 +261,178 @@
 
 <div class="content">
 
-<h1>🌿 Getting Started</h1>
-<p class="lead">Install SAGE, start chatting, and join the decentralized AI network — all in under a minute.</p>
+<h1>🌿 Getting Started with SAGE</h1>
+<p class="lead">Welcome! SAGE is an early alpha — things will be rough around the edges, but the core works and we're building fast. Here's everything you need to get running.</p>
 
 <div class="toc">
     <h4>Contents</h4>
     <ol>
-        <li><a href="#installation">Installation</a></li>
-        <li><a href="#first-chat">First Chat</a></li>
-        <li><a href="#join-network">Join the Network</a></li>
-        <li><a href="#how-it-works">How It Works</a></li>
-        <li><a href="#configuration">Configuration</a></li>
-        <li><a href="#api">OpenAI-Compatible API</a></li>
-        <li><a href="#commands">Commands Reference</a></li>
-        <li><a href="#updating">Updating</a></li>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="#first-chat">Your First Chat</a></li>
+        <li><a href="#brain">Understanding the Brain</a></li>
+        <li><a href="#network">Joining the Network</a></li>
+        <li><a href="#keyboard">Keyboard Shortcuts</a></li>
         <li><a href="#troubleshooting">Troubleshooting</a></li>
+        <li><a href="#whats-next">What's Next</a></li>
     </ol>
 </div>
 
-<!-- Installation -->
-<h2 id="installation">📦 Installation</h2>
-<p>One command:</p>
-<pre><code><span class="cmd">curl -fsSL https://whatssage.ai/install.sh | bash</span></code></pre>
-<p>This downloads the <code>sage</code> binary for your platform (Linux/macOS, x86_64/arm64) and installs it to <code>~/.sage/bin/sage</code>. It also adds <code>~/.sage/bin</code> to your PATH.</p>
-<p>After install, open a new terminal and verify:</p>
-<pre><code><span class="prompt">$</span> <span class="cmd">sage version</span>
-<span class="output">sage 0.1.0</span></code></pre>
+<!-- Prerequisites -->
+<h2 id="prerequisites">📋 Prerequisites</h2>
 
-<!-- First Chat -->
-<h2 id="first-chat">💬 First Chat</h2>
-<pre><code><span class="cmd">sage chat</span></code></pre>
-<p>On first run, SAGE downloads <strong>SmolLM2 1.7B</strong> (~1 GB) — a small but capable language model that runs entirely on your CPU. No GPU needed.</p>
-<pre><code><span class="output">SAGE Chat — engine: SmolLM2-1.7B
-Brain: /home/you/.sage/brain.bin (0 active cells)
-Type your message, or /quit to exit.
+<h3>System Requirements</h3>
+<ul>
+    <li><strong>macOS</strong> (Apple Silicon / arm64) or <strong>Linux</strong> (x86_64)</li>
+    <li>~1 GB free disk space (for the model download)</li>
+    <li>No GPU required — runs on CPU</li>
+</ul>
 
-</span><span class="cmd">you></span> What is SAGE?
-<span class="highlight">sage></span> I'm SAGE — a decentralized AI running locally on your machine...</code></pre>
-<p>Type <code>/quit</code> or <code>/exit</code> to leave.</p>
+<h3>Recommended: Install Ollama</h3>
+<p>For the best experience, install <a href="https://ollama.com" target="_blank">Ollama</a> before using SAGE. SAGE auto-detects Ollama and uses it as the language model backend — giving you access to much better models like Qwen, Llama, Mistral, etc.</p>
 
-<h3>Using Ollama Instead</h3>
-<p>If you have <a href="https://ollama.com">Ollama</a> installed, use any Ollama model as the backend:</p>
-<pre><code><span class="cmd">sage chat --ollama</span>                          <span class="comment"># Uses qwen2.5:14b by default</span>
-<span class="cmd">sage chat --ollama --model llama3.2:3b</span>      <span class="comment"># Pick a different model</span>
-<span class="cmd">sage chat --ollama --ollama-url http://remote:11434</span></code></pre>
-
-<!-- Join the Network -->
-<h2 id="join-network">🔗 Join the Network</h2>
-<pre><code><span class="cmd">sage node start</span></code></pre>
-<pre><code><span class="output">🧠 SAGE Node starting...
-   Identity: 12D3KooW...
-   Brain: /home/you/.sage/brain.bin (42 active cells)
-   Gossip port: 0
-   Chat port: 19175
-   mDNS: enabled
-
-✅ Node running. Press Ctrl+C to stop.</span></code></pre>
-
-<p><strong>What happens:</strong></p>
-<ol>
-    <li><strong>LAN Discovery</strong> — mDNS finds other SAGE nodes on your local network</li>
-    <li><strong>Bootstrap Connection</strong> — Connects to <code>bootstrap.whatssage.ai:4001</code> to find internet peers</li>
-    <li><strong>Knowledge Sync</strong> — Exchanges compressed knowledge diffs with peers</li>
-    <li><strong>Brain Saves</strong> — Periodically saves your brain file to disk</li>
-</ol>
-
-<h3>Node Options</h3>
-<pre><code><span class="cmd">sage node start --port 9000</span>          <span class="comment"># Set gossip port (default: random)</span>
-<span class="cmd">sage node start --chat-port 19175</span>    <span class="comment"># Set chat port (default: 19175)</span>
-<span class="cmd">sage node start --sync-interval 600</span>  <span class="comment"># Sync every 10 min (default: 300s)</span>
-<span class="cmd">sage node start --no-mdns</span>            <span class="comment"># Disable LAN discovery</span></code></pre>
-
-<h3>Check Status &amp; Stop</h3>
-<pre><code><span class="cmd">sage node status</span>     <span class="comment"># Check if node is running</span>
-<span class="cmd">sage node stop</span>       <span class="comment"># Stop the node</span></code></pre>
-
-<!-- How It Works -->
-<h2 id="how-it-works">🧠 How It Works</h2>
-<ol>
-    <li><strong>You chat</strong> with your local SAGE instance</li>
-    <li><strong>Conversations become knowledge</strong> — encoded into a Neural Cellular Automata (NCA) grid, a compact 32×32 grid (~128 KB)</li>
-    <li><strong>Knowledge is shared as diffs</strong> — tiny compressed updates (200–2000 bytes) representing <em>what was learned</em>, not what was said</li>
-    <li><strong>Diffs flow via gossip</strong> — peer-to-peer, no central server</li>
-    <li><strong>Your raw conversations never leave your machine</strong></li>
-</ol>
-<div class="callout">
-    <p>The more people run SAGE, the more knowledge flows through the network, and the smarter every node becomes.</p>
+<div class="callout green">
+    <p><strong>With Ollama:</strong> SAGE uses whatever model you choose (default: qwen2.5:14b). Great output quality.</p>
+    <p><strong>Without Ollama:</strong> SAGE falls back to a built-in SmolLM2 1.7B model. It works, but responses will be noticeably more basic. Fine for testing, but Ollama is strongly recommended for real use.</p>
 </div>
 
-<!-- Configuration -->
-<h2 id="configuration">⚙️ Configuration</h2>
-<p>Config lives at <code>~/.sage/config.toml</code>. View it:</p>
-<pre><code><span class="cmd">sage config</span>          <span class="comment"># Print current config</span>
-<span class="cmd">sage config --path</span>   <span class="comment"># Print config file path</span></code></pre>
+<!-- Install -->
+<h2 id="install">📦 Install</h2>
+<p>One command:</p>
+<div class="install-box" id="installBox">
+    <code>curl -fsSL https://whatssage.ai/install.sh | bash</code>
+    <button class="copy-btn" onclick="copyInstall(event)">Copy</button>
+</div>
+<p>This downloads the <code>sage</code> binary for your platform and installs it to <code>~/.sage/bin/sage</code>. It also adds <code>~/.sage/bin</code> to your PATH.</p>
+<p>Open a <strong>new terminal</strong> after install, then verify:</p>
+<pre><code><span class="prompt">$</span> <span class="cmd">sage version</span>
+<span class="output">sage v0.1.x</span></code></pre>
 
-<h3>Example Config</h3>
-<pre><code><span class="comment">[network]</span>
-bootstrap = "bootstrap.whatssage.ai:4001"
-listen_port = 0
-chat_port = 19175
-sync_interval = 300
-mdns = true
+<!-- First Chat -->
+<h2 id="first-chat">💬 Your First Chat</h2>
+<pre><code><span class="cmd">sage chat</span></code></pre>
 
-<span class="comment">[privacy]</span>
-shared_channels = [8, 9, 10, 11, 12, 13, 14, 15]
-min_conversations_before_share = 5
-dp_epsilon = 1.0
-private_topics = ["health", "finance"]</code></pre>
-<p>Set <code>SAGE_HOME</code> environment variable to change the data directory (default: <code>~/.sage</code>).</p>
+<p>If Ollama is running, SAGE will auto-detect it and use it. Otherwise it downloads SmolLM2 1.7B (~1 GB) on first run — this only happens once.</p>
 
-<!-- API -->
-<h2 id="api">🔌 OpenAI-Compatible API</h2>
-<p>SAGE exposes an OpenAI-compatible API at <code>localhost:19176/v1</code>:</p>
-<pre><code><span class="comment"># Set environment (works with most tools)</span>
-<span class="cmd">export OPENAI_API_BASE=http://localhost:19176/v1</span>
-<span class="cmd">export OPENAI_API_KEY=not-needed</span>
+<p>Here's what you'll see:</p>
+<pre><code><span class="output">SAGE Chat
+Engine: ollama (qwen2.5:14b)
+Brain: ~/.sage/brain.bin (0 active cells)
 
-<span class="comment"># curl example</span>
-<span class="cmd">curl http://localhost:19176/v1/chat/completions</span> \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "sage",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'</code></pre>
-<p>Works with <strong>Continue</strong>, <strong>Open WebUI</strong>, <strong>LangChain</strong>, and any tool that speaks the OpenAI protocol. No API key required.</p>
+</span><span class="cmd">you></span> What's the deal with neural cellular automata?
 
-<!-- Commands -->
-<h2 id="commands">📋 Commands Reference</h2>
+<span class="highlight">sage></span> Neural Cellular Automata are grids of cells where each cell
+      updates based on its neighbors using small neural networks.
+      They can self-organize, self-repair, and encode information
+      as stable patterns — like a living memory substrate...
+
+<span class="output">   ┌─ Brain ──────────────────┐
+   │  · · · · · · · · · · ·  │
+   │  · · ·  ██·· · · · · ·  │
+   │  · · ████████· · · · ·  │
+   │  · · · ·██· · · · · · · │
+   │  · · · · · · · · · · ·  │
+   └──────────────────────────┘</span></code></pre>
+
+<p>The brain visualization at the bottom shows SAGE's NCA grid in real-time. As you chat, you'll see patterns form and grow — that's knowledge being encoded into the neural cellular automata.</p>
+
+<div class="callout">
+    <p><strong>Tip:</strong> Use <code>sage chat --ollama --model llama3.2:3b</code> to pick a specific Ollama model. Smaller models are faster; larger models give better answers.</p>
+</div>
+
+<!-- Understanding the Brain -->
+<h2 id="brain">🧠 Understanding the Brain</h2>
+<p>The brain visualization shows SAGE's NCA (Neural Cellular Automata) grid — a 32×32 grid of cells that stores knowledge as self-organizing patterns.</p>
+
+<ul>
+    <li><strong>Dim dots</strong> — inactive cells, waiting</li>
+    <li><strong>Bright dots / blocks</strong> — active cells encoding knowledge</li>
+    <li><strong>Clusters</strong> — related concepts that have self-organized together</li>
+    <li><strong>Growth over time</strong> — the more you chat, the more the grid fills with learned patterns</li>
+</ul>
+
+<p>This isn't just a pretty animation. The grid is the actual knowledge store. When you ask SAGE a question, it queries the grid for relevant patterns and uses them to augment the LLM's response. The patterns are compact (~128 KB for the whole brain) and can be shared across the network.</p>
+
+<div class="callout">
+    <p><strong>Think of it like:</strong> The LLM handles language. The NCA grid handles memory. Together, they give SAGE both fluency and recall — without needing a massive context window.</p>
+</div>
+
+<!-- Joining the Network -->
+<h2 id="network">🔗 Joining the Network</h2>
+<pre><code><span class="cmd">sage node start</span></code></pre>
+
+<p>This starts your SAGE node and connects it to the peer-to-peer network. Here's what happens:</p>
+<ol>
+    <li><strong>LAN discovery</strong> — finds other SAGE nodes on your local network via mDNS</li>
+    <li><strong>Bootstrap connection</strong> — connects to <code>bootstrap.whatssage.ai:4001</code> to find internet peers</li>
+    <li><strong>Knowledge sync</strong> — exchanges compact NCA pattern diffs with other nodes</li>
+</ol>
+
+<h3>What gets shared (and what doesn't)</h3>
+<div class="callout green">
+    <p><strong>Shared:</strong> Compressed NCA pattern diffs — tiny (200–2000 bytes), anonymous representations of <em>what was learned</em>. Think statistical patterns, not text.</p>
+    <p><strong>NOT shared:</strong> Your conversations, your prompts, your data. Raw text never leaves your machine. PII filtering runs before any encoding.</p>
+</div>
+
+<p>You can also run in <strong>local-only mode</strong> — all the learning, none of the network:</p>
+<pre><code><span class="cmd">sage chat</span>  <span class="comment"># Just chat, no network. Brain still learns locally.</span></code></pre>
+
+<!-- Keyboard Shortcuts -->
+<h2 id="keyboard">⌨️ Keyboard Shortcuts</h2>
 <table>
     <thead>
-        <tr><th>Command</th><th>Description</th></tr>
+        <tr><th>Key</th><th>Action</th></tr>
     </thead>
     <tbody>
-        <tr><td><code>sage chat</code></td><td>Interactive chat (default command)</td></tr>
-        <tr><td><code>sage chat --ollama</code></td><td>Chat using Ollama backend</td></tr>
-        <tr><td><code>sage chat --ollama --model &lt;name&gt;</code></td><td>Chat with specific Ollama model</td></tr>
-        <tr><td><code>sage node start</code></td><td>Start the network node</td></tr>
-        <tr><td><code>sage node stop</code></td><td>Stop the running node</td></tr>
-        <tr><td><code>sage node status</code></td><td>Show node status</td></tr>
-        <tr><td><code>sage config</code></td><td>Show current configuration</td></tr>
-        <tr><td><code>sage config --path</code></td><td>Print config file path</td></tr>
-        <tr><td><code>sage update</code></td><td>Update to latest version</td></tr>
-        <tr><td><code>sage update --quiet</code></td><td>Update without changelog</td></tr>
-        <tr><td><code>sage version</code></td><td>Print version info</td></tr>
+        <tr><td><code>PageUp</code> / <code>PageDown</code></td><td>Scroll through chat history</td></tr>
+        <tr><td><code>Shift + ←→</code></td><td>Navigate within input</td></tr>
+        <tr><td><code>Shift + ↑↓</code></td><td>Scroll output</td></tr>
+        <tr><td><code>Ctrl + C</code></td><td>Cancel current generation</td></tr>
+        <tr><td><code>/quit</code> or <code>/exit</code></td><td>Exit chat</td></tr>
     </tbody>
 </table>
-
-<!-- Updating -->
-<h2 id="updating">🔄 Updating</h2>
-<pre><code><span class="cmd">sage update</span></code></pre>
-<p>Downloads the latest binary, shows the changelog, and migrates your brain file if needed. Your data in <code>~/.sage</code> is always preserved. Use <code>--quiet</code> to skip the changelog.</p>
 
 <!-- Troubleshooting -->
 <h2 id="troubleshooting">🔧 Troubleshooting</h2>
 
-<h3>"command not found: sage"</h3>
-<p>Make sure <code>~/.sage/bin</code> is in your PATH:</p>
-<pre><code><span class="cmd">export PATH="$HOME/.sage/bin:$PATH"</span></code></pre>
+<h3>"Killed" on macOS</h3>
+<p>macOS may kill unsigned binaries. Fix it:</p>
+<pre><code><span class="cmd">codesign -s - ~/.sage/bin/sage</span></code></pre>
 
-<h3>Model download is slow</h3>
-<p>SmolLM2 (~1 GB) downloads on first <code>sage chat</code>. This only happens once.</p>
+<h3>Bad output quality</h3>
+<p>If responses are short, repetitive, or nonsensical — you're probably using the built-in SmolLM2 1.7B fallback. Install <a href="https://ollama.com" target="_blank">Ollama</a> for dramatically better results:</p>
+<pre><code><span class="comment"># Install Ollama, then:</span>
+<span class="cmd">sage chat --ollama</span></code></pre>
+
+<h3>"command not found: sage"</h3>
+<p>Make sure <code>~/.sage/bin</code> is in your PATH. Open a new terminal after install, or run:</p>
+<pre><code><span class="cmd">export PATH="$HOME/.sage/bin:$PATH"</span></code></pre>
 
 <h3>Node won't connect to peers</h3>
 <ul>
     <li>Check your firewall allows outbound connections</li>
-    <li>Verify <code>bootstrap.whatssage.ai:4001</code> is reachable</li>
+    <li>Verify <code>bootstrap.whatssage.ai:4001</code> is reachable: <code>nc -zv bootstrap.whatssage.ai 4001</code></li>
     <li>Try <code>sage node start --no-mdns</code> if mDNS causes issues</li>
 </ul>
 
-<h3>Brain file corruption</h3>
-<p>Delete and let SAGE create a fresh one:</p>
+<h3>Brain file issues</h3>
+<p>If things get weird, you can reset the brain. You'll re-learn from the network when you connect:</p>
 <pre><code><span class="cmd">rm ~/.sage/brain.bin</span></code></pre>
-<p>You'll re-sync from the network when you start a node.</p>
 
-<h3>Change data directory</h3>
-<pre><code><span class="cmd">export SAGE_HOME=/path/to/custom/sage</span></code></pre>
+<!-- What's Next -->
+<h2 id="whats-next">🚀 What's Next</h2>
+<p>You're up and running. Here's where to go from here:</p>
+<ul>
+    <li><a href="/blog">Blog</a> — Research updates and technical deep dives</li>
+    <li><a href="/research">Research</a> — NCA training results and experimental data</li>
+    <li><a href="/whitepaper">Whitepaper</a> — The full technical architecture</li>
+    <li><a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a> — Source code, issues, contributions</li>
+    <li><a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a> — Chat with the community, report bugs, follow progress</li>
+</ul>
+
+<div class="callout warning">
+    <p><strong>Remember:</strong> SAGE is early alpha. Things will break. Output quality varies. The NCA research is promising but experimental. We're building in the open — your feedback and bug reports on <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a> make a real difference.</p>
+</div>
 
 <hr>
 
@@ -412,6 +447,19 @@ private_topics = ["health", "finance"]</code></pre>
 <footer>
     Built with 🐺 by the SAGE community
 </footer>
+
+<script>
+function copyInstall(e) {
+    e.stopPropagation();
+    const cmd = 'curl -fsSL https://whatssage.ai/install.sh | bash';
+    navigator.clipboard.writeText(cmd).then(() => {
+        const btn = e.target;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+</script>
 
 </body>
 </html>
