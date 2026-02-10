@@ -18,8 +18,8 @@ spec:
     spec:
       containers:
         - name: sage-bootstrap
-          image: docker.io/library/sage-bootstrap:latest
-          imagePullPolicy: Never
+          image: localhost:30500/sage-bootstrap:latest
+          imagePullPolicy: Always
           args: ["--port", "4001", "--no-mdns"]
           ports:
             - containerPort: 4001
@@ -55,8 +55,9 @@ spec:
   ports:
     - port: 4001
       targetPort: 4001
+      nodePort: 30401
       protocol: TCP
-  type: ClusterIP
+  type: NodePort
 ---
 # Traefik TCP IngressRoute for bootstrap.whatssage.ai:4001
 apiVersion: traefik.io/v1alpha1

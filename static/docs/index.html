@@ -288,12 +288,12 @@
     <li>No GPU required — runs on CPU</li>
 </ul>
 
-<h3>Recommended: Install Ollama</h3>
-<p>For the best experience, install <a href="https://ollama.com" target="_blank">Ollama</a> before using SAGE. SAGE auto-detects Ollama and uses it as the language model backend — giving you access to much better models like Qwen, Llama, Mistral, etc.</p>
+<h3>Optional: Install Ollama</h3>
+<p>SAGE ships with an embedded SmolLM2 1.7B model that works out of the box — no extra setup needed. For access to larger models like Qwen, Llama, or Mistral, install <a href="https://ollama.com" target="_blank">Ollama</a> and use the <code>--ollama</code> flag.</p>
 
 <div class="callout green">
-    <p><strong>With Ollama:</strong> SAGE uses whatever model you choose (default: qwen2.5:14b). Great output quality.</p>
-    <p><strong>Without Ollama:</strong> SAGE falls back to a built-in SmolLM2 1.7B model. It works, but responses will be noticeably more basic. Fine for testing, but Ollama is strongly recommended for real use.</p>
+    <p><strong>Default (SmolLM2):</strong> Works immediately, no dependencies. Good for getting started.</p>
+    <p><strong>With <code>--ollama</code> flag:</strong> SAGE uses whatever Ollama model you choose (e.g. qwen2.5:14b). Better output quality for complex tasks.</p>
 </div>
 
 <!-- Install -->
@@ -306,17 +306,17 @@
 <p>This downloads the <code>sage</code> binary for your platform and installs it to <code>~/.sage/bin/sage</code>. It also adds <code>~/.sage/bin</code> to your PATH.</p>
 <p>Open a <strong>new terminal</strong> after install, then verify:</p>
 <pre><code><span class="prompt">$</span> <span class="cmd">sage version</span>
-<span class="output">sage v0.1.x</span></code></pre>
+<span class="output">sage v0.2.0-alpha</span></code></pre>
 
 <!-- First Chat -->
 <h2 id="first-chat">💬 Your First Chat</h2>
 <pre><code><span class="cmd">sage chat</span></code></pre>
 
-<p>If Ollama is running, SAGE will auto-detect it and use it. Otherwise it downloads SmolLM2 1.7B (~1 GB) on first run — this only happens once.</p>
+<p>SAGE uses the embedded SmolLM2 1.7B model by default. To use Ollama instead, run <code>sage chat --ollama</code>.</p>
 
 <p>Here's what you'll see:</p>
 <pre><code><span class="output">SAGE Chat
-Engine: ollama (qwen2.5:14b)
+Engine: smollm2 (embedded)
 Brain: ~/.sage/brain.bin (0 active cells)
 
 </span><span class="cmd">you></span> What's the deal with neural cellular automata?
@@ -337,12 +337,12 @@ Brain: ~/.sage/brain.bin (0 active cells)
 <p>The brain visualization at the bottom shows SAGE's NCA grid in real-time. As you chat, you'll see patterns form and grow — that's knowledge being encoded into the neural cellular automata.</p>
 
 <div class="callout">
-    <p><strong>Tip:</strong> Use <code>sage chat --ollama --model llama3.2:3b</code> to pick a specific Ollama model. Smaller models are faster; larger models give better answers.</p>
+    <p><strong>Tip:</strong> Use <code>sage chat --ollama</code> to use Ollama models, or <code>sage chat --ollama --model llama3.2:3b</code> to pick a specific one. Smaller models are faster; larger models give better answers.</p>
 </div>
 
 <!-- Understanding the Brain -->
 <h2 id="brain">🧠 Understanding the Brain</h2>
-<p>The brain visualization shows SAGE's NCA (Neural Cellular Automata) grid — a 32×32 grid of cells that stores knowledge as self-organizing patterns.</p>
+<p>The brain visualization shows SAGE's NCA (Neural Cellular Automata) grid — a 256×256 grid of cells that stores knowledge as self-organizing patterns.</p>
 
 <ul>
     <li><strong>Dim dots</strong> — inactive cells, waiting</li>
@@ -400,7 +400,7 @@ Brain: ~/.sage/brain.bin (0 active cells)
 <pre><code><span class="cmd">codesign -s - ~/.sage/bin/sage</span></code></pre>
 
 <h3>Bad output quality</h3>
-<p>If responses are short, repetitive, or nonsensical — you're probably using the built-in SmolLM2 1.7B fallback. Install <a href="https://ollama.com" target="_blank">Ollama</a> for dramatically better results:</p>
+<p>If responses are short, repetitive, or nonsensical — the embedded SmolLM2 may be struggling with the topic. Try using Ollama with a larger model for better results:</p>
 <pre><code><span class="comment"># Install Ollama, then:</span>
 <span class="cmd">sage chat --ollama</span></code></pre>
 
