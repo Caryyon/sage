@@ -51,6 +51,18 @@
         .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
         /* ── NAV ── */
+        .alpha-banner {
+            background: #92400e;
+            border-bottom: 2px solid #fbbf24;
+            padding: 10px 24px;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #fef3c7;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .alpha-banner a { color: #fbbf24; text-decoration: underline; font-weight: 700; }
         nav {
             position: fixed;
             top: 0;
@@ -683,6 +695,11 @@
 </head>
 <body>
 
+<!-- Early Alpha Banner -->
+<div class="alpha-banner">
+    🚧 EARLY ALPHA — SAGE is under active development. Expect rough edges. <a href="https://discord.gg/U999zZUuUV" target="_blank">Join Discord</a> to follow progress.
+</div>
+
 <!-- Nav -->
 <nav>
     <div class="nav-inner">
@@ -698,11 +715,6 @@
         </div>
     </div>
 </nav>
-
-<!-- Early Alpha Banner -->
-<div style="position:relative;z-index:99;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.25);padding:10px 24px;text-align:center;font-size:0.78rem;color:#e8d48b;font-family:'JetBrains Mono',monospace;">
-    🚧 Early Alpha — SAGE is under active development. Expect rough edges. <a href="https://discord.gg/U999zZUuUV" target="_blank" style="color:#fbbf24;text-decoration:underline;">Join Discord</a> to follow progress.
-</div>
 
 <!-- Floating NCA cells background -->
 <div class="nca-bg" id="ncaBg"></div>

@@ -150,6 +150,20 @@ struct AppState {
     frame_counter: u64,
     // Chat scroll
     scroll_offset: usize, // 0 = bottom (most recent), >0 = scrolled up
+    // Network
+    peer_count: usize,
+}
+
+fn format_peer_count(n: usize) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}m", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else if n >= 100 {
+        format!("{}h", n / 100)
+    } else {
+        format!("{}", n)
+    }
 }
 
 fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, mode: BrainMode) {
@@ -503,6 +517,9 @@ fn ui(f: &mut Frame, state: &AppState) {
 
     // Header
     let version = env!("CARGO_PKG_VERSION");
+    let peer_str = format_peer_count(state.peer_count);
+    let peer_color = if state.peer_count > 0 { CYAN } else { DIM };
+    let peer_icon = if state.peer_count > 0 { "⬡" } else { "⬡" };
     let header = Paragraph::new(Line::from(vec![
         Span::styled("SAGE", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
         Span::styled(" — Shared Adaptive Growing Experience", Style::default().fg(PURPLE)),
@@ -512,6 +529,13 @@ fn ui(f: &mut Frame, state: &AppState) {
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(DIM_GREEN))
+            .title_top(
+                Line::from(vec![
+                    Span::styled(format!(" {} ", peer_icon), Style::default().fg(peer_color)),
+                    Span::styled(format!("{} peers ", peer_str), Style::default().fg(peer_color)),
+                ])
+                .alignment(ratatui::layout::Alignment::Right),
+            )
             .style(Style::default().bg(BG)),
     )
     .style(Style::default().bg(BG));
@@ -666,6 +690,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         brain_mode: BrainMode::Idle,
         frame_counter: 0,
         scroll_offset: 0,
+        peer_count: 0,
     };
 
     // Setup terminal
