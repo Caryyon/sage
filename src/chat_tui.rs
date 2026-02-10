@@ -486,7 +486,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         Span::styled("brain:", Style::default().fg(DIM)),
         Span::styled(&state.brain_path, Style::default().fg(DIM_GREEN)),
         if state.generating {
-            Span::styled("  ◌ thinking…", Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
+            Span::styled("  ◌ generating…", Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
         } else {
             Span::styled("", Style::default())
         },
@@ -558,9 +558,18 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
             inference::default_engine()
         }
         EngineMode::Auto => {
-            // Default to embedded SmolLM2 — use --ollama to switch to Ollama
-            eprintln!("🧠 Using embedded SmolLM2 (use --ollama for other models)");
-            inference::default_engine()
+            // Auto-detect: prefer Ollama if running, fall back to embedded
+            let ollama = OllamaEngine::new(
+                if model.is_empty() { None } else { Some(model.to_string()) },
+                if ollama_url.is_empty() { None } else { Some(ollama_url.to_string()) },
+            );
+            if ollama.is_available() {
+                eprintln!("🔗 Auto-detected Ollama: {}", ollama.name());
+                Box::new(ollama) as Box<dyn InferenceEngine>
+            } else {
+                eprintln!("🧠 Ollama not running, using embedded SmolLM2");
+                inference::default_engine()
+            }
         }
     });
 
@@ -618,35 +627,60 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
     };
     let mut history: Vec<ChatMessage> = vec![system_msg];
 
-    // Channel for async inference results
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    // Channel for streaming inference tokens
+    enum InferenceMsg {
+        Token(String),
+        Done(String),
+        Error(String),
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<InferenceMsg>();
 
     loop {
         if state.quit {
             break;
         }
 
-        // Check for inference result
+        // Check for streaming inference tokens
         if state.generating {
-            if let Ok(response) = rx.try_recv() {
-                let response = strip_emoji(&response);
-                if let Some(last) = state.messages.last_mut() {
-                    if matches!(last.role, Role::Sage) {
-                        last.content = response.clone();
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    InferenceMsg::Token(token) => {
+                        let token = strip_emoji(&token);
+                        if let Some(last) = state.messages.last_mut() {
+                            if matches!(last.role, Role::Sage) {
+                                last.content.push_str(&token);
+                            }
+                        }
+                    }
+                    InferenceMsg::Done(response) => {
+                        let response = strip_emoji(&response);
+                        if let Some(last) = state.messages.last_mut() {
+                            if matches!(last.role, Role::Sage) {
+                                last.content = response.clone();
+                            }
+                        }
+                        history.push(ChatMessage {
+                            role: ChatRole::Assistant,
+                            content: response,
+                        });
+                        state.generating = false;
+                        state.brain_mode = BrainMode::Idle;
+
+                        let hash = simple_hash(&state.messages.last().map(|m| m.content.as_str()).unwrap_or(""));
+                        let cx = (hash / 7) % GRID_SIZE;
+                        let cy = (hash / 13) % GRID_SIZE;
+                        flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Retrieving);
+                    }
+                    InferenceMsg::Error(e) => {
+                        if let Some(last) = state.messages.last_mut() {
+                            if matches!(last.role, Role::Sage) {
+                                last.content = format!("Error: {}", e);
+                            }
+                        }
+                        state.generating = false;
+                        state.brain_mode = BrainMode::Idle;
                     }
                 }
-                history.push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: response,
-                });
-                state.generating = false;
-                state.brain_mode = BrainMode::Idle;
-
-                // Flash retrieval cells
-                let hash = simple_hash(&state.messages.last().map(|m| m.content.as_str()).unwrap_or(""));
-                let cx = (hash / 7) % GRID_SIZE;
-                let cy = (hash / 13) % GRID_SIZE;
-                flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Retrieving);
             }
         }
 
@@ -692,7 +726,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                             let cy = (hash / GRID_SIZE) % GRID_SIZE;
                             flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
 
-                            // Run inference in background thread
+                            // Run streaming inference in background thread
                             history.push(ChatMessage {
                                 role: ChatRole::User,
                                 content: input,
@@ -701,9 +735,23 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                             let tx_clone = tx.clone();
                             let engine_clone = Arc::clone(&engine);
                             std::thread::spawn(move || {
-                                match engine_clone.chat(&hist_clone, 1000) {
-                                    Ok(response) => { let _ = tx_clone.send(response); }
-                                    Err(e) => { let _ = tx_clone.send(format!("Error: {}", e)); }
+                                let full_response = Arc::new(std::sync::Mutex::new(String::new()));
+                                let resp_clone = Arc::clone(&full_response);
+                                let tx_token = tx_clone.clone();
+                                let result = engine_clone.chat_streaming(
+                                    &hist_clone,
+                                    1000,
+                                    Box::new(move |token: &str| {
+                                        resp_clone.lock().unwrap().push_str(token);
+                                        let _ = tx_token.send(InferenceMsg::Token(token.to_string()));
+                                    }),
+                                );
+                                match result {
+                                    Ok(()) => {
+                                        let final_text = full_response.lock().unwrap().clone();
+                                        let _ = tx_clone.send(InferenceMsg::Done(final_text));
+                                    }
+                                    Err(e) => { let _ = tx_clone.send(InferenceMsg::Error(e.to_string())); }
                                 }
                             });
                         }

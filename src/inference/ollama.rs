@@ -50,15 +50,19 @@ struct OllamaGenerateResponse {
 pub struct OllamaEngine {
     url: String,
     model: String,
+    display_name: String,
 }
 
 impl OllamaEngine {
     pub fn new(model: Option<String>, url: Option<String>) -> Self {
         let default_url = std::env::var("OLLAMA_HOST")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let model = model.unwrap_or_else(|| "qwen2.5:14b".to_string());
+        let display_name = format!("Ollama ({})", model);
         Self {
             url: url.unwrap_or(default_url),
-            model: model.unwrap_or_else(|| "qwen2.5:14b".to_string()),
+            model,
+            display_name,
         }
     }
 
@@ -188,9 +192,7 @@ impl InferenceEngine for OllamaEngine {
     }
 
     fn name(&self) -> &str {
-        // Leak a string for the name — this is a long-lived object
-        // Actually, let's just return a static prefix
-        "Ollama"
+        &self.display_name
     }
 
     fn is_available(&self) -> bool {
