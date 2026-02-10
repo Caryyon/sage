@@ -255,11 +255,20 @@ fn wrap_line(line: Line<'_>, max_width: usize) -> Vec<Line<'static>> {
                 break;
             } else {
                 // Try to break at a word boundary (last space within available width)
-                let chunk = &remaining[..available];
+                // Find a valid char boundary at or before `available`
+                let mut boundary = available;
+                while boundary > 0 && !remaining.is_char_boundary(boundary) {
+                    boundary -= 1;
+                }
+                if boundary == 0 {
+                    // Single char wider than available — take at least one char
+                    boundary = remaining.chars().next().map_or(0, |c| c.len_utf8());
+                }
+                let chunk = &remaining[..boundary];
                 let break_at = if let Some(pos) = chunk.rfind(' ') {
-                    if pos > 0 { pos + 1 } else { available } // break after the space
+                    if pos > 0 { pos + 1 } else { boundary } // break after the space
                 } else {
-                    available // no space found, hard break
+                    boundary // no space found, hard break
                 };
                 let (take, rest) = remaining.split_at(break_at);
                 let take_trimmed = take.trim_end();
