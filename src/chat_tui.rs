@@ -121,6 +121,8 @@ struct AppState {
     brain_flashes: Vec<Vec<CellFlash>>,
     brain_mode: BrainMode,
     frame_counter: u64,
+    // Chat scroll
+    scroll_offset: usize, // 0 = bottom (most recent), >0 = scrolled up
 }
 
 fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, mode: BrainMode) {
@@ -422,7 +424,10 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let total = wrapped_lines.len();
-    let scroll = if total > chat_height { total - chat_height } else { 0 };
+    let max_scroll = if total > chat_height { total - chat_height } else { 0 };
+    // scroll_offset is from bottom: 0 = latest, clamped to max
+    let effective_offset = state.scroll_offset.min(max_scroll);
+    let scroll = max_scroll.saturating_sub(effective_offset);
 
     let mut visible: Vec<Line<'static>> = wrapped_lines.into_iter().skip(scroll).take(chat_height).collect();
 
@@ -438,6 +443,17 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
             }
         }
     }
+    // Show scroll indicator when scrolled up
+    if effective_offset > 0 && chat_height > 0 {
+        let indicator_line = Line::from(vec![
+            Span::styled(" ↑ more messages ", Style::default().fg(CYAN).add_modifier(Modifier::BOLD)),
+        ]);
+        // Insert indicator as first visible line
+        if !visible.is_empty() {
+            visible[0] = indicator_line;
+        }
+    }
+
     let chat = Paragraph::new(visible)
         .block(block)
         .style(Style::default().bg(BG));
@@ -487,6 +503,8 @@ fn ui(f: &mut Frame, state: &AppState) {
         Span::styled(&state.brain_path, Style::default().fg(DIM_GREEN)),
         if state.generating {
             Span::styled("  ◌ generating…", Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
+        } else if state.scroll_offset > 0 {
+            Span::styled("  ↑ scrolled up (PgDn to return)", Style::default().fg(DIM))
         } else {
             Span::styled("", Style::default())
         },
@@ -612,6 +630,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         brain_flashes,
         brain_mode: BrainMode::Idle,
         frame_counter: 0,
+        scroll_offset: 0,
     };
 
     // Setup terminal
@@ -630,7 +649,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
     // Channel for streaming inference tokens
     enum InferenceMsg {
         Token(String),
-        Done(String),
+        Done(String), // full final response for history
         Error(String),
     }
     let (tx, rx) = std::sync::mpsc::channel::<InferenceMsg>();
@@ -642,6 +661,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
 
         // Check for streaming inference tokens
         if state.generating {
+            // Drain all available tokens this frame for responsiveness
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     InferenceMsg::Token(token) => {
@@ -651,8 +671,11 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                                 last.content.push_str(&token);
                             }
                         }
+                        // Auto-scroll to bottom on new tokens
+                        state.scroll_offset = 0;
                     }
                     InferenceMsg::Done(response) => {
+                        // Finalize: store clean response in history
                         let response = strip_emoji(&response);
                         if let Some(last) = state.messages.last_mut() {
                             if matches!(last.role, Role::Sage) {
@@ -666,6 +689,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                         state.generating = false;
                         state.brain_mode = BrainMode::Idle;
 
+                        // Flash retrieval cells
                         let hash = simple_hash(&state.messages.last().map(|m| m.content.as_str()).unwrap_or(""));
                         let cx = (hash / 7) % GRID_SIZE;
                         let cy = (hash / 13) % GRID_SIZE;
@@ -718,6 +742,7 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                                 content: String::new(),
                             });
                             state.generating = true;
+                            state.scroll_offset = 0; // auto-scroll to bottom
                             state.brain_mode = BrainMode::Encoding;
 
                             // Flash encoding cells
@@ -780,6 +805,18 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
                         if state.cursor_pos < state.input.len() {
                             state.cursor_pos += 1;
                         }
+                    }
+                    KeyCode::PageUp => {
+                        state.scroll_offset = state.scroll_offset.saturating_add(10);
+                    }
+                    KeyCode::PageDown => {
+                        state.scroll_offset = state.scroll_offset.saturating_sub(10);
+                    }
+                    KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        state.scroll_offset = state.scroll_offset.saturating_add(3);
+                    }
+                    KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        state.scroll_offset = state.scroll_offset.saturating_sub(3);
                     }
                     KeyCode::Esc => {
                         // Don't quit on Escape — use /exit or /quit
