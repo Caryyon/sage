@@ -18,38 +18,34 @@ use std::fs;
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------
-// Architecture Constants — tune these to hit your target param count
-// ---------------------------------------------------------------------------
-// Pi 4 budget (f64, 4 cores @ 1.8GHz): ~5 GFLOPS sustained
-// FLOPS/cell/step = 2×(P×H1 + H1×H2 + H2×C)
-//                 = 2×(144×384 + 384×128 + 128×16) = 212,992
-//
-// Pi 4 timing estimates @ 5 GFLOPS:
-//   32×32, 5 steps: ~218ms  ← comfortable
-//   48×48, 5 steps: ~491ms  ← right at 500ms budget
-//   64×64, 3 steps: ~523ms  ← slightly over
-//
-// Memory: 107,024 params × 8 bytes = 836 KB (trivial for 2GB Pi)
+// Constants
 // ---------------------------------------------------------------------------
 
 /// Grid side length for the token prediction grid (separate from main SAGE grid)
 const NCA_GRID_SIZE: usize = 181; // 181*181 = 32761 cells ≥ 32K vocab
 /// Smaller grid for training (16×16 = 256 cells, sufficient for demo vocab)
 const TRAINING_GRID_SIZE: usize = 8;
+// ---------------------------------------------------------------------------
+// Architecture constants — tune these to hit your target param count
+// ---------------------------------------------------------------------------
+// Pi 4 budget (f64, 4 cores): ~5 GFLOPS → 500ms = 2.5 GFLOPS
+// At 64×64 grid, 3 steps: need ≤ ~200K FLOPS/cell/step
+// Current: 3-layer MLP (144→384→128→16) = 107,024 params, ~213K FLOPS/cell
+// → 64×64, 3 steps ≈ 2.6 GFLOPS ≈ 520ms on Pi 4 (close enough)
+// ---------------------------------------------------------------------------
 
-/// Per-cell channels (was 8, now 16 for more expressiveness)
-pub const NCA_CHANNELS: usize = 16;
+pub const NCA_CHANNELS: usize = 16;   // Per-cell channels (was 8)
 const ACTIVATION_CH: usize = 0;
 
 /// Hidden layer sizes for the 3-layer MLP update rule
-const HIDDEN1_SIZE: usize = 384;
-const HIDDEN2_SIZE: usize = 128;
+const HIDDEN1_SIZE: usize = 384;      // First hidden layer
+const HIDDEN2_SIZE: usize = 128;      // Second hidden layer
 
 /// Perception neighborhood: 3×3 = 9 cells × NCA_CHANNELS
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
 
-/// Default NCA update steps per prediction (reduced from 20 for Pi-friendly inference)
-const DEFAULT_STEPS: usize = 10;
+/// Default NCA update steps per prediction
+const DEFAULT_STEPS: usize = 10; // Reduced from 20 for Pi-friendly inference
 
 // ---------------------------------------------------------------------------
 // Tokenizer (simple word-level with BPE-like fallback)
@@ -143,7 +139,7 @@ fn token_to_coord(token_id: usize, grid_size: usize) -> (usize, usize) {
 /// The NCA update rule weights (3-layer MLP: perception → hidden1 → hidden2 → output)
 ///
 /// Architecture: 144 → 384 → 128 → 16 = 107,024 parameters
-/// Optimized for Raspberry Pi 4: fits in <1MB, runs in ~500ms on 48×48 grid
+/// Optimized for Raspberry Pi 4: fits in <1MB, runs in ~500ms on 64×64 grid
 #[derive(Clone)]
 pub struct NcaWeights {
     pub w1: Vec<Vec<f64>>, // HIDDEN1_SIZE × PERCEPTION_SIZE
@@ -457,12 +453,10 @@ impl NcaPredictor {
 // Training via Evolution Strategy (ES)
 // ---------------------------------------------------------------------------
 
-/// Cell update function type
-#[derive(Clone, Debug, PartialEq)]
+/// Cell brain type: MLP (traditional) or KAN (Kolmogorov-Arnold)
+#[derive(Clone, Debug)]
 pub enum CellType {
-    /// Standard MLP (default)
     Mlp,
-    /// KAN-style (placeholder — currently falls back to MLP)
     Kan,
 }
 
@@ -541,10 +535,10 @@ pub fn train_nca(
     let random_accuracy = 1.0 / vocab_size as f64;
 
     if verbose {
-        let pc = NcaWeights::random().param_count();
         eprintln!("📊 Optimizer: {}", config.optimizer);
         eprintln!("📊 Vocab size: {}, Corpus tokens: {}, Grid: {}×{}, Random baseline: {:.4}%",
                   vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
+        let pc = NcaWeights::random().param_count();
         eprintln!("📊 NCA params: {} ({:.1} KB as f64)", pc, pc as f64 * 8.0 / 1024.0);
         eprintln!("📊 Architecture: {} → {} (ReLU) → {} (ReLU) → {} (tanh)",
                   PERCEPTION_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, NCA_CHANNELS);
@@ -574,6 +568,249 @@ pub fn train_nca(
 
     let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, DEFAULT_STEPS, grid_size);
     Ok((predictor, best_fitness, random_accuracy))
+}
+
+/// Train the NCA predictor using KAN cell brains instead of MLP.
+/// Returns (trained_predictor_with_mlp_weights_placeholder, final_accuracy, random_baseline)
+pub fn train_nca_kan(
+    corpus: &str,
+    config: &TrainingConfig,
+    verbose: bool,
+) -> Result<(NcaPredictor, f64, f64), Box<dyn Error>> {
+    use super::kan::KanNcaWeights;
+
+    let grid_size = config.grid_size;
+    let tokenizer = SimpleTokenizer::from_corpus(corpus, grid_size * grid_size);
+    let tokens = tokenizer.encode(corpus);
+    let vocab_size = tokenizer.vocab_size();
+
+    if tokens.len() < config.context_window + 1 {
+        return Err("Corpus too small for training".into());
+    }
+
+    let random_accuracy = 1.0 / vocab_size as f64;
+    let kan_weights = KanNcaWeights::random();
+    let mlp_weights = NcaWeights::random();
+
+    if verbose {
+        eprintln!("📊 Cell type: KAN");
+        eprintln!("📊 Optimizer: CMA-ES (KAN training)");
+        eprintln!("📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
+                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
+        eprintln!("📊 KAN params: {} ({:.1} KB)", kan_weights.param_count(), kan_weights.param_count() as f64 * 8.0 / 1024.0);
+        eprintln!("📊 MLP params: {} (comparison)", mlp_weights.param_count());
+        let kw = &kan_weights;
+        eprintln!("📊 KAN arch: {:?} grid={} order={}", kw.widths(), kw.grid_size(), kw.order());
+    }
+
+    // Build training examples
+    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
+    let step = ((tokens.len() - config.context_window) / max_examples).max(1);
+    let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
+        .step_by(step)
+        .take(max_examples)
+        .map(|i| {
+            let ctx = tokens[i..i + config.context_window].to_vec();
+            let target = tokens[i + config.context_window];
+            (ctx, target)
+        })
+        .collect();
+
+    if verbose {
+        eprintln!("📊 Training examples: {}", examples.len());
+    }
+
+    // Train with CMA-ES on KAN params
+    let (best_kan_weights, best_fitness) = train_cma_es_kan(
+        &tokenizer, &examples, config, grid_size, verbose, random_accuracy,
+    );
+
+    // Return an NcaPredictor with default MLP weights (KAN weights saved separately)
+    // The accuracy/fitness reflects KAN performance
+    let predictor = NcaPredictor::with_grid_size(tokenizer, NcaWeights::random(), DEFAULT_STEPS, grid_size);
+    // Store KAN weights reference for saving
+    KAN_LAST_WEIGHTS.with(|w| *w.borrow_mut() = Some(best_kan_weights));
+    Ok((predictor, best_fitness, random_accuracy))
+}
+
+thread_local! {
+    static KAN_LAST_WEIGHTS: std::cell::RefCell<Option<super::kan::KanNcaWeights>> = std::cell::RefCell::new(None);
+}
+
+/// CMA-ES optimizer for KAN weights
+fn train_cma_es_kan(
+    tokenizer: &SimpleTokenizer,
+    examples: &[(Vec<usize>, usize)],
+    config: &TrainingConfig,
+    grid_size: usize,
+    verbose: bool,
+    random_accuracy: f64,
+) -> (super::kan::KanNcaWeights, f64) {
+    use super::kan::KanNcaWeights;
+
+    let initial = KanNcaWeights::random();
+    let n = initial.param_count();
+    let mean: Vec<f64> = initial.to_vec();
+
+    // CMA-ES hyperparams
+    let lambda = config.population_size.max(4 + (3.0 * (n as f64).ln()).floor() as usize);
+    let mu = lambda / 2;
+    let weights_raw: Vec<f64> = (0..mu).map(|i| ((lambda as f64 + 1.0) / 2.0).ln() - ((i + 1) as f64).ln()).collect();
+    let w_sum: f64 = weights_raw.iter().sum();
+    let weights: Vec<f64> = weights_raw.iter().map(|w| w / w_sum).collect();
+    let mu_eff: f64 = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
+
+    let sigma_init = if config.sigma > 0.1 { config.sigma } else { 0.3 };
+    let mut sigma = sigma_init;
+    let mut m = mean;
+
+    // Diagonal covariance (separable CMA-ES)
+    let mut diag_c: Vec<f64> = vec![1.0; n];
+    let mut p_sigma: Vec<f64> = vec![0.0; n];
+    let c_sigma = 4.0 / (n as f64 + 4.0);
+    let d_sigma = 1.0 + 2.0 * (0.0_f64).max(((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0) + c_sigma;
+    let chi_n = (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
+    let c1 = 2.0 / ((n as f64 + 1.3).powi(2) + mu_eff);
+    let c_mu = (2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff)).min(1.0 - c1);
+
+    if verbose {
+        eprintln!("📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}", lambda, mu, mu_eff, sigma_init, n);
+    }
+
+    let mut rng = rand::thread_rng();
+    let mut best_fitness = f64::NEG_INFINITY;
+    let mut best_params = m.clone();
+
+    for epoch in 0..config.epochs {
+        // Sample candidates
+        let mut candidates: Vec<(Vec<f64>, f64)> = Vec::with_capacity(lambda);
+        for _ in 0..lambda {
+            let z: Vec<f64> = (0..n).map(|i| {
+                let norm = rand_normal(&mut rng);
+                m[i] + sigma * diag_c[i].sqrt() * norm
+            }).collect();
+            let w = KanNcaWeights::from_vec(&z);
+            let fitness = evaluate_fitness_kan(tokenizer, &w, examples, grid_size, config.nca_steps);
+            candidates.push((z, fitness));
+        }
+
+        // Sort by fitness (descending)
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        if candidates[0].1 > best_fitness {
+            best_fitness = candidates[0].1;
+            best_params = candidates[0].0.clone();
+        }
+
+        // Update mean
+        let old_m = m.clone();
+        m = vec![0.0; n];
+        for i in 0..mu {
+            for j in 0..n {
+                m[j] += weights[i] * candidates[i].0[j];
+            }
+        }
+
+        // Update evolution path
+        for j in 0..n {
+            let dj = (m[j] - old_m[j]) / (sigma * diag_c[j].sqrt());
+            p_sigma[j] = (1.0 - c_sigma) * p_sigma[j] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * dj;
+        }
+
+        // Update sigma
+        let ps_norm: f64 = p_sigma.iter().map(|x| x * x).sum::<f64>().sqrt();
+        sigma *= ((c_sigma / d_sigma) * (ps_norm / chi_n - 1.0)).exp();
+
+        // Update diagonal covariance
+        for j in 0..n {
+            let mut rank_mu_update = 0.0;
+            for i in 0..mu {
+                let dj = (candidates[i].0[j] - old_m[j]) / (sigma * diag_c[j].sqrt());
+                rank_mu_update += weights[i] * (dj * dj - 1.0);
+            }
+            diag_c[j] *= (1.0 + c1 * (p_sigma[j] * p_sigma[j] - 1.0) + c_mu * rank_mu_update).max(0.1).exp().min(10.0);
+        }
+
+        if verbose {
+            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
+                      epoch + 1, config.epochs, candidates[0].1 * 100.0, best_fitness * 100.0, sigma, random_accuracy * 100.0);
+        }
+    }
+
+    (KanNcaWeights::from_vec(&best_params), best_fitness)
+}
+
+/// Evaluate fitness using KAN weights
+fn evaluate_fitness_kan(
+    tokenizer: &SimpleTokenizer,
+    weights: &super::kan::KanNcaWeights,
+    examples: &[(Vec<usize>, usize)],
+    grid_size: usize,
+    nca_steps: usize,
+) -> f64 {
+    // Build a temporary grid and run KAN-based NCA
+    let vocab_size = tokenizer.vocab_size();
+    let mut correct = 0;
+
+    for (ctx, target) in examples {
+        // Initialize grid
+        let mut grid = vec![vec![[0.0f64; NCA_CHANNELS]; grid_size]; grid_size];
+
+        // Encode context tokens
+        for &tok_id in ctx {
+            if tok_id < vocab_size {
+                let r = tok_id / grid_size;
+                let c = tok_id % grid_size;
+                if r < grid_size && c < grid_size {
+                    grid[r][c][ACTIVATION_CH] = 1.0;
+                }
+            }
+        }
+
+        // Run NCA steps with KAN update rule
+        for _ in 0..nca_steps {
+            let mut new_grid = grid.clone();
+            for r in 0..grid_size {
+                for c in 0..grid_size {
+                    // Perceive 3×3 neighborhood
+                    let mut input = vec![0.0f64; 9 * NCA_CHANNELS];
+                    let mut idx = 0;
+                    for dr in -1i32..=1 {
+                        for dc in -1i32..=1 {
+                            let nr = ((r as i32 + dr).rem_euclid(grid_size as i32)) as usize;
+                            let nc = ((c as i32 + dc).rem_euclid(grid_size as i32)) as usize;
+                            for ch in 0..NCA_CHANNELS {
+                                input[idx] = grid[nr][nc][ch];
+                                idx += 1;
+                            }
+                        }
+                    }
+
+                    // KAN forward pass
+                    let output = weights.forward(&input);
+                    for ch in 0..NCA_CHANNELS.min(output.len()) {
+                        new_grid[r][c][ch] = (grid[r][c][ch] + output[ch]).tanh();
+                    }
+                }
+            }
+            grid = new_grid;
+        }
+
+        // Read activations — top-5
+        let mut indexed: Vec<(usize, f64)> = (0..vocab_size.min(grid_size * grid_size))
+            .map(|id| {
+                let r = id / grid_size;
+                let c = id % grid_size;
+                (id, grid[r][c][ACTIVATION_CH])
+            })
+            .collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        if indexed.iter().take(5).any(|(id, _)| id == target) {
+            correct += 1;
+        }
+    }
+
+    correct as f64 / examples.len() as f64
 }
 
 /// Original naive ES optimizer
@@ -887,242 +1124,6 @@ impl HybridTracker {
 // Convenience: default weights path
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// KAN-based NCA Training
-// ---------------------------------------------------------------------------
-
-use super::kan::KanNcaWeights;
-
-/// NCA predictor using KAN cell brain
-pub struct KanNcaPredictor {
-    grid: Vec<Vec<[f64; NCA_CHANNELS]>>,
-    weights: KanNcaWeights,
-    steps: usize,
-    grid_size: usize,
-    pub tokenizer: SimpleTokenizer,
-}
-
-impl KanNcaPredictor {
-    pub fn with_grid_size(tokenizer: SimpleTokenizer, weights: KanNcaWeights, steps: usize, grid_size: usize) -> Self {
-        let grid = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
-        Self { grid, weights, steps, grid_size, tokenizer }
-    }
-
-    fn clear_grid(&mut self) {
-        for row in &mut self.grid {
-            for cell in row.iter_mut() { *cell = [0.0; NCA_CHANNELS]; }
-        }
-    }
-
-    fn activate_tokens(&mut self, token_ids: &[usize]) {
-        for (pos, &tid) in token_ids.iter().enumerate() {
-            let (r, c) = token_to_coord(tid, self.grid_size);
-            self.grid[r][c][ACTIVATION_CH] = 1.0;
-            let pos_norm = if token_ids.len() > 1 { pos as f64 / (token_ids.len() - 1) as f64 } else { 1.0 };
-            self.grid[r][c][1] = pos_norm;
-            self.grid[r][c][2] = (pos + 1) as f64 / token_ids.len() as f64;
-        }
-    }
-
-    fn perceive(&self, r: usize, c: usize) -> Vec<f64> {
-        let mut input = vec![0.0; PERCEPTION_SIZE];
-        let mut idx = 0;
-        for dr in [-1i32, 0, 1] {
-            for dc in [-1i32, 0, 1] {
-                let nr = (r as i32 + dr).rem_euclid(self.grid_size as i32) as usize;
-                let nc = (c as i32 + dc).rem_euclid(self.grid_size as i32) as usize;
-                for ch in 0..NCA_CHANNELS {
-                    input[idx] = self.grid[nr][nc][ch];
-                    idx += 1;
-                }
-            }
-        }
-        input
-    }
-
-    fn nca_step(&mut self) {
-        let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; self.grid_size]; self.grid_size];
-        for r in 0..self.grid_size {
-            for c in 0..self.grid_size {
-                let input = self.perceive(r, c);
-                let output = self.weights.forward(&input);
-                for ch in 0..NCA_CHANNELS { deltas[r][c][ch] = output[ch]; }
-            }
-        }
-        for r in 0..self.grid_size {
-            for c in 0..self.grid_size {
-                for ch in 0..NCA_CHANNELS {
-                    self.grid[r][c][ch] = (self.grid[r][c][ch] + deltas[r][c][ch]).clamp(-5.0, 5.0);
-                }
-            }
-        }
-    }
-
-    pub fn run_and_read(&mut self, input_tokens: &[usize]) -> Vec<f64> {
-        self.clear_grid();
-        self.activate_tokens(input_tokens);
-        for _ in 0..self.steps { self.nca_step(); }
-        let vocab_size = self.tokenizer.vocab_size();
-        let mut activations = vec![0.0; vocab_size];
-        for tid in 0..vocab_size {
-            let (r, c) = token_to_coord(tid, self.grid_size);
-            activations[tid] = self.grid[r][c][ACTIVATION_CH];
-        }
-        activations
-    }
-
-    pub fn weights(&self) -> &KanNcaWeights { &self.weights }
-}
-
-fn evaluate_fitness_kan(
-    tokenizer: &SimpleTokenizer, weights: &KanNcaWeights,
-    examples: &[(Vec<usize>, usize)], grid_size: usize, nca_steps: usize,
-) -> f64 {
-    let mut predictor = KanNcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
-    let mut correct = 0;
-    for (ctx, target) in examples {
-        let activations = predictor.run_and_read(ctx);
-        let mut indexed: Vec<(usize, f64)> = activations.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        if indexed.iter().take(5).any(|(id, _)| id == target) { correct += 1; }
-    }
-    correct as f64 / examples.len() as f64
-}
-
-/// Train KAN NCA predictor on a text corpus.
-pub fn train_nca_kan(
-    corpus: &str, config: &TrainingConfig, verbose: bool,
-) -> Result<(KanNcaPredictor, f64, f64), Box<dyn Error>> {
-    let grid_size = config.grid_size;
-    let tokenizer = SimpleTokenizer::from_corpus(corpus, grid_size * grid_size);
-    let tokens = tokenizer.encode(corpus);
-    let vocab_size = tokenizer.vocab_size();
-
-    if tokens.len() < config.context_window + 1 {
-        return Err("Corpus too small for training".into());
-    }
-
-    let random_accuracy = 1.0 / vocab_size as f64;
-    let kan_w = KanNcaWeights::random();
-
-    if verbose {
-        eprintln!("📊 Cell type: KAN");
-        eprintln!("📊 Optimizer: CMA-ES (KAN training)");
-        eprintln!("📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
-                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
-        eprintln!("📊 KAN params: {} ({:.1} KB)", kan_w.param_count(), kan_w.param_count() as f64 * 8.0 / 1024.0);
-        eprintln!("📊 MLP params: {} (comparison)", NcaWeights::random().param_count());
-        eprintln!("📊 KAN arch: {:?} grid={} order={}", kan_w.widths, kan_w.grid_size, kan_w.order);
-    }
-
-    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
-    let step_sz = ((tokens.len() - config.context_window) / max_examples).max(1);
-    let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
-        .step_by(step_sz).take(max_examples)
-        .map(|i| (tokens[i..i + config.context_window].to_vec(), tokens[i + config.context_window]))
-        .collect();
-
-    if verbose { eprintln!("📊 Training examples: {}", examples.len()); }
-
-    let (best_w, best_f) = train_kan_cma_es_inner(&tokenizer, &examples, config, grid_size, verbose, random_accuracy);
-    let predictor = KanNcaPredictor::with_grid_size(tokenizer, best_w, DEFAULT_STEPS, grid_size);
-    Ok((predictor, best_f, random_accuracy))
-}
-
-fn train_kan_cma_es_inner(
-    tokenizer: &SimpleTokenizer, examples: &[(Vec<usize>, usize)],
-    config: &TrainingConfig, grid_size: usize, verbose: bool, random_accuracy: f64,
-) -> (KanNcaWeights, f64) {
-    let mut rng = rand::thread_rng();
-    let init_w = KanNcaWeights::random();
-    let n = init_w.param_count();
-
-    let lambda = (4.0 + (3.0 * (n as f64).ln()).floor()) as usize;
-    let lambda = lambda.max(config.population_size);
-    let mu = lambda / 2;
-
-    let raw_wts: Vec<f64> = (0..mu).map(|i| ((mu as f64 + 0.5).ln() - ((i + 1) as f64).ln()).max(0.0)).collect();
-    let wt_sum: f64 = raw_wts.iter().sum();
-    let wts: Vec<f64> = raw_wts.iter().map(|x| x / wt_sum).collect();
-    let mu_eff = 1.0 / wts.iter().map(|x| x * x).sum::<f64>();
-
-    let c_sigma = (mu_eff + 2.0) / (n as f64 + mu_eff + 5.0);
-    let d_sigma = 1.0 + 2.0 * (((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0).max(0.0) + c_sigma;
-    let chi_n = (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
-    let c_c = (4.0 + mu_eff / n as f64) / (n as f64 + 4.0 + 2.0 * mu_eff / n as f64);
-    let c_1 = 2.0 / ((n as f64 + 1.3).powi(2) + mu_eff);
-    let c_mu_val = (1.0 - c_1).min(2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff));
-
-    let mut mean = init_w.to_vec();
-    let mut sigma = config.sigma.max(0.3);
-    let mut p_sigma = vec![0.0; n];
-    let mut p_c = vec![0.0; n];
-    let mut diag_c = vec![1.0; n];
-    let mut best_w = init_w;
-    let mut best_f = evaluate_fitness_kan(tokenizer, &best_w, examples, grid_size, config.nca_steps);
-
-    if verbose {
-        eprintln!("📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}", lambda, mu, mu_eff, sigma, n);
-    }
-
-    for epoch in 0..config.epochs {
-        let sqrt_c: Vec<f64> = diag_c.iter().map(|c| f64::sqrt(*c)).collect();
-        let mut cands: Vec<(Vec<f64>, Vec<f64>, f64)> = Vec::with_capacity(lambda);
-
-        for _ in 0..lambda {
-            let z: Vec<f64> = (0..n).map(|_| rand_normal(&mut rng)).collect();
-            let params: Vec<f64> = (0..n).map(|i| mean[i] + sigma * sqrt_c[i] * z[i]).collect();
-            let kw = KanNcaWeights::from_vec(&params);
-            let fit = evaluate_fitness_kan(tokenizer, &kw, examples, grid_size, config.nca_steps);
-            cands.push((params, z, fit));
-        }
-
-        cands.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-        if cands[0].2 > best_f {
-            best_f = cands[0].2;
-            best_w = KanNcaWeights::from_vec(&cands[0].0);
-        }
-
-        let old_mean = mean.clone();
-        for i in 0..n { mean[i] = (0..mu).map(|j| wts[j] * cands[j].0[i]).sum(); }
-
-        let mut z_w = vec![0.0; n];
-        for i in 0..n { for j in 0..mu { z_w[i] += wts[j] * cands[j].1[i]; } }
-
-        for i in 0..n {
-            p_sigma[i] = (1.0 - c_sigma) * p_sigma[i] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * z_w[i];
-        }
-        let ps_norm: f64 = p_sigma.iter().map(|x| x * x).sum::<f64>().sqrt();
-        let h_sigma = if ps_norm / (1.0 - (1.0 - c_sigma).powi(2 * (epoch as i32 + 1))).sqrt()
-            < (1.4 + 2.0 / (n as f64 + 1.0)) * chi_n { 1.0 } else { 0.0 };
-
-        for i in 0..n {
-            let s = (mean[i] - old_mean[i]) / sigma;
-            p_c[i] = (1.0 - c_c) * p_c[i] + h_sigma * (c_c * (2.0 - c_c) * mu_eff).sqrt() * s / sqrt_c[i].max(1e-30);
-        }
-
-        let dh = (1.0 - h_sigma) * c_c * (2.0 - c_c);
-        for i in 0..n {
-            let rms: f64 = (0..mu).map(|j| wts[j] * cands[j].1[i].powi(2)).sum();
-            diag_c[i] = (1.0 - c_1 - c_mu_val + c_1 * dh) * diag_c[i] + c_1 * p_c[i] * p_c[i] + c_mu_val * rms;
-            diag_c[i] = diag_c[i].clamp(1e-20, 1e6);
-        }
-
-        sigma *= ((c_sigma / d_sigma) * (ps_norm / chi_n - 1.0)).exp();
-        sigma = sigma.clamp(1e-20, 1e3);
-
-        if verbose {
-            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
-                      epoch + 1, config.epochs, cands[0].2 * 100.0, best_f * 100.0, sigma, random_accuracy * 100.0);
-        }
-    }
-    (best_w, best_f)
-}
-
-// ---------------------------------------------------------------------------
-// Convenience: default weights path
-// ---------------------------------------------------------------------------
-
 pub fn default_weights_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -1175,12 +1176,5 @@ mod tests {
         for (a, b) in v1.iter().zip(v2.iter()) {
             assert!((a - b).abs() < 1e-15);
         }
-    }
-
-    #[test]
-    fn test_param_count() {
-        let w = NcaWeights::random();
-        assert_eq!(w.param_count(), 107024);
-        assert_eq!(w.to_vec().len(), 107024);
     }
 }

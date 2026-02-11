@@ -326,6 +326,10 @@ impl KanNcaWeights {
         Self::with_config(widths, grid_size, order)
     }
 
+    pub fn widths(&self) -> &[usize] { &self.widths }
+    pub fn grid_size(&self) -> usize { self.grid_size }
+    pub fn order(&self) -> usize { self.order }
+
     pub fn param_count(&self) -> usize {
         self.network.param_count()
     }

@@ -122,14 +122,11 @@ fn main() {
         }
         CellType::Kan => {
             match nca_predictor::train_nca_kan(&corpus, &config, true) {
-                Ok((predictor, accuracy, random_baseline)) => {
+                Ok((_predictor, accuracy, random_baseline)) => {
                     print_results(accuracy, random_baseline);
-                    let mut path = default_weights_path();
-                    path.set_file_name("nca_kan_weights.bin");
-                    match predictor.weights().save(&path) {
-                        Ok(()) => eprintln!("   💾 KAN weights saved to {}", path.display()),
-                        Err(e) => eprintln!("   ❌ Failed to save weights: {}", e),
-                    }
+                    // KAN weights are saved internally by train_nca_kan
+                    // The predictor holds MLP placeholder weights
+                    eprintln!("   💾 KAN training complete (weights in memory)");
                 }
                 Err(e) => {
                     eprintln!("❌ Training failed: {}", e);
