@@ -113,3 +113,7 @@ path = "tests/integration/grid_stress.rs"
 [[test]]
 name = "libp2p_sync"
 path = "tests/integration/libp2p_sync.rs"
+
+[[bin]]
+name = "nca-timing"
+path = "src/bin/nca_timing.rs"

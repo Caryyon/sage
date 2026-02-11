@@ -32,8 +32,8 @@ fn bspline_basis(t: f64, knots: &[f64], order: usize) -> Vec<f64> {
         .map(|i| {
             if knots[i] <= t && t < knots[i + 1] {
                 1.0
-            } else if i == knots.len() - 2 && (t - knots[i + 1]).abs() < 1e-15 {
-                1.0 // include right endpoint
+            } else if (t - knots[knots.len() - 1]).abs() < 1e-15 && knots[i] < knots[i + 1] && (knots[i + 1] - knots[knots.len() - 1]).abs() < 1e-15 {
+                1.0 // include right endpoint for last non-degenerate interval
             } else {
                 0.0
             }
@@ -319,8 +319,9 @@ impl KanNcaWeights {
     /// 72 → 16 → 8, grid=3, order=3 → ~8,984 params (vs MLP's 5,192)
     /// Slightly more params but KAN should use them more efficiently
     pub fn random() -> Self {
-        let widths = vec![PERCEPTION_SIZE, 16, NCA_CHANNELS];
-        let grid_size = 3;
+        // 144 → 64 → 16, grid=6, order=3 → ~102,480 params (matches MLP's 107K)
+        let widths = vec![PERCEPTION_SIZE, 64, NCA_CHANNELS];
+        let grid_size = 6;
         let order = 3;
         Self::with_config(widths, grid_size, order)
     }
@@ -338,9 +339,8 @@ impl KanNcaWeights {
     }
 
     pub fn from_vec(params: &[f64]) -> Self {
-        // Must match the architecture from random()
-        let widths = vec![PERCEPTION_SIZE, 16, NCA_CHANNELS];
-        let grid_size = 3;
+        let widths = vec![PERCEPTION_SIZE, 64, NCA_CHANNELS];
+        let grid_size = 6;
         let order = 3;
         let network = KanNetwork::from_vec(params, &widths, grid_size, order);
         Self { network, widths, grid_size, order }
