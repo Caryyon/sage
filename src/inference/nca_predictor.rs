@@ -402,16 +402,35 @@ impl NcaPredictor {
 // Training via Evolution Strategy (ES)
 // ---------------------------------------------------------------------------
 
+/// Which optimizer to use for training
+#[derive(Clone, Debug, PartialEq)]
+pub enum Optimizer {
+    /// Original naive evolution strategy (gradient estimate from perturbations)
+    Es,
+    /// Separable CMA-ES (diagonal covariance — practical for high-dim params)
+    CmaEs,
+}
+
+impl std::fmt::Display for Optimizer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Optimizer::Es => write!(f, "es"),
+            Optimizer::CmaEs => write!(f, "cma-es"),
+        }
+    }
+}
+
 /// Training configuration
 pub struct TrainingConfig {
     pub population_size: usize,
-    pub sigma: f64,         // Noise standard deviation
+    pub sigma: f64,         // Noise standard deviation / initial step size
     pub learning_rate: f64,
     pub epochs: usize,
     pub context_window: usize, // How many tokens of context
     pub grid_size: usize,      // Grid side length for training (smaller = faster)
     pub nca_steps: usize,      // NCA update steps per evaluation during training
     pub max_examples: usize,   // Max training examples to subsample
+    pub optimizer: Optimizer,   // Which optimizer to use
 }
 
 impl Default for TrainingConfig {
@@ -425,6 +444,7 @@ impl Default for TrainingConfig {
             grid_size: TRAINING_GRID_SIZE,
             nca_steps: 3,
             max_examples: 30,
+            optimizer: Optimizer::Es,
         }
     }
 }
@@ -445,19 +465,14 @@ pub fn train_nca(
         return Err("Corpus too small for training".into());
     }
 
-    // Random baseline: 1/vocab_size
     let random_accuracy = 1.0 / vocab_size as f64;
 
     if verbose {
+        eprintln!("📊 Optimizer: {}", config.optimizer);
         eprintln!("📊 Vocab size: {}, Corpus tokens: {}, Grid: {}×{}, Random baseline: {:.4}%",
                   vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
         eprintln!("📊 NCA params: {}", NcaWeights::random().param_count());
     }
-
-    let mut best_weights = NcaWeights::random();
-    let mut best_fitness = f64::NEG_INFINITY;
-
-    let mut rng = rand::thread_rng();
 
     // Build training examples (subsample for speed)
     let max_examples = config.max_examples.min(tokens.len() - config.context_window);
@@ -476,11 +491,32 @@ pub fn train_nca(
         eprintln!("📊 Training examples: {}", examples.len());
     }
 
+    let (best_weights, best_fitness) = match config.optimizer {
+        Optimizer::Es => train_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
+        Optimizer::CmaEs => train_cma_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
+    };
+
+    let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, DEFAULT_STEPS, grid_size);
+    Ok((predictor, best_fitness, random_accuracy))
+}
+
+/// Original naive ES optimizer
+fn train_es(
+    tokenizer: &SimpleTokenizer,
+    examples: &[(Vec<usize>, usize)],
+    config: &TrainingConfig,
+    grid_size: usize,
+    verbose: bool,
+    random_accuracy: f64,
+) -> (NcaWeights, f64) {
+    let mut best_weights = NcaWeights::random();
+    let mut best_fitness = f64::NEG_INFINITY;
+    let mut rng = rand::thread_rng();
+
     for epoch in 0..config.epochs {
         let base_params = best_weights.to_vec();
         let n_params = base_params.len();
 
-        // Generate perturbations and evaluate
         let mut noise_vecs: Vec<Vec<f64>> = Vec::with_capacity(config.population_size);
         let mut fitnesses: Vec<f64> = Vec::with_capacity(config.population_size);
 
@@ -492,12 +528,11 @@ pub fn train_nca(
                 .collect();
 
             let w = NcaWeights::from_vec(&perturbed);
-            let fitness = evaluate_fitness(&tokenizer, &w, &examples, grid_size, config.nca_steps);
+            let fitness = evaluate_fitness(tokenizer, &w, examples, grid_size, config.nca_steps);
             noise_vecs.push(noise);
             fitnesses.push(fitness);
         }
 
-        // Normalize fitnesses
         let mean_f: f64 = fitnesses.iter().sum::<f64>() / fitnesses.len() as f64;
         let std_f: f64 = {
             let var = fitnesses.iter().map(|f| (f - mean_f).powi(2)).sum::<f64>() / fitnesses.len() as f64;
@@ -505,7 +540,6 @@ pub fn train_nca(
         };
         let norm_fitnesses: Vec<f64> = fitnesses.iter().map(|f| (f - mean_f) / std_f).collect();
 
-        // Update weights: gradient estimate
         let mut new_params = base_params.clone();
         for i in 0..n_params {
             let mut grad = 0.0;
@@ -517,7 +551,7 @@ pub fn train_nca(
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
-        let new_fitness = evaluate_fitness(&tokenizer, &new_weights, &examples, grid_size, config.nca_steps);
+        let new_fitness = evaluate_fitness(tokenizer, &new_weights, examples, grid_size, config.nca_steps);
 
         if new_fitness > best_fitness {
             best_fitness = new_fitness;
@@ -530,8 +564,167 @@ pub fn train_nca(
         }
     }
 
-    let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, DEFAULT_STEPS, grid_size);
-    Ok((predictor, best_fitness, random_accuracy))
+    (best_weights, best_fitness)
+}
+
+/// Separable CMA-ES optimizer (diagonal covariance — O(n) memory for high-dim)
+///
+/// Implementation follows Hansen's sep-CMA-ES:
+/// - Diagonal covariance matrix C = diag(c_1, ..., c_n) instead of full n×n
+/// - Same step-size adaptation (CSA) and rank-μ/rank-1 update logic
+/// - Population size λ = 4 + floor(3 * ln(n)), μ = λ/2
+fn train_cma_es(
+    tokenizer: &SimpleTokenizer,
+    examples: &[(Vec<usize>, usize)],
+    config: &TrainingConfig,
+    grid_size: usize,
+    verbose: bool,
+    random_accuracy: f64,
+) -> (NcaWeights, f64) {
+    let mut rng = rand::thread_rng();
+    let init_weights = NcaWeights::random();
+    let n = init_weights.param_count();
+
+    // --- CMA-ES parameters ---
+    let lambda = (4.0 + (3.0 * (n as f64).ln()).floor()) as usize;
+    let lambda = lambda.max(config.population_size); // at least user-specified
+    let mu = lambda / 2;
+
+    // Recombination weights (log-linear)
+    let raw_weights: Vec<f64> = (0..mu)
+        .map(|i| ((mu as f64 + 0.5).ln() - ((i + 1) as f64).ln()).max(0.0))
+        .collect();
+    let w_sum: f64 = raw_weights.iter().sum();
+    let weights: Vec<f64> = raw_weights.iter().map(|w| w / w_sum).collect();
+    let mu_eff = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
+
+    // Step-size adaptation
+    let c_sigma = (mu_eff + 2.0) / (n as f64 + mu_eff + 5.0);
+    let d_sigma = 1.0 + 2.0 * (((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0).max(0.0) + c_sigma;
+    let chi_n = (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
+
+    // Covariance adaptation (sep-CMA: only diagonal)
+    let c_c = (4.0 + mu_eff / n as f64) / (n as f64 + 4.0 + 2.0 * mu_eff / n as f64);
+    let c_1 = 2.0 / ((n as f64 + 1.3).powi(2) + mu_eff);
+    let c_mu_val = (1.0 - c_1).min(
+        2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff),
+    );
+
+    // State vectors
+    let mut mean = init_weights.to_vec();
+    let mut sigma = config.sigma.max(0.3); // CMA-ES needs larger initial sigma
+    let mut p_sigma = vec![0.0; n]; // evolution path for sigma
+    let mut p_c = vec![0.0; n];     // evolution path for covariance
+    let mut diag_c = vec![1.0; n];  // diagonal of covariance matrix
+
+    let mut best_weights = init_weights;
+    let mut best_fitness = evaluate_fitness(tokenizer, &best_weights, examples, grid_size, config.nca_steps);
+
+    if verbose {
+        eprintln!("📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}", lambda, mu, mu_eff, sigma, n);
+    }
+
+    for epoch in 0..config.epochs {
+        // Sample λ candidates: x_k = mean + σ * D * z_k where D = sqrt(diag_c)
+        let sqrt_c: Vec<f64> = diag_c.iter().map(|c| f64::sqrt(*c)).collect();
+
+        let mut candidates: Vec<(Vec<f64>, Vec<f64>, f64)> = Vec::with_capacity(lambda);
+        // (params, z_vector, fitness)
+
+        for _ in 0..lambda {
+            let z: Vec<f64> = (0..n).map(|_| rand_normal(&mut rng)).collect();
+            let params: Vec<f64> = (0..n)
+                .map(|i| mean[i] + sigma * sqrt_c[i] * z[i])
+                .collect();
+            let w = NcaWeights::from_vec(&params);
+            let fitness = evaluate_fitness(tokenizer, &w, examples, grid_size, config.nca_steps);
+            candidates.push((params, z, fitness));
+        }
+
+        // Sort by fitness (descending — we maximize)
+        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Track best ever
+        if candidates[0].2 > best_fitness {
+            best_fitness = candidates[0].2;
+            best_weights = NcaWeights::from_vec(&candidates[0].0);
+        }
+
+        // Weighted recombination: new mean
+        let old_mean = mean.clone();
+        for i in 0..n {
+            mean[i] = 0.0;
+            for j in 0..mu {
+                mean[i] += weights[j] * candidates[j].0[i];
+            }
+        }
+
+        // Weighted z-step
+        let mut z_w = vec![0.0; n];
+        for i in 0..n {
+            for j in 0..mu {
+                z_w[i] += weights[j] * candidates[j].1[i];
+            }
+        }
+
+        // Update evolution path for sigma (CSA)
+        let _sqrt_mu_eff = mu_eff.sqrt();
+        for i in 0..n {
+            p_sigma[i] = (1.0 - c_sigma) * p_sigma[i] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * z_w[i];
+        }
+
+        // |p_sigma|
+        let ps_norm: f64 = p_sigma.iter().map(|x| x * x).sum::<f64>().sqrt();
+
+        // h_sigma: stall indicator
+        let h_sigma = if ps_norm / (1.0 - (1.0 - c_sigma).powi(2 * (epoch as i32 + 1))).sqrt()
+            < (1.4 + 2.0 / (n as f64 + 1.0)) * chi_n
+        {
+            1.0
+        } else {
+            0.0
+        };
+
+        // Update evolution path for covariance
+        for i in 0..n {
+            let step = (mean[i] - old_mean[i]) / sigma;
+            p_c[i] = (1.0 - c_c) * p_c[i] + h_sigma * (c_c * (2.0 - c_c) * mu_eff).sqrt() * step / sqrt_c[i].max(1e-30);
+        }
+
+        // Update diagonal covariance
+        let delta_h = (1.0 - h_sigma) * c_c * (2.0 - c_c);
+        for i in 0..n {
+            let mut rank_mu_sum = 0.0;
+            for j in 0..mu {
+                let d = candidates[j].1[i]; // z_i for candidate j
+                rank_mu_sum += weights[j] * d * d;
+            }
+            diag_c[i] = (1.0 - c_1 - c_mu_val + c_1 * delta_h) * diag_c[i]
+                + c_1 * p_c[i] * p_c[i]
+                + c_mu_val * rank_mu_sum;
+            // Clamp to prevent degeneration
+            diag_c[i] = diag_c[i].clamp(1e-20, 1e6);
+        }
+
+        // Step-size adaptation
+        sigma *= ((c_sigma / d_sigma) * (ps_norm / chi_n - 1.0)).exp();
+        sigma = sigma.clamp(1e-20, 1e3);
+
+        if verbose {
+            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
+                      epoch + 1, config.epochs, candidates[0].2 * 100.0, best_fitness * 100.0,
+                      sigma, random_accuracy * 100.0);
+        }
+    }
+
+    (best_weights, best_fitness)
+}
+
+/// Sample from standard normal using Box-Muller transform
+fn rand_normal(rng: &mut impl Rng) -> f64 {
+    let u1: f64 = rng.gen::<f64>().max(1e-30);
+    let u2: f64 = rng.gen::<f64>();
+    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
 }
 
 /// Evaluate accuracy on examples

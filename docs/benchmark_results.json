@@ -2,97 +2,97 @@
   "encoding_speed": [
     {
       "item_count": 100,
-      "total_ms": 4.453647,
-      "per_item_us": 44.53647
+      "total_ms": 0.810858,
+      "per_item_us": 8.10858
     },
     {
       "item_count": 1000,
-      "total_ms": 37.961515,
-      "per_item_us": 37.961515
+      "total_ms": 7.149107,
+      "per_item_us": 7.149107
     },
     {
       "item_count": 10000,
-      "total_ms": 368.76359199999996,
-      "per_item_us": 36.876359199999996
+      "total_ms": 64.397918,
+      "per_item_us": 6.439791800000001
     }
   ],
   "retrieval_accuracy": {
     "total_facts": 101,
     "total_queries": 20,
-    "hits": 8,
-    "precision": 0.4,
-    "recall": 0.4
+    "hits": 9,
+    "precision": 0.45,
+    "recall": 0.45
   },
   "diff_size": {
     "items_encoded": 100,
-    "avg_changes_per_item": 8.47,
-    "avg_bytes_per_delta": 566.08
+    "avg_changes_per_item": 44.39,
+    "avg_bytes_per_delta": 2864.96
   },
   "merge_quality": {
     "node_a_items": 50,
     "node_b_items": 50,
-    "a_retrievable_after_merge": 7,
+    "a_retrievable_after_merge": 15,
     "b_retrievable_after_merge": 0,
-    "total_retrievable": 7,
-    "degradation_pct": 93.0,
+    "total_retrievable": 15,
+    "degradation_pct": 85.0,
     "fill_levels": [
       {
         "items_encoded": 50,
-        "retrievable": 7,
-        "quality_pct": 14.000000000000002
+        "retrievable": 15,
+        "quality_pct": 30.0
       },
       {
         "items_encoded": 100,
-        "retrievable": 5,
-        "quality_pct": 10.0
+        "retrievable": 8,
+        "quality_pct": 16.0
       },
       {
         "items_encoded": 200,
-        "retrievable": 4,
-        "quality_pct": 8.0
+        "retrievable": 6,
+        "quality_pct": 12.0
       },
       {
         "items_encoded": 500,
-        "retrievable": 1,
-        "quality_pct": 2.0
+        "retrievable": 2,
+        "quality_pct": 4.0
       }
     ]
   },
   "grid_capacity": {
-    "max_items_before_drop": 0,
-    "quality_at_max": 0.0,
+    "max_items_before_drop": 10,
+    "quality_at_max": 0.6,
     "measurements": [
       [
         10,
-        0.2
+        0.6
       ],
       [
         25,
-        0.08
+        0.32
       ],
       [
         50,
-        0.14
+        0.36
       ],
       [
         100,
-        0.08
+        0.2
       ],
       [
         200,
-        0.06
+        0.08
       ],
       [
         500,
-        0.0
+        0.06
       ],
       [
         1000,
-        0.0
+        0.06
       ],
       [
         2000,
-        0.0
+        0.02
       ]
     ]
   },
@@ -102,7 +102,7 @@
       "items_per_node": 10,
       "total_unique_items": 100,
       "avg_retrieval_quality": 1.0,
-      "total_storage_bytes": 277552,
+      "total_storage_bytes": 17702960,
       "gossip_rounds": 4
     },
     {
@@ -110,7 +110,7 @@
       "items_per_node": 10,
       "total_unique_items": 500,
       "avg_retrieval_quality": 1.0,
-      "total_storage_bytes": 277552,
+      "total_storage_bytes": 17702960,
       "gossip_rounds": 6
     },
     {
@@ -118,7 +118,7 @@
       "items_per_node": 10,
       "total_unique_items": 1000,
       "avg_retrieval_quality": 1.0,
-      "total_storage_bytes": 277552,
+      "total_storage_bytes": 17702960,
       "gossip_rounds": 7
     }
   ]

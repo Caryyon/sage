@@ -4,7 +4,7 @@
 //!   sage-train --corpus path/to/text.txt [--epochs 100] [--steps 20]
 //!   sage-train --demo   # Train on built-in Shakespeare excerpt
 
-use sage::inference::nca_predictor::{self, TrainingConfig, default_weights_path};
+use sage::inference::nca_predictor::{self, TrainingConfig, Optimizer, default_weights_path};
 use std::fs;
 
 fn main() {
@@ -15,6 +15,9 @@ fn main() {
     let mut demo = false;
     let mut grid_size: Option<usize> = None;
     let mut max_examples: Option<usize> = None;
+    let mut optimizer: Option<Optimizer> = None;
+    let mut sigma: Option<f64> = None;
+    let mut population_size: Option<usize> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -23,14 +26,27 @@ fn main() {
             "--epochs" => { i += 1; epochs = args[i].parse().unwrap_or(100); }
             "--grid-size" => { i += 1; grid_size = Some(args[i].parse().unwrap_or(8)); }
             "--max-examples" => { i += 1; max_examples = Some(args[i].parse().unwrap_or(30)); }
+            "--optimizer" => {
+                i += 1;
+                optimizer = Some(match args[i].as_str() {
+                    "cma-es" | "cmaes" | "cma" => Optimizer::CmaEs,
+                    "es" => Optimizer::Es,
+                    other => { eprintln!("Unknown optimizer '{}', using 'es'", other); Optimizer::Es }
+                });
+            }
+            "--sigma" => { i += 1; sigma = Some(args[i].parse().unwrap_or(0.3)); }
+            "--population-size" => { i += 1; population_size = Some(args[i].parse().unwrap_or(10)); }
             "--demo" => { demo = true; }
             "--help" | "-h" => {
                 eprintln!("sage-train: NCA token prediction trainer");
-                eprintln!("  --corpus <file>   Text corpus to train on");
-                eprintln!("  --epochs <n>      Training epochs (default: 100)");
-                eprintln!("  --grid-size <n>   NCA grid side length (default: 8)");
-                eprintln!("  --max-examples <n> Max training examples (default: 30)");
-                eprintln!("  --demo            Train on built-in Shakespeare excerpt");
+                eprintln!("  --corpus <file>     Text corpus to train on");
+                eprintln!("  --epochs <n>        Training epochs (default: 100)");
+                eprintln!("  --grid-size <n>     NCA grid side length (default: 8)");
+                eprintln!("  --max-examples <n>  Max training examples (default: 30)");
+                eprintln!("  --optimizer <es|cma-es>  Optimizer (default: es)");
+                eprintln!("  --sigma <f>         Initial step size (default: 0.02 for es, 0.3 for cma-es)");
+                eprintln!("  --population-size <n>  Population size (cma-es auto-selects if not set)");
+                eprintln!("  --demo              Train on built-in Shakespeare excerpt");
                 return;
             }
             _ => { eprintln!("Unknown arg: {}", args[i]); }
@@ -53,7 +69,7 @@ fn main() {
     eprintln!("🧬 NCA Token Prediction Training");
     eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
 
-    let mut config = if demo && epochs == 100 && grid_size.is_none() && max_examples.is_none() {
+    let mut config = if demo && epochs == 100 && grid_size.is_none() && max_examples.is_none() && optimizer.is_none() {
         // Use fast defaults for demo mode
         TrainingConfig::default()
     } else {
@@ -67,6 +83,15 @@ fn main() {
     }
     if let Some(me) = max_examples {
         config.max_examples = me;
+    }
+    if let Some(opt) = optimizer {
+        config.optimizer = opt;
+    }
+    if let Some(s) = sigma {
+        config.sigma = s;
+    }
+    if let Some(ps) = population_size {
+        config.population_size = ps;
     }
 
     match nca_predictor::train_nca(&corpus, &config, true) {
