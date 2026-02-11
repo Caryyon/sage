@@ -9,6 +9,7 @@ pub mod ollama;
 pub mod embeddings;
 pub mod distributed;
 pub mod nca_predictor;
+pub mod kan;
 pub mod reservoir;
 pub mod criticality;
 

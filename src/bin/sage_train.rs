@@ -1,10 +1,10 @@
 //! sage-train: Train the NCA token predictor
 //!
 //! Usage:
-//!   sage-train --corpus path/to/text.txt [--epochs 100] [--steps 20]
+//!   sage-train --corpus path/to/text.txt [--epochs 100] [--cell-type mlp|kan]
 //!   sage-train --demo   # Train on built-in Shakespeare excerpt
 
-use sage::inference::nca_predictor::{self, TrainingConfig, Optimizer, default_weights_path};
+use sage::inference::nca_predictor::{self, TrainingConfig, Optimizer, CellType, default_weights_path};
 use std::fs;
 
 fn main() {
@@ -18,6 +18,7 @@ fn main() {
     let mut optimizer: Option<Optimizer> = None;
     let mut sigma: Option<f64> = None;
     let mut population_size: Option<usize> = None;
+    let mut cell_type = CellType::Mlp;
 
     let mut i = 1;
     while i < args.len() {
@@ -36,6 +37,14 @@ fn main() {
             }
             "--sigma" => { i += 1; sigma = Some(args[i].parse().unwrap_or(0.3)); }
             "--population-size" => { i += 1; population_size = Some(args[i].parse().unwrap_or(10)); }
+            "--cell-type" => {
+                i += 1;
+                cell_type = match args[i].as_str() {
+                    "kan" => CellType::Kan,
+                    "mlp" => CellType::Mlp,
+                    other => { eprintln!("Unknown cell type '{}', using 'mlp'", other); CellType::Mlp }
+                };
+            }
             "--demo" => { demo = true; }
             "--help" | "-h" => {
                 eprintln!("sage-train: NCA token prediction trainer");
@@ -46,6 +55,7 @@ fn main() {
                 eprintln!("  --optimizer <es|cma-es>  Optimizer (default: es)");
                 eprintln!("  --sigma <f>         Initial step size (default: 0.02 for es, 0.3 for cma-es)");
                 eprintln!("  --population-size <n>  Population size (cma-es auto-selects if not set)");
+                eprintln!("  --cell-type <mlp|kan>  Cell brain type (default: mlp)");
                 eprintln!("  --demo              Train on built-in Shakespeare excerpt");
                 return;
             }
@@ -66,11 +76,10 @@ fn main() {
         std::process::exit(1);
     };
 
-    eprintln!("🧬 NCA Token Prediction Training");
+    eprintln!("🧬 NCA Token Prediction Training (cell type: {})", cell_type);
     eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
 
     let mut config = if demo && epochs == 100 && grid_size.is_none() && max_examples.is_none() && optimizer.is_none() {
-        // Use fast defaults for demo mode
         TrainingConfig::default()
     } else {
         TrainingConfig {
@@ -94,31 +103,54 @@ fn main() {
         config.population_size = ps;
     }
 
-    match nca_predictor::train_nca(&corpus, &config, true) {
-        Ok((predictor, accuracy, random_baseline)) => {
-            eprintln!("\n✅ Training complete!");
-            eprintln!("   Final top-5 accuracy: {:.2}%", accuracy * 100.0);
-            eprintln!("   Random baseline:      {:.4}%", random_baseline * 100.0);
-            let ratio = accuracy / random_baseline;
-            eprintln!("   Signal ratio:         {:.1}x random", ratio);
-
-            if ratio > 1.5 {
-                eprintln!("   🎉 SIGNAL DETECTED! NCA predicts better than random!");
-            } else {
-                eprintln!("   ⚠️  Weak/no signal yet. Try more epochs or different corpus.");
-            }
-
-            // Save weights
-            let path = default_weights_path();
-            match predictor.weights().save(&path) {
-                Ok(()) => eprintln!("   💾 Weights saved to {}", path.display()),
-                Err(e) => eprintln!("   ❌ Failed to save weights: {}", e),
+    match cell_type {
+        CellType::Mlp => {
+            match nca_predictor::train_nca(&corpus, &config, true) {
+                Ok((predictor, accuracy, random_baseline)) => {
+                    print_results(accuracy, random_baseline);
+                    let path = default_weights_path();
+                    match predictor.weights().save(&path) {
+                        Ok(()) => eprintln!("   💾 Weights saved to {}", path.display()),
+                        Err(e) => eprintln!("   ❌ Failed to save weights: {}", e),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Training failed: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
-        Err(e) => {
-            eprintln!("❌ Training failed: {}", e);
-            std::process::exit(1);
+        CellType::Kan => {
+            match nca_predictor::train_nca_kan(&corpus, &config, true) {
+                Ok((predictor, accuracy, random_baseline)) => {
+                    print_results(accuracy, random_baseline);
+                    let mut path = default_weights_path();
+                    path.set_file_name("nca_kan_weights.bin");
+                    match predictor.weights().save(&path) {
+                        Ok(()) => eprintln!("   💾 KAN weights saved to {}", path.display()),
+                        Err(e) => eprintln!("   ❌ Failed to save weights: {}", e),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Training failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
+    }
+}
+
+fn print_results(accuracy: f64, random_baseline: f64) {
+    eprintln!("\n✅ Training complete!");
+    eprintln!("   Final top-5 accuracy: {:.2}%", accuracy * 100.0);
+    eprintln!("   Random baseline:      {:.4}%", random_baseline * 100.0);
+    let ratio = accuracy / random_baseline;
+    eprintln!("   Signal ratio:         {:.1}x random", ratio);
+
+    if ratio > 1.5 {
+        eprintln!("   🎉 SIGNAL DETECTED! NCA predicts better than random!");
+    } else {
+        eprintln!("   ⚠️  Weak/no signal yet. Try more epochs or different corpus.");
     }
 }
 

@@ -138,7 +138,6 @@ fn nca_step_grid(
 ) -> Vec<Vec<[f64; NCA_CHANNELS]>> {
     let mut new_grid = grid.to_vec();
     let perception_size = 9 * NCA_CHANNELS;
-    let hidden_size = weights.b1.len();
 
     for r in 0..gs {
         for c in 0..gs {
@@ -156,19 +155,30 @@ fn nca_step_grid(
                 }
             }
 
-            // MLP forward: input → hidden (ReLU) → output (tanh) × 0.1
-            let mut hidden = vec![0.0; hidden_size];
-            for h in 0..hidden_size {
+            // 3-layer MLP forward: input → h1 (ReLU) → h2 (ReLU) → output (tanh) × 0.1
+            let h1_size = weights.b1.len();
+            let h2_size = weights.b2.len();
+
+            let mut h1 = vec![0.0; h1_size];
+            for h in 0..h1_size {
                 let mut sum = weights.b1[h];
                 for i in 0..perception_size {
                     sum += weights.w1[h][i] * input[i];
                 }
-                hidden[h] = sum.max(0.0);
+                h1[h] = sum.max(0.0);
+            }
+            let mut h2 = vec![0.0; h2_size];
+            for h in 0..h2_size {
+                let mut sum = weights.b2[h];
+                for i in 0..h1_size {
+                    sum += weights.w2[h][i] * h1[i];
+                }
+                h2[h] = sum.max(0.0);
             }
             for ch in 0..NCA_CHANNELS {
-                let mut sum = weights.b2[ch];
-                for h in 0..hidden_size {
-                    sum += weights.w2[ch][h] * hidden[h];
+                let mut sum = weights.b3[ch];
+                for h in 0..h2_size {
+                    sum += weights.w3[ch][h] * h2[h];
                 }
                 let delta = sum.tanh() * 0.1;
                 new_grid[r][c][ch] = (grid[r][c][ch] + delta).clamp(-5.0, 5.0);
