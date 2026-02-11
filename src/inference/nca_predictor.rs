@@ -476,6 +476,8 @@ pub enum Optimizer {
     Es,
     /// Separable CMA-ES (diagonal covariance — practical for high-dim params)
     CmaEs,
+    /// Backpropagation through unrolled NCA steps (Adam optimizer)
+    Backprop,
 }
 
 impl std::fmt::Display for Optimizer {
@@ -483,6 +485,7 @@ impl std::fmt::Display for Optimizer {
         match self {
             Optimizer::Es => write!(f, "es"),
             Optimizer::CmaEs => write!(f, "cma-es"),
+            Optimizer::Backprop => write!(f, "backprop"),
         }
     }
 }
@@ -564,6 +567,10 @@ pub fn train_nca(
     let (best_weights, best_fitness) = match config.optimizer {
         Optimizer::Es => train_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
         Optimizer::CmaEs => train_cma_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
+        Optimizer::Backprop => {
+            // Backprop is handled separately via backprop_trainer module
+            return Err("Use backprop_trainer::train_nca_backprop() for backprop optimizer".into());
+        }
     };
 
     let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, DEFAULT_STEPS, grid_size);

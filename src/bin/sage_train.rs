@@ -5,6 +5,7 @@
 //!   sage-train --demo   # Train on built-in Shakespeare excerpt
 
 use sage::inference::nca_predictor::{self, TrainingConfig, Optimizer, CellType, default_weights_path};
+use sage::inference::backprop_trainer::{self, BackpropConfig};
 use std::fs;
 
 fn main() {
@@ -32,6 +33,7 @@ fn main() {
                 optimizer = Some(match args[i].as_str() {
                     "cma-es" | "cmaes" | "cma" => Optimizer::CmaEs,
                     "es" => Optimizer::Es,
+                    "backprop" | "bp" | "adam" => Optimizer::Backprop,
                     other => { eprintln!("Unknown optimizer '{}', using 'es'", other); Optimizer::Es }
                 });
             }
@@ -52,7 +54,7 @@ fn main() {
                 eprintln!("  --epochs <n>        Training epochs (default: 100)");
                 eprintln!("  --grid-size <n>     NCA grid side length (default: 8)");
                 eprintln!("  --max-examples <n>  Max training examples (default: 30)");
-                eprintln!("  --optimizer <es|cma-es>  Optimizer (default: es)");
+                eprintln!("  --optimizer <es|cma-es|backprop>  Optimizer (default: es)");
                 eprintln!("  --sigma <f>         Initial step size (default: 0.02 for es, 0.3 for cma-es)");
                 eprintln!("  --population-size <n>  Population size (cma-es auto-selects if not set)");
                 eprintln!("  --cell-type <mlp|kan>  Cell brain type (default: mlp)");
@@ -104,6 +106,32 @@ fn main() {
     }
 
     match cell_type {
+        CellType::Mlp if config.optimizer == Optimizer::Backprop => {
+            let bp_config = BackpropConfig {
+                learning_rate: config.learning_rate,
+                epochs: config.epochs,
+                grad_clip: 1.0,
+                nca_steps: config.nca_steps,
+                grid_size: config.grid_size,
+                context_window: config.context_window,
+                max_examples: config.max_examples,
+                lr_decay: true,
+            };
+            match backprop_trainer::train_nca_backprop(&corpus, &bp_config, true) {
+                Ok((predictor, accuracy, random_baseline)) => {
+                    print_results(accuracy, random_baseline);
+                    let path = default_weights_path();
+                    match predictor.weights().save(&path) {
+                        Ok(()) => eprintln!("   💾 Weights saved to {}", path.display()),
+                        Err(e) => eprintln!("   ❌ Failed to save weights: {}", e),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Training failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         CellType::Mlp => {
             match nca_predictor::train_nca(&corpus, &config, true) {
                 Ok((predictor, accuracy, random_baseline)) => {

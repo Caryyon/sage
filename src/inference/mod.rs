@@ -10,6 +10,7 @@ pub mod embeddings;
 pub mod distributed;
 pub mod nca_predictor;
 pub mod kan;
+pub mod backprop_trainer;
 pub mod reservoir;
 pub mod criticality;
 
