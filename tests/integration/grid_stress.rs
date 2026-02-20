@@ -3,8 +3,8 @@
 //! Tests NCA knowledge grid under heavy load: 1000+ items,
 //! retrieval quality, collision detection, and encode/decode benchmarks.
 
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
-use sage::distributed_knowledge::encoder::{EncoderConfig, encode_text};
+use sage::distributed_knowledge::encoder::{encode_text, EncoderConfig};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use std::time::Instant;
 
 #[test]
@@ -17,7 +17,10 @@ fn encode_1000_items_without_panic() {
     }
 
     let active = store.active_knowledge(0.01);
-    assert!(!active.is_empty(), "Should have active knowledge after 1000 encodes");
+    assert!(
+        !active.is_empty(),
+        "Should have active knowledge after 1000 encodes"
+    );
 }
 
 #[test]
@@ -59,7 +62,8 @@ fn retrieval_quality_with_many_items() {
     assert!(
         found_count >= 5,
         "Should find results for at least half the topics: found {}/{}",
-        found_count, topics.len()
+        found_count,
+        topics.len()
     );
 }
 
@@ -212,8 +216,11 @@ fn activation_saturation_under_load() {
             store.encode(&text, 0.9);
         }
 
-        let max_act: f64 = store.active_knowledge(0.01)
-            .iter().map(|k| k.activation).fold(0.0, f64::max);
+        let max_act: f64 = store
+            .active_knowledge(0.01)
+            .iter()
+            .map(|k| k.activation)
+            .fold(0.0, f64::max);
         max_activations.push(max_act);
     }
 
@@ -222,7 +229,8 @@ fn activation_saturation_under_load() {
         assert!(
             act <= 1.0 + 1e-10,
             "Activation should not exceed 1.0 at batch {}: got {}",
-            i, act
+            i,
+            act
         );
     }
 
@@ -250,7 +258,10 @@ fn many_items_active_knowledge_count() {
     }
 
     // Should have active cells throughout
-    assert!(counts.last().copied().unwrap_or(0) > 0, "Should have active cells after 1000 items");
+    assert!(
+        counts.last().copied().unwrap_or(0) > 0,
+        "Should have active cells after 1000 items"
+    );
 }
 
 #[test]
@@ -271,11 +282,17 @@ fn save_load_large_grid() {
     loaded.load(path).expect("Load should succeed");
     let load_time = start.elapsed();
 
-    eprintln!("Large grid persistence: save={:?} load={:?}", save_time, load_time);
+    eprintln!(
+        "Large grid persistence: save={:?} load={:?}",
+        save_time, load_time
+    );
 
     let orig_active = store.active_knowledge(0.01).len();
     let loaded_active = loaded.active_knowledge(0.01).len();
-    assert_eq!(orig_active, loaded_active, "Active count should match after load");
+    assert_eq!(
+        orig_active, loaded_active,
+        "Active count should match after load"
+    );
 
     let _ = std::fs::remove_file(path);
 }

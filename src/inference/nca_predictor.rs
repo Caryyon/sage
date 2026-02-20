@@ -34,12 +34,12 @@ const TRAINING_GRID_SIZE: usize = 8;
 // → 64×64, 3 steps ≈ 2.6 GFLOPS ≈ 520ms on Pi 4 (close enough)
 // ---------------------------------------------------------------------------
 
-pub const NCA_CHANNELS: usize = 16;   // Per-cell channels (was 8)
+pub const NCA_CHANNELS: usize = 16; // Per-cell channels (was 8)
 const ACTIVATION_CH: usize = 0;
 
 /// Hidden layer sizes for the 3-layer MLP update rule
-const HIDDEN1_SIZE: usize = 384;      // First hidden layer
-const HIDDEN2_SIZE: usize = 128;      // Second hidden layer
+const HIDDEN1_SIZE: usize = 384; // First hidden layer
+const HIDDEN2_SIZE: usize = 128; // Second hidden layer
 
 /// Perception neighborhood: 3×3 = 9 cells × NCA_CHANNELS
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
@@ -77,7 +77,10 @@ impl SimpleTokenizer {
             token_to_id.insert(tok.clone(), id);
             id_to_token.push(tok);
         }
-        Self { token_to_id, id_to_token }
+        Self {
+            token_to_id,
+            id_to_token,
+        }
     }
 
     pub fn encode(&self, text: &str) -> Vec<usize> {
@@ -110,7 +113,9 @@ impl SimpleTokenizer {
         let mut tokens = Vec::new();
         for word in text.split_whitespace() {
             let word = word.trim();
-            if word.is_empty() { continue; }
+            if word.is_empty() {
+                continue;
+            }
             // Split trailing punctuation
             let trimmed = word.trim_end_matches(|c: char| c.is_ascii_punctuation());
             let suffix = &word[trimmed.len()..];
@@ -158,15 +163,27 @@ impl NcaWeights {
         let scale3 = (2.0 / HIDDEN2_SIZE as f64).sqrt();
         Self {
             w1: (0..HIDDEN1_SIZE)
-                .map(|_| (0..PERCEPTION_SIZE).map(|_| rng.gen_range(-scale1..scale1)).collect())
+                .map(|_| {
+                    (0..PERCEPTION_SIZE)
+                        .map(|_| rng.gen_range(-scale1..scale1))
+                        .collect()
+                })
                 .collect(),
             b1: vec![0.0; HIDDEN1_SIZE],
             w2: (0..HIDDEN2_SIZE)
-                .map(|_| (0..HIDDEN1_SIZE).map(|_| rng.gen_range(-scale2..scale2)).collect())
+                .map(|_| {
+                    (0..HIDDEN1_SIZE)
+                        .map(|_| rng.gen_range(-scale2..scale2))
+                        .collect()
+                })
                 .collect(),
             b2: vec![0.0; HIDDEN2_SIZE],
             w3: (0..NCA_CHANNELS)
-                .map(|_| (0..HIDDEN2_SIZE).map(|_| rng.gen_range(-scale3..scale3)).collect())
+                .map(|_| {
+                    (0..HIDDEN2_SIZE)
+                        .map(|_| rng.gen_range(-scale3..scale3))
+                        .collect()
+                })
                 .collect(),
             b3: vec![0.0; NCA_CHANNELS],
         }
@@ -177,19 +194,28 @@ impl NcaWeights {
         // Layer 1: PERCEPTION_SIZE × HIDDEN1_SIZE + HIDDEN1_SIZE
         // Layer 2: HIDDEN1_SIZE × HIDDEN2_SIZE + HIDDEN2_SIZE
         // Layer 3: HIDDEN2_SIZE × NCA_CHANNELS + NCA_CHANNELS
-        HIDDEN1_SIZE * PERCEPTION_SIZE + HIDDEN1_SIZE
-            + HIDDEN2_SIZE * HIDDEN1_SIZE + HIDDEN2_SIZE
-            + NCA_CHANNELS * HIDDEN2_SIZE + NCA_CHANNELS
+        HIDDEN1_SIZE * PERCEPTION_SIZE
+            + HIDDEN1_SIZE
+            + HIDDEN2_SIZE * HIDDEN1_SIZE
+            + HIDDEN2_SIZE
+            + NCA_CHANNELS * HIDDEN2_SIZE
+            + NCA_CHANNELS
     }
 
     /// Flatten all params into a vec (for evolution strategy)
     pub fn to_vec(&self) -> Vec<f64> {
         let mut v = Vec::with_capacity(self.param_count());
-        for row in &self.w1 { v.extend(row); }
+        for row in &self.w1 {
+            v.extend(row);
+        }
         v.extend(&self.b1);
-        for row in &self.w2 { v.extend(row); }
+        for row in &self.w2 {
+            v.extend(row);
+        }
         v.extend(&self.b2);
-        for row in &self.w3 { v.extend(row); }
+        for row in &self.w3 {
+            v.extend(row);
+        }
         v.extend(&self.b3);
         v
     }
@@ -221,7 +247,14 @@ impl NcaWeights {
         }
         let b3 = params[idx..idx + NCA_CHANNELS].to_vec();
 
-        Self { w1, b1, w2, b2, w3, b3 }
+        Self {
+            w1,
+            b1,
+            w2,
+            b2,
+            w3,
+            b3,
+        }
     }
 
     /// Save weights to binary file
@@ -260,9 +293,20 @@ impl NcaPredictor {
         Self::with_grid_size(tokenizer, weights, steps, NCA_GRID_SIZE)
     }
 
-    pub fn with_grid_size(tokenizer: SimpleTokenizer, weights: NcaWeights, steps: usize, grid_size: usize) -> Self {
+    pub fn with_grid_size(
+        tokenizer: SimpleTokenizer,
+        weights: NcaWeights,
+        steps: usize,
+        grid_size: usize,
+    ) -> Self {
         let grid = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
-        Self { grid, weights, steps, grid_size, tokenizer }
+        Self {
+            grid,
+            weights,
+            steps,
+            grid_size,
+            tokenizer,
+        }
     }
 
     pub fn with_default_steps(tokenizer: SimpleTokenizer, weights: NcaWeights) -> Self {
@@ -316,7 +360,7 @@ impl NcaPredictor {
     /// Apply the NCA update rule (one step) — 3-layer MLP
     fn nca_step(&mut self) {
         let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; self.grid_size]; self.grid_size];
-        
+
         for r in 0..self.grid_size {
             for c in 0..self.grid_size {
                 let input = self.perceive(r, c);
@@ -402,7 +446,10 @@ impl NcaPredictor {
         let mut rng = rand::thread_rng();
 
         // Softmax with temperature
-        let max_val = activations.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max_val = activations
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         let exps: Vec<f64> = activations
             .iter()
             .map(|&a| ((a - max_val) / temperature.max(0.01)).exp())
@@ -493,14 +540,14 @@ impl std::fmt::Display for Optimizer {
 /// Training configuration
 pub struct TrainingConfig {
     pub population_size: usize,
-    pub sigma: f64,         // Noise standard deviation / initial step size
+    pub sigma: f64, // Noise standard deviation / initial step size
     pub learning_rate: f64,
     pub epochs: usize,
     pub context_window: usize, // How many tokens of context
     pub grid_size: usize,      // Grid side length for training (smaller = faster)
     pub nca_steps: usize,      // NCA update steps per evaluation during training
     pub max_examples: usize,   // Max training examples to subsample
-    pub optimizer: Optimizer,   // Which optimizer to use
+    pub optimizer: Optimizer,  // Which optimizer to use
 }
 
 impl Default for TrainingConfig {
@@ -539,16 +586,30 @@ pub fn train_nca(
 
     if verbose {
         eprintln!("📊 Optimizer: {}", config.optimizer);
-        eprintln!("📊 Vocab size: {}, Corpus tokens: {}, Grid: {}×{}, Random baseline: {:.4}%",
-                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
+        eprintln!(
+            "📊 Vocab size: {}, Corpus tokens: {}, Grid: {}×{}, Random baseline: {:.4}%",
+            vocab_size,
+            tokens.len(),
+            grid_size,
+            grid_size,
+            random_accuracy * 100.0
+        );
         let pc = NcaWeights::random().param_count();
-        eprintln!("📊 NCA params: {} ({:.1} KB as f64)", pc, pc as f64 * 8.0 / 1024.0);
-        eprintln!("📊 Architecture: {} → {} (ReLU) → {} (ReLU) → {} (tanh)",
-                  PERCEPTION_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, NCA_CHANNELS);
+        eprintln!(
+            "📊 NCA params: {} ({:.1} KB as f64)",
+            pc,
+            pc as f64 * 8.0 / 1024.0
+        );
+        eprintln!(
+            "📊 Architecture: {} → {} (ReLU) → {} (ReLU) → {} (tanh)",
+            PERCEPTION_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, NCA_CHANNELS
+        );
     }
 
     // Build training examples (subsample for speed)
-    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
+    let max_examples = config
+        .max_examples
+        .min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_examples).max(1);
     let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
         .step_by(step)
@@ -565,8 +626,22 @@ pub fn train_nca(
     }
 
     let (best_weights, best_fitness) = match config.optimizer {
-        Optimizer::Es => train_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
-        Optimizer::CmaEs => train_cma_es(&tokenizer, &examples, config, grid_size, verbose, random_accuracy),
+        Optimizer::Es => train_es(
+            &tokenizer,
+            &examples,
+            config,
+            grid_size,
+            verbose,
+            random_accuracy,
+        ),
+        Optimizer::CmaEs => train_cma_es(
+            &tokenizer,
+            &examples,
+            config,
+            grid_size,
+            verbose,
+            random_accuracy,
+        ),
         Optimizer::Backprop => {
             // Backprop is handled separately via backprop_trainer module
             return Err("Use backprop_trainer::train_nca_backprop() for backprop optimizer".into());
@@ -602,16 +677,33 @@ pub fn train_nca_kan(
     if verbose {
         eprintln!("📊 Cell type: KAN");
         eprintln!("📊 Optimizer: CMA-ES (KAN training)");
-        eprintln!("📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
-                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
-        eprintln!("📊 KAN params: {} ({:.1} KB)", kan_weights.param_count(), kan_weights.param_count() as f64 * 8.0 / 1024.0);
+        eprintln!(
+            "📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
+            vocab_size,
+            tokens.len(),
+            grid_size,
+            grid_size,
+            random_accuracy * 100.0
+        );
+        eprintln!(
+            "📊 KAN params: {} ({:.1} KB)",
+            kan_weights.param_count(),
+            kan_weights.param_count() as f64 * 8.0 / 1024.0
+        );
         eprintln!("📊 MLP params: {} (comparison)", mlp_weights.param_count());
         let kw = &kan_weights;
-        eprintln!("📊 KAN arch: {:?} grid={} order={}", kw.widths(), kw.grid_size(), kw.order());
+        eprintln!(
+            "📊 KAN arch: {:?} grid={} order={}",
+            kw.widths(),
+            kw.grid_size(),
+            kw.order()
+        );
     }
 
     // Build training examples
-    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
+    let max_examples = config
+        .max_examples
+        .min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_examples).max(1);
     let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
         .step_by(step)
@@ -629,12 +721,18 @@ pub fn train_nca_kan(
 
     // Train with CMA-ES on KAN params
     let (best_kan_weights, best_fitness) = train_cma_es_kan(
-        &tokenizer, &examples, config, grid_size, verbose, random_accuracy,
+        &tokenizer,
+        &examples,
+        config,
+        grid_size,
+        verbose,
+        random_accuracy,
     );
 
     // Return an NcaPredictor with default MLP weights (KAN weights saved separately)
     // The accuracy/fitness reflects KAN performance
-    let predictor = NcaPredictor::with_grid_size(tokenizer, NcaWeights::random(), DEFAULT_STEPS, grid_size);
+    let predictor =
+        NcaPredictor::with_grid_size(tokenizer, NcaWeights::random(), DEFAULT_STEPS, grid_size);
     // Store KAN weights reference for saving
     KAN_LAST_WEIGHTS.with(|w| *w.borrow_mut() = Some(best_kan_weights));
     Ok((predictor, best_fitness, random_accuracy))
@@ -660,14 +758,22 @@ fn train_cma_es_kan(
     let mean: Vec<f64> = initial.to_vec();
 
     // CMA-ES hyperparams
-    let lambda = config.population_size.max(4 + (3.0 * (n as f64).ln()).floor() as usize);
+    let lambda = config
+        .population_size
+        .max(4 + (3.0 * (n as f64).ln()).floor() as usize);
     let mu = lambda / 2;
-    let weights_raw: Vec<f64> = (0..mu).map(|i| ((lambda as f64 + 1.0) / 2.0).ln() - ((i + 1) as f64).ln()).collect();
+    let weights_raw: Vec<f64> = (0..mu)
+        .map(|i| ((lambda as f64 + 1.0) / 2.0).ln() - ((i + 1) as f64).ln())
+        .collect();
     let w_sum: f64 = weights_raw.iter().sum();
     let weights: Vec<f64> = weights_raw.iter().map(|w| w / w_sum).collect();
     let mu_eff: f64 = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
 
-    let sigma_init = if config.sigma > 0.1 { config.sigma } else { 0.3 };
+    let sigma_init = if config.sigma > 0.1 {
+        config.sigma
+    } else {
+        0.3
+    };
     let mut sigma = sigma_init;
     let mut m = mean;
 
@@ -675,13 +781,19 @@ fn train_cma_es_kan(
     let mut diag_c: Vec<f64> = vec![1.0; n];
     let mut p_sigma: Vec<f64> = vec![0.0; n];
     let c_sigma = 4.0 / (n as f64 + 4.0);
-    let d_sigma = 1.0 + 2.0 * (0.0_f64).max(((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0) + c_sigma;
-    let chi_n = (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
+    let d_sigma =
+        1.0 + 2.0 * (0.0_f64).max(((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0) + c_sigma;
+    let chi_n =
+        (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
     let c1 = 2.0 / ((n as f64 + 1.3).powi(2) + mu_eff);
-    let c_mu = (2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff)).min(1.0 - c1);
+    let c_mu =
+        (2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff)).min(1.0 - c1);
 
     if verbose {
-        eprintln!("📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}", lambda, mu, mu_eff, sigma_init, n);
+        eprintln!(
+            "📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}",
+            lambda, mu, mu_eff, sigma_init, n
+        );
     }
 
     let mut rng = rand::thread_rng();
@@ -692,12 +804,15 @@ fn train_cma_es_kan(
         // Sample candidates
         let mut candidates: Vec<(Vec<f64>, f64)> = Vec::with_capacity(lambda);
         for _ in 0..lambda {
-            let z: Vec<f64> = (0..n).map(|i| {
-                let norm = rand_normal(&mut rng);
-                m[i] + sigma * diag_c[i].sqrt() * norm
-            }).collect();
+            let z: Vec<f64> = (0..n)
+                .map(|i| {
+                    let norm = rand_normal(&mut rng);
+                    m[i] + sigma * diag_c[i].sqrt() * norm
+                })
+                .collect();
             let w = KanNcaWeights::from_vec(&z);
-            let fitness = evaluate_fitness_kan(tokenizer, &w, examples, grid_size, config.nca_steps);
+            let fitness =
+                evaluate_fitness_kan(tokenizer, &w, examples, grid_size, config.nca_steps);
             candidates.push((z, fitness));
         }
 
@@ -721,7 +836,8 @@ fn train_cma_es_kan(
         // Update evolution path
         for j in 0..n {
             let dj = (m[j] - old_m[j]) / (sigma * diag_c[j].sqrt());
-            p_sigma[j] = (1.0 - c_sigma) * p_sigma[j] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * dj;
+            p_sigma[j] =
+                (1.0 - c_sigma) * p_sigma[j] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * dj;
         }
 
         // Update sigma
@@ -735,12 +851,22 @@ fn train_cma_es_kan(
                 let dj = (candidates[i].0[j] - old_m[j]) / (sigma * diag_c[j].sqrt());
                 rank_mu_update += weights[i] * (dj * dj - 1.0);
             }
-            diag_c[j] *= (1.0 + c1 * (p_sigma[j] * p_sigma[j] - 1.0) + c_mu * rank_mu_update).max(0.1).exp().min(10.0);
+            diag_c[j] *= (1.0 + c1 * (p_sigma[j] * p_sigma[j] - 1.0) + c_mu * rank_mu_update)
+                .max(0.1)
+                .exp()
+                .min(10.0);
         }
 
         if verbose {
-            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
-                      epoch + 1, config.epochs, candidates[0].1 * 100.0, best_fitness * 100.0, sigma, random_accuracy * 100.0);
+            eprintln!(
+                "  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
+                epoch + 1,
+                config.epochs,
+                candidates[0].1 * 100.0,
+                best_fitness * 100.0,
+                sigma,
+                random_accuracy * 100.0
+            );
         }
     }
 
@@ -841,8 +967,11 @@ fn train_es(
         let mut fitnesses: Vec<f64> = Vec::with_capacity(config.population_size);
 
         for _ in 0..config.population_size {
-            let noise: Vec<f64> = (0..n_params).map(|_| rng.gen::<f64>() * 2.0 - 1.0).collect();
-            let perturbed: Vec<f64> = base_params.iter()
+            let noise: Vec<f64> = (0..n_params)
+                .map(|_| rng.gen::<f64>() * 2.0 - 1.0)
+                .collect();
+            let perturbed: Vec<f64> = base_params
+                .iter()
                 .zip(&noise)
                 .map(|(p, n)| p + config.sigma * n)
                 .collect();
@@ -855,7 +984,8 @@ fn train_es(
 
         let mean_f: f64 = fitnesses.iter().sum::<f64>() / fitnesses.len() as f64;
         let std_f: f64 = {
-            let var = fitnesses.iter().map(|f| (f - mean_f).powi(2)).sum::<f64>() / fitnesses.len() as f64;
+            let var = fitnesses.iter().map(|f| (f - mean_f).powi(2)).sum::<f64>()
+                / fitnesses.len() as f64;
             var.sqrt().max(1e-8)
         };
         let norm_fitnesses: Vec<f64> = fitnesses.iter().map(|f| (f - mean_f) / std_f).collect();
@@ -871,7 +1001,13 @@ fn train_es(
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
-        let new_fitness = evaluate_fitness(tokenizer, &new_weights, examples, grid_size, config.nca_steps);
+        let new_fitness = evaluate_fitness(
+            tokenizer,
+            &new_weights,
+            examples,
+            grid_size,
+            config.nca_steps,
+        );
 
         if new_fitness > best_fitness {
             best_fitness = new_fitness;
@@ -879,8 +1015,13 @@ fn train_es(
         }
 
         if verbose {
-            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (random = {:.4}%)",
-                      epoch + 1, config.epochs, best_fitness * 100.0, random_accuracy * 100.0);
+            eprintln!(
+                "  Epoch {}/{}: accuracy = {:.4}% (random = {:.4}%)",
+                epoch + 1,
+                config.epochs,
+                best_fitness * 100.0,
+                random_accuracy * 100.0
+            );
         }
     }
 
@@ -921,27 +1062,36 @@ fn train_cma_es(
     // Step-size adaptation
     let c_sigma = (mu_eff + 2.0) / (n as f64 + mu_eff + 5.0);
     let d_sigma = 1.0 + 2.0 * (((mu_eff - 1.0) / (n as f64 + 1.0)).sqrt() - 1.0).max(0.0) + c_sigma;
-    let chi_n = (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
+    let chi_n =
+        (n as f64).sqrt() * (1.0 - 1.0 / (4.0 * n as f64) + 1.0 / (21.0 * n as f64 * n as f64));
 
     // Covariance adaptation (sep-CMA: only diagonal)
     let c_c = (4.0 + mu_eff / n as f64) / (n as f64 + 4.0 + 2.0 * mu_eff / n as f64);
     let c_1 = 2.0 / ((n as f64 + 1.3).powi(2) + mu_eff);
-    let c_mu_val = (1.0 - c_1).min(
-        2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff),
-    );
+    let c_mu_val =
+        (1.0 - c_1).min(2.0 * (mu_eff - 2.0 + 1.0 / mu_eff) / ((n as f64 + 2.0).powi(2) + mu_eff));
 
     // State vectors
     let mut mean = init_weights.to_vec();
     let mut sigma = config.sigma.max(0.3); // CMA-ES needs larger initial sigma
     let mut p_sigma = vec![0.0; n]; // evolution path for sigma
-    let mut p_c = vec![0.0; n];     // evolution path for covariance
-    let mut diag_c = vec![1.0; n];  // diagonal of covariance matrix
+    let mut p_c = vec![0.0; n]; // evolution path for covariance
+    let mut diag_c = vec![1.0; n]; // diagonal of covariance matrix
 
     let mut best_weights = init_weights;
-    let mut best_fitness = evaluate_fitness(tokenizer, &best_weights, examples, grid_size, config.nca_steps);
+    let mut best_fitness = evaluate_fitness(
+        tokenizer,
+        &best_weights,
+        examples,
+        grid_size,
+        config.nca_steps,
+    );
 
     if verbose {
-        eprintln!("📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}", lambda, mu, mu_eff, sigma, n);
+        eprintln!(
+            "📊 CMA-ES: λ={}, μ={}, μ_eff={:.1}, σ₀={:.3}, n={}",
+            lambda, mu, mu_eff, sigma, n
+        );
     }
 
     for epoch in 0..config.epochs {
@@ -953,9 +1103,7 @@ fn train_cma_es(
 
         for _ in 0..lambda {
             let z: Vec<f64> = (0..n).map(|_| rand_normal(&mut rng)).collect();
-            let params: Vec<f64> = (0..n)
-                .map(|i| mean[i] + sigma * sqrt_c[i] * z[i])
-                .collect();
+            let params: Vec<f64> = (0..n).map(|i| mean[i] + sigma * sqrt_c[i] * z[i]).collect();
             let w = NcaWeights::from_vec(&params);
             let fitness = evaluate_fitness(tokenizer, &w, examples, grid_size, config.nca_steps);
             candidates.push((params, z, fitness));
@@ -990,7 +1138,8 @@ fn train_cma_es(
         // Update evolution path for sigma (CSA)
         let _sqrt_mu_eff = mu_eff.sqrt();
         for i in 0..n {
-            p_sigma[i] = (1.0 - c_sigma) * p_sigma[i] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * z_w[i];
+            p_sigma[i] =
+                (1.0 - c_sigma) * p_sigma[i] + (c_sigma * (2.0 - c_sigma) * mu_eff).sqrt() * z_w[i];
         }
 
         // |p_sigma|
@@ -1008,7 +1157,8 @@ fn train_cma_es(
         // Update evolution path for covariance
         for i in 0..n {
             let step = (mean[i] - old_mean[i]) / sigma;
-            p_c[i] = (1.0 - c_c) * p_c[i] + h_sigma * (c_c * (2.0 - c_c) * mu_eff).sqrt() * step / sqrt_c[i].max(1e-30);
+            p_c[i] = (1.0 - c_c) * p_c[i]
+                + h_sigma * (c_c * (2.0 - c_c) * mu_eff).sqrt() * step / sqrt_c[i].max(1e-30);
         }
 
         // Update diagonal covariance
@@ -1031,9 +1181,15 @@ fn train_cma_es(
         sigma = sigma.clamp(1e-20, 1e3);
 
         if verbose {
-            eprintln!("  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
-                      epoch + 1, config.epochs, candidates[0].2 * 100.0, best_fitness * 100.0,
-                      sigma, random_accuracy * 100.0);
+            eprintln!(
+                "  Epoch {}/{}: accuracy = {:.4}% (best = {:.4}%, σ = {:.6}, random = {:.4}%)",
+                epoch + 1,
+                config.epochs,
+                candidates[0].2 * 100.0,
+                best_fitness * 100.0,
+                sigma,
+                random_accuracy * 100.0
+            );
         }
     }
 
@@ -1055,13 +1211,18 @@ fn evaluate_fitness(
     grid_size: usize,
     nca_steps: usize,
 ) -> f64 {
-    let mut predictor = NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
+    let mut predictor =
+        NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
     let mut correct = 0;
     // Use top-5 accuracy for richer signal
     for (ctx, target) in examples {
         let activations = predictor.run_and_read(ctx);
         // Top-5 check
-        let mut indexed: Vec<(usize, f64)> = activations.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+        let mut indexed: Vec<(usize, f64)> = activations
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| (i, v))
+            .collect();
         indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         if indexed.iter().take(5).any(|(id, _)| id == target) {
             correct += 1;
@@ -1104,26 +1265,40 @@ pub struct HybridTracker {
 
 impl HybridTracker {
     pub fn new(config: HybridConfig) -> Self {
-        Self { config, predictions: 0, correct: 0 }
+        Self {
+            config,
+            predictions: 0,
+            correct: 0,
+        }
     }
 
     pub fn record(&mut self, nca_was_correct: bool) {
         self.predictions += 1;
-        if nca_was_correct { self.correct += 1; }
+        if nca_was_correct {
+            self.correct += 1;
+        }
 
         // Every 100 predictions, check if we should promote NCA
         if self.predictions.is_multiple_of(100) && self.predictions > 0 {
             let accuracy = self.correct as f64 / self.predictions as f64;
             if accuracy > self.config.promotion_threshold {
-                self.config.nca_weight = (self.config.nca_weight + self.config.promotion_rate).min(1.0);
-                eprintln!("🧠 NCA accuracy {:.1}% > threshold, nca_weight → {:.2}",
-                         accuracy * 100.0, self.config.nca_weight);
+                self.config.nca_weight =
+                    (self.config.nca_weight + self.config.promotion_rate).min(1.0);
+                eprintln!(
+                    "🧠 NCA accuracy {:.1}% > threshold, nca_weight → {:.2}",
+                    accuracy * 100.0,
+                    self.config.nca_weight
+                );
             }
         }
     }
 
     pub fn current_accuracy(&self) -> f64 {
-        if self.predictions == 0 { 0.0 } else { self.correct as f64 / self.predictions as f64 }
+        if self.predictions == 0 {
+            0.0
+        } else {
+            self.correct as f64 / self.predictions as f64
+        }
     }
 }
 

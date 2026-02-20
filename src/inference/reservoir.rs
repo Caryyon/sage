@@ -32,10 +32,7 @@ pub enum FeatureStrategy {
 }
 
 /// Extract features from a grid state using the given strategy.
-pub fn extract_features(
-    grid: &[Vec<[f64; NCA_CHANNELS]>],
-    strategy: FeatureStrategy,
-) -> Vec<f64> {
+pub fn extract_features(grid: &[Vec<[f64; NCA_CHANNELS]>], strategy: FeatureStrategy) -> Vec<f64> {
     match strategy {
         FeatureStrategy::FlatState => extract_flat(grid),
         FeatureStrategy::SpatialStats => extract_spatial_stats(grid),
@@ -74,8 +71,12 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
         for cell in row {
             for ch in 0..NCA_CHANNELS {
                 means[ch] += cell[ch];
-                if cell[ch] > maxs[ch] { maxs[ch] = cell[ch]; }
-                if cell[ch] < mins[ch] { mins[ch] = cell[ch]; }
+                if cell[ch] > maxs[ch] {
+                    maxs[ch] = cell[ch];
+                }
+                if cell[ch] < mins[ch] {
+                    mins[ch] = cell[ch];
+                }
             }
         }
     }
@@ -99,7 +100,17 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
     let mut quad_counts = [0usize; 4];
     for (r, row) in grid.iter().enumerate() {
         for (c, cell) in row.iter().enumerate() {
-            let q = if r < half { if c < half { 0 } else { 1 } } else if c < half { 2 } else { 3 };
+            let q = if r < half {
+                if c < half {
+                    0
+                } else {
+                    1
+                }
+            } else if c < half {
+                2
+            } else {
+                3
+            };
             quad_counts[q] += 1;
             for ch in 0..NCA_CHANNELS {
                 quad_sums[q][ch] += cell[ch];
@@ -143,10 +154,19 @@ impl ReservoirReadout {
         let mut rng = rand::thread_rng();
         let scale = (2.0 / (vocab_size + feature_dim) as f64).sqrt();
         let weights = (0..vocab_size)
-            .map(|_| (0..feature_dim).map(|_| rng.gen_range(-scale..scale)).collect())
+            .map(|_| {
+                (0..feature_dim)
+                    .map(|_| rng.gen_range(-scale..scale))
+                    .collect()
+            })
             .collect();
         let bias = vec![0.0; vocab_size];
-        Self { weights, bias, vocab_size, feature_dim }
+        Self {
+            weights,
+            bias,
+            vocab_size,
+            feature_dim,
+        }
     }
 
     /// Compute logits for a feature vector
@@ -202,7 +222,12 @@ impl ReservoirReadout {
         let feature_dim = u64::from_le_bytes(data[8..16].try_into()?) as usize;
         let expected = 16 + (vocab_size * feature_dim + vocab_size) * 8;
         if data.len() < expected {
-            return Err(format!("File too small: expected {} bytes, got {}", expected, data.len()).into());
+            return Err(format!(
+                "File too small: expected {} bytes, got {}",
+                expected,
+                data.len()
+            )
+            .into());
         }
         let mut idx = 16;
         let mut weights = Vec::with_capacity(vocab_size);
@@ -219,7 +244,12 @@ impl ReservoirReadout {
             bias.push(f64::from_le_bytes(data[idx..idx + 8].try_into()?));
             idx += 8;
         }
-        Ok(Self { weights, bias, vocab_size, feature_dim })
+        Ok(Self {
+            weights,
+            bias,
+            vocab_size,
+            feature_dim,
+        })
     }
 }
 
@@ -332,19 +362,30 @@ pub fn train_reservoir_readout(
     }
 
     // Build training examples: extract features once (NCA is frozen)
-    let max_ex = config.max_examples.min(tokens.len() - config.context_window);
+    let max_ex = config
+        .max_examples
+        .min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_ex).max(1);
 
     if verbose {
         eprintln!("🔬 Reservoir readout training");
-        eprintln!("   Feature strategy: {:?}, dim: {}", config.feature_strategy, feat_dim);
-        eprintln!("   Vocab size: {}, Grid: {}×{}", vocab_size, grid_size, grid_size);
+        eprintln!(
+            "   Feature strategy: {:?}, dim: {}",
+            config.feature_strategy, feat_dim
+        );
+        eprintln!(
+            "   Vocab size: {}, Grid: {}×{}",
+            vocab_size, grid_size, grid_size
+        );
     }
 
     let mut features_dataset: Vec<Vec<f64>> = Vec::new();
     let mut targets: Vec<usize> = Vec::new();
 
-    for i in (0..tokens.len() - config.context_window).step_by(step).take(max_ex) {
+    for i in (0..tokens.len() - config.context_window)
+        .step_by(step)
+        .take(max_ex)
+    {
         let ctx = &tokens[i..i + config.context_window];
         let target = tokens[i + config.context_window];
         let grid_state = predictor.run_and_get_state(ctx);
@@ -398,8 +439,14 @@ pub fn train_reservoir_readout(
         if verbose && (epoch + 1) % 20 == 0 {
             let avg_loss = total_loss / n_examples as f64;
             let (top1, top5) = evaluate_readout(&readout, &features_dataset, &targets);
-            eprintln!("   Epoch {}/{}: loss={:.4}, top1={:.2}%, top5={:.2}%",
-                      epoch + 1, config.readout_epochs, avg_loss, top1 * 100.0, top5 * 100.0);
+            eprintln!(
+                "   Epoch {}/{}: loss={:.4}, top1={:.2}%, top5={:.2}%",
+                epoch + 1,
+                config.readout_epochs,
+                avg_loss,
+                top1 * 100.0,
+                top5 * 100.0
+            );
         }
     }
 
@@ -417,7 +464,8 @@ fn evaluate_readout(
     let mut correct5 = 0;
     for (feats, &target) in features.iter().zip(targets.iter()) {
         let logits = readout.predict(feats);
-        let mut indexed: Vec<(usize, f64)> = logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+        let mut indexed: Vec<(usize, f64)> =
+            logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
         indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         if indexed[0].0 == target {
             correct1 += 1;
@@ -455,7 +503,7 @@ pub fn train_standalone_readout(
     config: &ReservoirConfig,
     verbose: bool,
 ) -> Result<(ReservoirReadout, f64, f64, f64), Box<dyn Error>> {
-    use crate::inference::nca_predictor::{NcaWeights, SimpleTokenizer, NcaPredictor};
+    use crate::inference::nca_predictor::{NcaPredictor, NcaWeights, SimpleTokenizer};
 
     let tokenizer = SimpleTokenizer::from_corpus(corpus, grid_size * grid_size);
     let vocab_size = tokenizer.vocab_size();
@@ -467,7 +515,10 @@ pub fn train_standalone_readout(
 
     if verbose {
         eprintln!("🔬 Standalone linear readout (random NCA reservoir)");
-        eprintln!("   Grid: {}×{}, NCA steps: {}, Vocab: {}", grid_size, grid_size, nca_steps, vocab_size);
+        eprintln!(
+            "   Grid: {}×{}, NCA steps: {}, Vocab: {}",
+            grid_size, grid_size, nca_steps, vocab_size
+        );
         eprintln!("   Random baseline: {:.4}%", random_baseline * 100.0);
     }
 
@@ -498,7 +549,11 @@ mod tests {
         assert_eq!(feats.len(), feature_dim(4, FeatureStrategy::SpatialStats));
         // Mean should be 0.5 for all channels
         for ch in 0..NCA_CHANNELS {
-            assert!((feats[ch * 4] - 0.5).abs() < 1e-10, "mean for ch {} wrong", ch);
+            assert!(
+                (feats[ch * 4] - 0.5).abs() < 1e-10,
+                "mean for ch {} wrong",
+                ch
+            );
         }
     }
 

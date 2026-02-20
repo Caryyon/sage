@@ -5,9 +5,9 @@
 //! 2. Draw overlay layer (trees, rocks, buildings)
 //! 3. Draw characters (always on top)
 
+use super::character::Character;
 use super::tiles::{GroundTile, OverlayTile, TeamColor};
 use super::world::World;
-use super::character::Character;
 use image::{Rgba, RgbaImage};
 use std::path::Path;
 
@@ -73,7 +73,14 @@ impl LayeredRenderer {
         }
     }
 
-    fn draw_overlay(&self, img: &mut RgbaImage, x: u32, y: u32, overlay: OverlayTile, team_color: TeamColor) {
+    fn draw_overlay(
+        &self,
+        img: &mut RgbaImage,
+        x: u32,
+        y: u32,
+        overlay: OverlayTile,
+        team_color: TeamColor,
+    ) {
         let px = x * self.tile_size;
         let py = y * self.tile_size;
         let color = overlay_color(overlay, team_color);
@@ -81,15 +88,24 @@ impl LayeredRenderer {
         // Draw overlay with proper shape based on type
         match overlay {
             // Trees - draw as circles/triangles on top
-            OverlayTile::TreeOak | OverlayTile::TreePine | OverlayTile::TreeDead |
-            OverlayTile::TreeCoconut => {
+            OverlayTile::TreeOak
+            | OverlayTile::TreePine
+            | OverlayTile::TreeDead
+            | OverlayTile::TreeCoconut => {
                 self.draw_tree(&mut *img, px, py, color);
             }
             // Buildings - draw as rectangles with roofs
-            OverlayTile::House | OverlayTile::HouseLarge | OverlayTile::Tavern |
-            OverlayTile::Market | OverlayTile::Blacksmith | OverlayTile::Church |
-            OverlayTile::Chapel | OverlayTile::Barracks | OverlayTile::Tower |
-            OverlayTile::Workshop | OverlayTile::Keep => {
+            OverlayTile::House
+            | OverlayTile::HouseLarge
+            | OverlayTile::Tavern
+            | OverlayTile::Market
+            | OverlayTile::Blacksmith
+            | OverlayTile::Church
+            | OverlayTile::Chapel
+            | OverlayTile::Barracks
+            | OverlayTile::Tower
+            | OverlayTile::Workshop
+            | OverlayTile::Keep => {
                 self.draw_building(&mut *img, px, py, color, team_color);
             }
             // Well - draw as circle
@@ -101,14 +117,19 @@ impl LayeredRenderer {
                 self.draw_rock(&mut *img, px, py, color);
             }
             // Small decorations
-            OverlayTile::Bush | OverlayTile::Flowers | OverlayTile::Wheatfield |
-            OverlayTile::Cactus => {
+            OverlayTile::Bush
+            | OverlayTile::Flowers
+            | OverlayTile::Wheatfield
+            | OverlayTile::Cactus => {
                 self.draw_decoration(&mut *img, px, py, color);
             }
             // Walls and fences
-            OverlayTile::Fence | OverlayTile::FenceCorner |
-            OverlayTile::Wall | OverlayTile::WallCorner | OverlayTile::Gate |
-            OverlayTile::Dock => {
+            OverlayTile::Fence
+            | OverlayTile::FenceCorner
+            | OverlayTile::Wall
+            | OverlayTile::WallCorner
+            | OverlayTile::Gate
+            | OverlayTile::Dock => {
                 self.draw_wall(&mut *img, px, py, color);
             }
             // Bridge
@@ -116,8 +137,11 @@ impl LayeredRenderer {
                 self.draw_bridge(&mut *img, px, py, color);
             }
             // Misc objects - draw as decorations or buildings
-            OverlayTile::QuestBoard | OverlayTile::Sign | OverlayTile::StreetSign |
-            OverlayTile::Chest | OverlayTile::Tumbleweed => {
+            OverlayTile::QuestBoard
+            | OverlayTile::Sign
+            | OverlayTile::StreetSign
+            | OverlayTile::Chest
+            | OverlayTile::Tumbleweed => {
                 self.draw_decoration(&mut *img, px, py, color);
             }
             OverlayTile::Portal => {
@@ -183,15 +207,21 @@ impl LayeredRenderer {
                 let dist_y = (py + dy) as i32 - center_y as i32;
                 let dist = ((dist_x * dist_x + dist_y * dist_y) as f32).sqrt();
 
-                if dist <= radius as f32
-                    && px + dx < img.width() && py + dy < img.height() {
-                        img.put_pixel(px + dx, py + dy, color);
-                    }
+                if dist <= radius as f32 && px + dx < img.width() && py + dy < img.height() {
+                    img.put_pixel(px + dx, py + dy, color);
+                }
             }
         }
     }
 
-    fn draw_building(&self, img: &mut RgbaImage, px: u32, py: u32, color: Rgba<u8>, team_color: TeamColor) {
+    fn draw_building(
+        &self,
+        img: &mut RgbaImage,
+        px: u32,
+        py: u32,
+        color: Rgba<u8>,
+        team_color: TeamColor,
+    ) {
         let size = self.tile_size;
 
         // Draw main building body
@@ -272,9 +302,11 @@ impl LayeredRenderer {
                 let dist_y = ((py + dy) as i32 - center_y as i32).abs();
 
                 if dist_x + dist_y < (size / 2) as i32
-                    && px + dx < img.width() && py + dy < img.height() {
-                        img.put_pixel(px + dx, py + dy, color);
-                    }
+                    && px + dx < img.width()
+                    && py + dy < img.height()
+                {
+                    img.put_pixel(px + dx, py + dy, color);
+                }
             }
         }
     }
@@ -372,10 +404,9 @@ impl LayeredRenderer {
                 let dist_y = (py + dy) as i32 - center_y as i32;
                 let dist = ((dist_x * dist_x + dist_y * dist_y) as f32).sqrt();
 
-                if dist <= radius as f32
-                    && px + dx < img.width() && py + dy < img.height() {
-                        img.put_pixel(px + dx, py + dy, color);
-                    }
+                if dist <= radius as f32 && px + dx < img.width() && py + dy < img.height() {
+                    img.put_pixel(px + dx, py + dy, color);
+                }
             }
         }
 
@@ -439,15 +470,15 @@ fn overlay_color(overlay: OverlayTile, team_color: TeamColor) -> Rgba<u8> {
 fn character_color(character: &Character) -> Rgba<u8> {
     use super::character::CharacterSprite;
     match character.sprite {
-        CharacterSprite::FarmerCyan | CharacterSprite::SwordsmanCyan | CharacterSprite::MageCyan => {
-            Rgba([0, 255, 255, 255])
-        }
-        CharacterSprite::FarmerLime | CharacterSprite::SwordsmanLime | CharacterSprite::MageLime => {
-            Rgba([0, 255, 0, 255])
-        }
-        CharacterSprite::FarmerPurple | CharacterSprite::SwordsmanPurple | CharacterSprite::MagePurple => {
-            Rgba([148, 0, 211, 255])
-        }
+        CharacterSprite::FarmerCyan
+        | CharacterSprite::SwordsmanCyan
+        | CharacterSprite::MageCyan => Rgba([0, 255, 255, 255]),
+        CharacterSprite::FarmerLime
+        | CharacterSprite::SwordsmanLime
+        | CharacterSprite::MageLime => Rgba([0, 255, 0, 255]),
+        CharacterSprite::FarmerPurple
+        | CharacterSprite::SwordsmanPurple
+        | CharacterSprite::MagePurple => Rgba([148, 0, 211, 255]),
         CharacterSprite::FarmerRed | CharacterSprite::SwordsmanRed | CharacterSprite::MageRed => {
             Rgba([255, 0, 0, 255])
         }
@@ -484,7 +515,11 @@ pub fn render_with_labels(world: &World, tile_size: u32) -> RgbaImage {
 }
 
 /// Save world render to a file
-pub fn save_render<P: AsRef<Path>>(world: &World, path: P, tile_size: u32) -> Result<(), image::ImageError> {
+pub fn save_render<P: AsRef<Path>>(
+    world: &World,
+    path: P,
+    tile_size: u32,
+) -> Result<(), image::ImageError> {
     let img = render_with_labels(world, tile_size);
     img.save(path)
 }

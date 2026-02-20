@@ -1,7 +1,7 @@
 //! Integration test: spin up 2 libp2p nodes on localhost, sync a knowledge diff.
 
-use sage::network::gossip::{GossipMessage, GossipTransport};
 use sage::network::diff::KnowledgeDiff;
+use sage::network::gossip::{GossipMessage, GossipTransport};
 use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,14 +39,7 @@ async fn two_nodes_sync_knowledge_diff() {
     new_grid[1][2][0] = 1.0;
     new_grid[3][3][2] = -0.5;
 
-    let diff = KnowledgeDiff::compute(
-        &old_grid,
-        &new_grid,
-        "node-a".into(),
-        1,
-        0.9,
-        1e-9,
-    );
+    let diff = KnowledgeDiff::compute(&old_grid, &new_grid, "node-a".into(), 1, 0.9, 1e-9);
     assert_eq!(diff.changes.len(), 2);
 
     let msg = GossipMessage::KnowledgeDiff(diff.clone());
@@ -61,14 +54,19 @@ async fn two_nodes_sync_knowledge_diff() {
 
     if peers_a.is_empty() && peers_b.is_empty() {
         // mDNS might not work in CI/sandboxed environments — skip gracefully
-        println!("WARN: No peers discovered via mDNS (sandboxed environment?). Skipping sync test.");
+        println!(
+            "WARN: No peers discovered via mDNS (sandboxed environment?). Skipping sync test."
+        );
         node_a.stop().await.ok();
         node_b.stop().await.ok();
         return;
     }
 
     // Broadcast from A
-    node_a.broadcast(msg).await.expect("broadcast should succeed");
+    node_a
+        .broadcast(msg)
+        .await
+        .expect("broadcast should succeed");
 
     // Receive on B with timeout
     let recv_result = tokio::time::timeout(Duration::from_secs(5), node_b.recv()).await;

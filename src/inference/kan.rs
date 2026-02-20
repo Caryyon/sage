@@ -8,8 +8,8 @@
 //! n_in * n_out B-spline functions, each with `grid_size + order` coefficients.
 //! Output_j = Σ_i  spline_{i,j}(input_i)
 
-use rand::Rng;
 use super::nca_predictor::NCA_CHANNELS;
+use rand::Rng;
 
 /// Perception size: 9 cells × NCA_CHANNELS
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS;
@@ -32,7 +32,10 @@ fn bspline_basis(t: f64, knots: &[f64], order: usize) -> Vec<f64> {
         .map(|i| {
             if knots[i] <= t && t < knots[i + 1] {
                 1.0
-            } else if (t - knots[knots.len() - 1]).abs() < 1e-15 && knots[i] < knots[i + 1] && (knots[i + 1] - knots[knots.len() - 1]).abs() < 1e-15 {
+            } else if (t - knots[knots.len() - 1]).abs() < 1e-15
+                && knots[i] < knots[i + 1]
+                && (knots[i + 1] - knots[knots.len() - 1]).abs() < 1e-15
+            {
                 1.0 // include right endpoint for last non-degenerate interval
             } else {
                 0.0
@@ -124,21 +127,38 @@ impl KanLayer {
         let coeffs: Vec<Vec<Vec<f64>>> = (0..n_out)
             .map(|_| {
                 (0..n_in)
-                    .map(|_| (0..n_coeffs).map(|_| rng.gen_range(-scale..scale)).collect())
+                    .map(|_| {
+                        (0..n_coeffs)
+                            .map(|_| rng.gen_range(-scale..scale))
+                            .collect()
+                    })
                     .collect()
             })
             .collect();
 
         let res_scale = (1.0 / n_in as f64).sqrt();
         let res_weights: Vec<Vec<f64>> = (0..n_out)
-            .map(|_| (0..n_in).map(|_| rng.gen_range(-res_scale..res_scale)).collect())
+            .map(|_| {
+                (0..n_in)
+                    .map(|_| rng.gen_range(-res_scale..res_scale))
+                    .collect()
+            })
             .collect();
 
         let bias = vec![0.0; n_out];
 
         Self {
-            n_in, n_out, grid_size, order, n_coeffs,
-            coeffs, res_weights, bias, knots, lo, hi,
+            n_in,
+            n_out,
+            grid_size,
+            order,
+            n_coeffs,
+            coeffs,
+            res_weights,
+            bias,
+            knots,
+            lo,
+            hi,
         }
     }
 
@@ -182,7 +202,14 @@ impl KanLayer {
         v
     }
 
-    pub fn from_vec_at(params: &[f64], offset: usize, n_in: usize, n_out: usize, grid_size: usize, order: usize) -> (Self, usize) {
+    pub fn from_vec_at(
+        params: &[f64],
+        offset: usize,
+        n_in: usize,
+        n_out: usize,
+        grid_size: usize,
+        order: usize,
+    ) -> (Self, usize) {
         let n_coeffs = grid_size + order;
         let lo = -2.0;
         let hi = 2.0;
@@ -208,10 +235,22 @@ impl KanLayer {
         let bias = params[idx..idx + n_out].to_vec();
         idx += n_out;
 
-        (Self {
-            n_in, n_out, grid_size, order, n_coeffs,
-            coeffs, res_weights, bias, knots, lo, hi,
-        }, idx)
+        (
+            Self {
+                n_in,
+                n_out,
+                grid_size,
+                order,
+                n_coeffs,
+                coeffs,
+                res_weights,
+                bias,
+                knots,
+                lo,
+                hi,
+            },
+            idx,
+        )
     }
 }
 
@@ -226,7 +265,8 @@ pub struct KanNetwork {
 
 impl KanNetwork {
     pub fn new(widths: &[usize], grid_size: usize, order: usize) -> Self {
-        let layers: Vec<KanLayer> = widths.windows(2)
+        let layers: Vec<KanLayer> = widths
+            .windows(2)
             .map(|w| KanLayer::new(w[0], w[1], grid_size, order))
             .collect();
         Self { layers }
@@ -269,7 +309,8 @@ impl KanNetwork {
         let mut layers = Vec::new();
         let mut offset = 0;
         for w in widths.windows(2) {
-            let (layer, new_offset) = KanLayer::from_vec_at(params, offset, w[0], w[1], grid_size, order);
+            let (layer, new_offset) =
+                KanLayer::from_vec_at(params, offset, w[0], w[1], grid_size, order);
             layers.push(layer);
             offset = new_offset;
         }
@@ -312,7 +353,12 @@ impl KanNcaWeights {
     /// Create with configurable architecture
     pub fn with_config(widths: Vec<usize>, grid_size: usize, order: usize) -> Self {
         let network = KanNetwork::new(&widths, grid_size, order);
-        Self { network, widths, grid_size, order }
+        Self {
+            network,
+            widths,
+            grid_size,
+            order,
+        }
     }
 
     /// Default architecture — 2-layer KAN, roughly matching MLP param count
@@ -326,9 +372,15 @@ impl KanNcaWeights {
         Self::with_config(widths, grid_size, order)
     }
 
-    pub fn widths(&self) -> &[usize] { &self.widths }
-    pub fn grid_size(&self) -> usize { self.grid_size }
-    pub fn order(&self) -> usize { self.order }
+    pub fn widths(&self) -> &[usize] {
+        &self.widths
+    }
+    pub fn grid_size(&self) -> usize {
+        self.grid_size
+    }
+    pub fn order(&self) -> usize {
+        self.order
+    }
 
     pub fn param_count(&self) -> usize {
         self.network.param_count()
@@ -347,7 +399,12 @@ impl KanNcaWeights {
         let grid_size = 6;
         let order = 3;
         let network = KanNetwork::from_vec(params, &widths, grid_size, order);
-        Self { network, widths, grid_size, order }
+        Self {
+            network,
+            widths,
+            grid_size,
+            order,
+        }
     }
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -385,13 +442,26 @@ pub trait CellBrain: Clone + Send {
 }
 
 impl CellBrain for KanNcaWeights {
-    fn param_count(&self) -> usize { self.param_count() }
-    fn forward(&self, input: &[f64]) -> Vec<f64> { self.forward(input) }
-    fn to_vec(&self) -> Vec<f64> { self.to_vec() }
-    fn from_vec(params: &[f64]) -> Self { KanNcaWeights::from_vec(params) }
-    fn name(&self) -> &str { "KAN" }
+    fn param_count(&self) -> usize {
+        self.param_count()
+    }
+    fn forward(&self, input: &[f64]) -> Vec<f64> {
+        self.forward(input)
+    }
+    fn to_vec(&self) -> Vec<f64> {
+        self.to_vec()
+    }
+    fn from_vec(params: &[f64]) -> Self {
+        KanNcaWeights::from_vec(params)
+    }
+    fn name(&self) -> &str {
+        "KAN"
+    }
     fn architecture(&self) -> String {
-        format!("KAN: {:?} (grid={}, order={}, cubic B-splines)", self.widths, self.grid_size, self.order)
+        format!(
+            "KAN: {:?} (grid={}, order={}, cubic B-splines)",
+            self.widths, self.grid_size, self.order
+        )
     }
 }
 
@@ -483,6 +553,10 @@ mod tests {
         let w = KanNcaWeights::random();
         eprintln!("KAN NCA param count: {}", w.param_count());
         // Should be in reasonable range
-        assert!(w.param_count() > 1000, "Too few params: {}", w.param_count());
+        assert!(
+            w.param_count() > 1000,
+            "Too few params: {}",
+            w.param_count()
+        );
     }
 }

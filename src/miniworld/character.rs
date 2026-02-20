@@ -49,16 +49,24 @@ pub enum CharacterState {
     Idle,
     Walking,
     Working,
-    Talking { with: String },
+    Talking {
+        with: String,
+    },
     Sleeping,
     Eating,
     Shopping,
     /// Character is researching a topic via OpenClaw sub-agent
-    Researching { topic: String },
+    Researching {
+        topic: String,
+    },
     /// Character is writing code via OpenClaw sub-agent
-    Coding { project: String },
+    Coding {
+        project: String,
+    },
     /// Character is analyzing data via OpenClaw sub-agent
-    Analyzing { subject: String },
+    Analyzing {
+        subject: String,
+    },
 }
 
 impl CharacterState {
@@ -118,9 +126,15 @@ impl CharacterSprite {
             CharacterSprite::FarmerLime => "Characters/Workers/LimeWorker/FarmerLime.png",
             CharacterSprite::FarmerPurple => "Characters/Workers/PurpleWorker/FarmerPurple.png",
             CharacterSprite::FarmerRed => "Characters/Workers/RedWorker/FarmerRed.png",
-            CharacterSprite::SwordsmanCyan => "Characters/Soldiers/Melee/CyanMelee/SwordsmanCyan.png",
-            CharacterSprite::SwordsmanLime => "Characters/Soldiers/Melee/LimeMelee/SwordsmanLime.png",
-            CharacterSprite::SwordsmanPurple => "Characters/Soldiers/Melee/PurpleMelee/SwordsmanPurple.png",
+            CharacterSprite::SwordsmanCyan => {
+                "Characters/Soldiers/Melee/CyanMelee/SwordsmanCyan.png"
+            }
+            CharacterSprite::SwordsmanLime => {
+                "Characters/Soldiers/Melee/LimeMelee/SwordsmanLime.png"
+            }
+            CharacterSprite::SwordsmanPurple => {
+                "Characters/Soldiers/Melee/PurpleMelee/SwordsmanPurple.png"
+            }
             CharacterSprite::SwordsmanRed => "Characters/Soldiers/Melee/RedMelee/SwordsmanRed.png",
             CharacterSprite::MageCyan => "Characters/Soldiers/Ranged/CyanRanged/MageCyan.png",
             CharacterSprite::MageLime => "Characters/Soldiers/Ranged/LimeRanged/MageLime.png",
@@ -221,10 +235,18 @@ impl Character {
 
             // Move in the dominant direction
             if dx.abs() > dy.abs() {
-                self.direction = if dx > 0 { Direction::Right } else { Direction::Left };
+                self.direction = if dx > 0 {
+                    Direction::Right
+                } else {
+                    Direction::Left
+                };
                 self.x = (self.x as i32 + dx.signum()) as u32;
             } else {
-                self.direction = if dy > 0 { Direction::Down } else { Direction::Up };
+                self.direction = if dy > 0 {
+                    Direction::Down
+                } else {
+                    Direction::Up
+                };
                 self.y = (self.y as i32 + dy.signum()) as u32;
             }
 

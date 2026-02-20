@@ -247,9 +247,7 @@ impl DiffValidator {
 
         // 5. Semantic coherence — need some minimum complexity
         if diff.changes.len() > 3 && !check_coherence(&diff.changes) {
-            return ValidationResult::Quarantine(
-                "insufficient pattern complexity".into(),
-            );
+            return ValidationResult::Quarantine("insufficient pattern complexity".into());
         }
 
         // 6. Trust-based decision
@@ -269,10 +267,7 @@ impl DiffValidator {
                 let weight = trust;
                 ValidationResult::AcceptReduced(weight)
             }
-            TrustTier::Low => ValidationResult::Quarantine(format!(
-                "low trust peer: {:.2}",
-                trust
-            )),
+            TrustTier::Low => ValidationResult::Quarantine(format!("low trust peer: {:.2}", trust)),
         }
     }
 
@@ -382,10 +377,7 @@ mod tests {
         // Set peer to high trust
         validator.trust_store.get_or_create("trusted").trust = 0.9;
 
-        let diff = make_diff(
-            "trusted",
-            vec![change(0, 0, 0, 0.3), change(1, 1, 1, 0.7)],
-        );
+        let diff = make_diff("trusted", vec![change(0, 0, 0, 0.3), change(1, 1, 1, 0.7)]);
         assert_eq!(validator.validate(&diff), ValidationResult::Accept);
     }
 
@@ -431,10 +423,7 @@ mod tests {
         let mut validator = DiffValidator::new(TrustStore::new());
         validator.trust_store.get_or_create("sketchy").trust = 0.1;
 
-        let diff = make_diff(
-            "sketchy",
-            vec![change(0, 0, 0, 0.3), change(1, 1, 1, 0.7)],
-        );
+        let diff = make_diff("sketchy", vec![change(0, 0, 0, 0.3), change(1, 1, 1, 0.7)]);
         match validator.validate(&diff) {
             ValidationResult::Quarantine(msg) => assert!(msg.contains("low trust")),
             other => panic!("expected Quarantine, got {:?}", other),

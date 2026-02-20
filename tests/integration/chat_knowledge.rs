@@ -4,7 +4,7 @@
 //! (without actual Ollama/LLM calls). Verifies knowledge accumulation,
 //! context retrieval, and decay over simulated time.
 
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
 /// Simulate encoding a conversation turn into knowledge
 fn encode_conversation_turn(store: &mut NCAKnowledge, user_msg: &str, assistant_msg: &str) {
@@ -24,7 +24,10 @@ fn single_conversation_creates_queryable_knowledge() {
     );
 
     let results = store.query("photosynthesis plants sunlight", 5);
-    assert!(!results.is_empty(), "Should find knowledge from conversation");
+    assert!(
+        !results.is_empty(),
+        "Should find knowledge from conversation"
+    );
     assert!(results[0].relevance > 0.0);
 }
 
@@ -56,8 +59,14 @@ fn multiple_conversations_accumulate_knowledge() {
 
     let active_after_three = store.active_knowledge(0.01).len();
 
-    assert!(active_after_two >= active_after_one, "Knowledge should accumulate");
-    assert!(active_after_three >= active_after_two, "Knowledge should keep accumulating");
+    assert!(
+        active_after_two >= active_after_one,
+        "Knowledge should accumulate"
+    );
+    assert!(
+        active_after_three >= active_after_two,
+        "Knowledge should keep accumulating"
+    );
 }
 
 #[test]
@@ -87,7 +96,10 @@ fn later_queries_find_earlier_conversations() {
 
     // Query about the first topic should still return results
     let moon_results = store.query("moon distance earth kilometers", 5);
-    assert!(!moon_results.is_empty(), "Should still find first conversation's knowledge");
+    assert!(
+        !moon_results.is_empty(),
+        "Should still find first conversation's knowledge"
+    );
 }
 
 #[test]
@@ -100,21 +112,28 @@ fn knowledge_decay_reduces_activation_over_time() {
         "Gravity is the force of attraction between masses described by general relativity",
     );
 
-    let before_decay: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).sum();
+    let before_decay: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .sum();
 
     // Simulate time passing with decay
     for _ in 0..10 {
         store.decay_knowledge(0.1); // 10% decay each step
     }
 
-    let after_decay: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).sum();
+    let after_decay: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .sum();
 
     assert!(
         after_decay < before_decay,
         "Total activation should decrease after decay: before={} after={}",
-        before_decay, after_decay
+        before_decay,
+        after_decay
     );
 }
 
@@ -128,15 +147,21 @@ fn heavy_decay_eventually_removes_knowledge() {
         "this should decay away completely",
     );
 
-    assert!(!store.active_knowledge(0.01).is_empty(), "Should have knowledge initially");
+    assert!(
+        !store.active_knowledge(0.01).is_empty(),
+        "Should have knowledge initially"
+    );
 
     // Aggressive decay over many steps
     for _ in 0..100 {
         store.decay_knowledge(0.3);
     }
 
-    let remaining: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).sum();
+    let remaining: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .sum();
 
     assert!(
         remaining < 0.01,
@@ -163,8 +188,11 @@ fn reinforced_knowledge_survives_decay_longer() {
         "reinforcement learning uses repeated exposure to strengthen patterns",
     );
 
-    let reinforced_activation: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).sum();
+    let reinforced_activation: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .sum();
 
     // Create a store with single encoding for comparison
     let mut store_single = NCAKnowledge::new();
@@ -174,13 +202,17 @@ fn reinforced_knowledge_survives_decay_longer() {
         "reinforcement strengthens neural pathways through repetition",
     );
 
-    let single_activation: f64 = store_single.active_knowledge(0.01)
-        .iter().map(|k| k.activation).sum();
+    let single_activation: f64 = store_single
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .sum();
 
     assert!(
         reinforced_activation >= single_activation,
         "Reinforced knowledge should have >= activation: reinforced={} single={}",
-        reinforced_activation, single_activation
+        reinforced_activation,
+        single_activation
     );
 }
 
@@ -190,10 +222,22 @@ fn simulated_multi_turn_conversation() {
 
     // Multi-turn conversation about a project
     let turns = vec![
-        ("I'm building a web app", "Great! What framework are you using?"),
-        ("I'm using React for the frontend", "React is a popular choice for building user interfaces with components"),
-        ("What about the backend?", "You could use Node.js Express or Rust Axum for the backend API"),
-        ("I chose Axum", "Axum is a great Rust web framework built on tokio and tower for async HTTP"),
+        (
+            "I'm building a web app",
+            "Great! What framework are you using?",
+        ),
+        (
+            "I'm using React for the frontend",
+            "React is a popular choice for building user interfaces with components",
+        ),
+        (
+            "What about the backend?",
+            "You could use Node.js Express or Rust Axum for the backend API",
+        ),
+        (
+            "I chose Axum",
+            "Axum is a great Rust web framework built on tokio and tower for async HTTP",
+        ),
     ];
 
     for (user, assistant) in &turns {
@@ -202,11 +246,17 @@ fn simulated_multi_turn_conversation() {
 
     // Query should find relevant context from the conversation
     let results = store.query("web framework react axum", 10);
-    assert!(!results.is_empty(), "Should find knowledge from multi-turn conversation");
+    assert!(
+        !results.is_empty(),
+        "Should find knowledge from multi-turn conversation"
+    );
 
     // The total knowledge should reflect all turns
     let total_active = store.active_knowledge(0.01).len();
-    assert!(total_active > 0, "Should have accumulated knowledge from all turns");
+    assert!(
+        total_active > 0,
+        "Should have accumulated knowledge from all turns"
+    );
 }
 
 #[test]
@@ -229,6 +279,12 @@ fn decay_then_new_knowledge_works() {
     );
 
     let results = store.query("new topic fresh information", 5);
-    assert!(!results.is_empty(), "New knowledge should be queryable after decay period");
-    assert!(results[0].activation > 0.1, "New knowledge should have strong activation");
+    assert!(
+        !results.is_empty(),
+        "New knowledge should be queryable after decay period"
+    );
+    assert!(
+        results[0].activation > 0.1,
+        "New knowledge should have strong activation"
+    );
 }

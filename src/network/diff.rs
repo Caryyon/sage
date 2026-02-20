@@ -3,8 +3,8 @@
 //! Computes, serializes, and applies diffs between grid states.
 //! Only changed cells/channels are included (sparse representation).
 
-use serde::{Deserialize, Serialize};
 use crate::grid::is_shared_channel;
+use serde::{Deserialize, Serialize};
 
 /// A single cell-channel change using normalized coordinates (0.0–1.0).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -28,7 +28,15 @@ impl CellChange {
     /// Create a CellChange with absolute coords only (norm coords default to 0.0).
     /// Prefer `KnowledgeDiff::compute` which sets normalized coords automatically.
     pub fn new(row: usize, col: usize, channel: usize, old_value: f64, new_value: f64) -> Self {
-        Self { norm_row: 0.0, norm_col: 0.0, row, col, channel, old_value, new_value }
+        Self {
+            norm_row: 0.0,
+            norm_col: 0.0,
+            row,
+            col,
+            channel,
+            old_value,
+            new_value,
+        }
     }
 }
 
@@ -69,7 +77,11 @@ impl KnowledgeDiff {
     ) -> Self {
         let height = old.len();
         let width = if height > 0 { old[0].len() } else { 0 };
-        let num_channels = if height > 0 && width > 0 { old[0][0].len() } else { 0 };
+        let num_channels = if height > 0 && width > 0 {
+            old[0][0].len()
+        } else {
+            0
+        };
 
         let mut changes = Vec::new();
 
@@ -118,24 +130,28 @@ impl KnowledgeDiff {
 
     /// Resolve the target row/col for a change, using normalized coords
     /// when the local grid differs in size from the source.
-    fn resolve_coords(&self, change: &CellChange, local_h: usize, local_w: usize) -> (usize, usize) {
+    fn resolve_coords(
+        &self,
+        change: &CellChange,
+        local_h: usize,
+        local_w: usize,
+    ) -> (usize, usize) {
         if self.height == local_h && self.width == local_w {
             (change.row, change.col)
         } else {
             let r = (change.norm_row * local_h as f32) as usize;
             let c = (change.norm_col * local_w as f32) as usize;
-            (r.min(local_h.saturating_sub(1)), c.min(local_w.saturating_sub(1)))
+            (
+                r.min(local_h.saturating_sub(1)),
+                c.min(local_w.saturating_sub(1)),
+            )
         }
     }
 
     /// Apply this diff to a grid state using weighted-average merge.
     /// `local_confidence` is the confidence in the current local state.
     /// Supports cross-grid-size sync via normalized coordinates.
-    pub fn apply_weighted(
-        &self,
-        grid: &mut [Vec<Vec<f64>>],
-        local_confidence: f64,
-    ) {
+    pub fn apply_weighted(&self, grid: &mut [Vec<Vec<f64>>], local_confidence: f64) {
         let total = local_confidence + self.confidence;
         if total <= 0.0 {
             return;
@@ -240,7 +256,7 @@ mod tests {
         let old = make_grid(2, 2, 1, 0.0);
         let mut new = make_grid(2, 2, 1, 0.0);
         new[0][0][0] = 0.001; // below threshold
-        new[1][1][0] = 0.1;   // above threshold
+        new[1][1][0] = 0.1; // above threshold
 
         let diff = KnowledgeDiff::compute(&old, &new, "test".into(), 1, 1.0, 0.01);
         assert_eq!(diff.changes.len(), 1);
@@ -313,8 +329,14 @@ mod tests {
         assert_eq!(diff.changes.len(), 1);
 
         let change = &diff.changes[0];
-        assert!((change.norm_row - 0.5).abs() < 1e-6, "norm_row should be 2/4=0.5");
-        assert!((change.norm_col - 0.75).abs() < 1e-6, "norm_col should be 3/4=0.75");
+        assert!(
+            (change.norm_row - 0.5).abs() < 1e-6,
+            "norm_row should be 2/4=0.5"
+        );
+        assert!(
+            (change.norm_col - 0.75).abs() < 1e-6,
+            "norm_col should be 3/4=0.75"
+        );
     }
 
     #[test]
@@ -330,9 +352,11 @@ mod tests {
         let mut target = make_grid(8, 8, 1, 0.0);
         diff.apply_direct(&mut target);
 
-        assert!((target[4][4][0] - 1.0).abs() < 1e-9,
+        assert!(
+            (target[4][4][0] - 1.0).abs() < 1e-9,
             "Cross-grid apply should map to (4,4) in 8×8, got value at (4,4)={}",
-            target[4][4][0]);
+            target[4][4][0]
+        );
     }
 
     #[test]
@@ -348,7 +372,10 @@ mod tests {
         target[2][2][0] = 0.0;
         diff.apply_weighted(&mut target, 0.5);
 
-        assert!((target[2][2][0] - 0.5).abs() < 1e-9,
-            "Weighted cross-grid: expected 0.5, got {}", target[2][2][0]);
+        assert!(
+            (target[2][2][0] - 0.5).abs() < 1e-9,
+            "Weighted cross-grid: expected 0.5, got {}",
+            target[2][2][0]
+        );
     }
 }

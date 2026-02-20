@@ -4,7 +4,7 @@
 //! and verifies knowledge propagation, bidirectional sync,
 //! and conflict resolution.
 
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
 #[test]
 fn diff_from_a_applied_to_b_propagates_knowledge() {
@@ -17,14 +17,20 @@ fn diff_from_a_applied_to_b_propagates_knowledge() {
     // Compute diff: what A has that a blank grid doesn't
     let empty = NCAKnowledge::new();
     let delta = node_a.diff(&empty.grid);
-    assert!(!delta.changes.is_empty(), "Delta from encoded grid vs empty should have changes");
+    assert!(
+        !delta.changes.is_empty(),
+        "Delta from encoded grid vs empty should have changes"
+    );
 
     // Apply to B
     node_b.apply_delta(&delta);
 
     // B should now have active knowledge
     let b_active = node_b.active_knowledge(0.01);
-    assert!(!b_active.is_empty(), "Node B should have knowledge after applying A's delta");
+    assert!(
+        !b_active.is_empty(),
+        "Node B should have knowledge after applying A's delta"
+    );
 }
 
 #[test]
@@ -49,7 +55,8 @@ fn bidirectional_sync_both_have_all_knowledge() {
     assert!(
         b_active_after >= b_active_before,
         "B should have at least as much knowledge after sync: before={} after={}",
-        b_active_before, b_active_after
+        b_active_before,
+        b_active_after
     );
 
     // Sync B → A
@@ -60,7 +67,8 @@ fn bidirectional_sync_both_have_all_knowledge() {
     assert!(
         a_active_after >= a_active_before,
         "A should have at least as much knowledge after sync: before={} after={}",
-        a_active_before, a_active_after
+        a_active_before,
+        a_active_after
     );
 }
 
@@ -70,7 +78,9 @@ fn diff_is_empty_for_identical_grids() {
     node_a.encode("some knowledge", 0.9);
 
     // Clone the grid
-    let node_b = NCAKnowledge::new().with_node_id(2.0).with_grid(node_a.grid.clone());
+    let node_b = NCAKnowledge::new()
+        .with_node_id(2.0)
+        .with_grid(node_a.grid.clone());
 
     let delta = node_a.diff(&node_b.grid);
     assert!(
@@ -119,8 +129,11 @@ fn conflict_resolution_higher_activation_wins() {
     node_b.apply_delta(&delta_a);
 
     // B's max confidence should be at least as high as A's encoding
-    let b_max_conf: f64 = node_b.active_knowledge(0.01)
-        .iter().map(|k| k.confidence).fold(0.0, f64::max);
+    let b_max_conf: f64 = node_b
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.confidence)
+        .fold(0.0, f64::max);
 
     // The merged result should reflect A's higher confidence
     assert!(
@@ -150,7 +163,8 @@ fn merge_is_additive_not_destructive() {
     assert!(
         b_total_activation_after >= b_total_activation_before - 0.01,
         "Merge should not significantly reduce total activation: before={} after={}",
-        b_total_activation_before, b_total_activation_after
+        b_total_activation_before,
+        b_total_activation_after
     );
 }
 
@@ -185,7 +199,8 @@ fn apply_delta_to_populated_grid_no_loss() {
     assert!(
         b_count_after >= b_count_before,
         "Applying delta should not reduce existing knowledge: before={} after={}",
-        b_count_before, b_count_after
+        b_count_before,
+        b_count_after
     );
 }
 
@@ -208,6 +223,7 @@ fn repeated_sync_converges() {
     assert!(
         changes_2 <= changes_1,
         "Repeated sync should converge: first={} changes, second={} changes",
-        changes_1, changes_2
+        changes_1,
+        changes_2
     );
 }

@@ -196,11 +196,7 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
                 }
             } else if base > 0.01 {
                 let g = (0x33 as f64 + base * (0x99 - 0x33) as f64) as u8;
-                Color::Rgb(
-                    0x00,
-                    g,
-                    (0x22 as f64 + base * (0x66 - 0x22) as f64) as u8,
-                )
+                Color::Rgb(0x00, g, (0x22 as f64 + base * (0x66 - 0x22) as f64) as u8)
             } else {
                 let v = (0x0f as f64 + combined * 0x15 as f64) as u8;
                 Color::Rgb(v, v, (v as f64 * 1.2).min(255.0) as u8)
@@ -337,16 +333,12 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
             ),
             Role::Sage => (
                 "sage › ",
-                Style::default()
-                    .fg(PURPLE)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
                 Style::default().fg(Color::Rgb(0xcc, 0xcc, 0xdd)),
             ),
             Role::System => (
                 "sys › ",
-                Style::default()
-                    .fg(DIM_PURPLE)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(DIM_PURPLE).add_modifier(Modifier::BOLD),
                 Style::default().fg(DIM),
             ),
         };
@@ -420,7 +412,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         .constraints([
             Constraint::Length(3), // Header
             Constraint::Length(1), // Status bar
-            Constraint::Min(5),   // Chat
+            Constraint::Min(5),    // Chat
             Constraint::Length(3), // Input
         ])
         .split(size);
@@ -483,10 +475,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         ),
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("knowledge:", Style::default().fg(DIM)),
-        Span::styled(
-            format!("{}", st.active_cells),
-            Style::default().fg(PURPLE),
-        ),
+        Span::styled(format!("{}", st.active_cells), Style::default().fg(PURPLE)),
         if st.distributed && st.distributed_peers > 0 {
             Span::styled("  │  ", Style::default().fg(DIM))
         } else {
@@ -503,9 +492,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         if state.streaming {
             Span::styled(
                 "  ◌ streaming…",
-                Style::default()
-                    .fg(PURPLE)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
             )
         } else {
             Span::styled("", Style::default())
@@ -561,10 +548,7 @@ enum NodeMsg {
 }
 
 /// Background thread: reads lines from TCP, parses protocol, sends to UI
-fn reader_thread(
-    reader: BufReader<TcpStream>,
-    tx: std::sync::mpsc::Sender<NodeMsg>,
-) {
+fn reader_thread(reader: BufReader<TcpStream>, tx: std::sync::mpsc::Sender<NodeMsg>) {
     let mut reader = reader;
     let mut line_buf = String::new();
     let mut brain_row: usize = 0;
@@ -661,7 +645,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Cannot connect to sage-node on port {}.", port);
-            eprintln!("Is sage-node running? Start it with: sage-node --port {}", port);
+            eprintln!(
+                "Is sage-node running? Start it with: sage-node --port {}",
+                port
+            );
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
@@ -757,10 +744,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if peer_lines.is_empty() {
                                 state.messages.push(ChatMessage {
                                     role: Role::System,
-                                    content: "No peers connected. Peers are discovered via mDNS.".into(),
+                                    content: "No peers connected. Peers are discovered via mDNS."
+                                        .into(),
                                 });
                             } else {
-                                let mut lines = vec![format!("Connected peers: {}", peer_lines.len())];
+                                let mut lines =
+                                    vec![format!("Connected peers: {}", peer_lines.len())];
                                 for p in &peer_lines {
                                     lines.push(format!("  {}", p));
                                 }
@@ -788,13 +777,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 NodeMsg::Status(v) => {
                     state.status.node_id = v["node_id"].as_str().unwrap_or("").to_string();
                     state.status.engine = v["engine"].as_str().unwrap_or("").to_string();
-                    state.status.grid_health = v["grid_health"].as_str().unwrap_or("healthy").to_string();
+                    state.status.grid_health =
+                        v["grid_health"].as_str().unwrap_or("healthy").to_string();
                     state.status.active_cells = v["active_cells"].as_u64().unwrap_or(0) as usize;
                     state.status.peer_count = v["peer_count"].as_u64().unwrap_or(0) as usize;
                     state.status.total_activation = v["total_activation"].as_f64().unwrap_or(0.0);
                     state.status.avg_confidence = v["avg_confidence"].as_f64().unwrap_or(0.0);
                     state.status.brain_path = v["brain_path"].as_str().unwrap_or("").to_string();
-                    state.status.distributed_peers = v["distributed_peers"].as_u64().unwrap_or(0) as usize;
+                    state.status.distributed_peers =
+                        v["distributed_peers"].as_u64().unwrap_or(0) as usize;
                     state.status.distributed = v["distributed"].as_bool().unwrap_or(false);
                     state.status.connected = true;
                 }

@@ -3,25 +3,28 @@
 //! Provides node identity, knowledge diff computation, gossip message types,
 //! and the NetworkManager that ties it all together.
 
-pub mod identity;
 pub mod diff;
 pub mod gossip;
+pub mod identity;
 pub mod libp2p_transport;
-pub mod validation;
-pub mod quarantine;
 pub mod privacy;
+pub mod quarantine;
 pub mod security;
+pub mod validation;
 
 use std::collections::HashMap;
 use tokio::sync::{Mutex, RwLock};
 
+use diff::{merkle_hash, KnowledgeDiff};
+use gossip::{GossipError, GossipMessage, GridStateResponse, PeerAnnounce};
 use identity::NodeIdentity;
-use diff::{KnowledgeDiff, merkle_hash};
-use gossip::{GossipMessage, PeerAnnounce, GridStateResponse, GossipError};
-use validation::{DiffValidator, TrustStore, ValidationResult};
+use privacy::{
+    apply_differential_privacy, filter_local_only_channels, AggregationTracker, PiiFilter,
+    PrivacyConfig,
+};
 use quarantine::Quarantine;
-use privacy::{PrivacyConfig, AggregationTracker, PiiFilter, apply_differential_privacy, filter_local_only_channels};
-use security::{BanList, RateLimiter, RateLimitConfig, RateLimitResult};
+use security::{BanList, RateLimitConfig, RateLimitResult, RateLimiter};
+use validation::{DiffValidator, TrustStore, ValidationResult};
 
 /// Information about a connected peer.
 #[derive(Debug, Clone)]
@@ -194,13 +197,14 @@ impl NetworkManager {
     }
 
     /// Create a PeerAnnounce message for this node.
-    pub async fn create_announce(
-        &self,
-        grid: &[Vec<Vec<f64>>],
-    ) -> GossipMessage {
+    pub async fn create_announce(&self, grid: &[Vec<Vec<f64>>]) -> GossipMessage {
         let height = grid.len();
         let width = if height > 0 { grid[0].len() } else { 0 };
-        let channels = if height > 0 && width > 0 { grid[0][0].len() } else { 0 };
+        let channels = if height > 0 && width > 0 {
+            grid[0][0].len()
+        } else {
+            0
+        };
         let seq = *self.sequence.lock().await;
 
         GossipMessage::PeerAnnounce(PeerAnnounce {
@@ -238,7 +242,11 @@ impl NetworkManager {
             // First broadcast — diff against zeros
             let height = current_grid.len();
             let width = if height > 0 { current_grid[0].len() } else { 0 };
-            let channels = if height > 0 && width > 0 { current_grid[0][0].len() } else { 0 };
+            let channels = if height > 0 && width > 0 {
+                current_grid[0][0].len()
+            } else {
+                0
+            };
             let zeros = vec![vec![vec![0.0; channels]; width]; height];
             KnowledgeDiff::compute(
                 &zeros,
@@ -287,7 +295,10 @@ impl NetworkManager {
         {
             let ban_list = self.ban_list.lock().await;
             if ban_list.is_banned(&diff.source_node) {
-                println!("[network] Rejected diff from banned peer {}", diff.source_node);
+                println!(
+                    "[network] Rejected diff from banned peer {}",
+                    diff.source_node
+                );
                 return;
             }
         }
@@ -298,11 +309,17 @@ impl NetworkManager {
             match limiter.check_diff(&diff.source_node) {
                 RateLimitResult::Allowed => {}
                 RateLimitResult::Limited(secs) => {
-                    println!("[network] Rate limited diff from {} (retry in {}s)", diff.source_node, secs);
+                    println!(
+                        "[network] Rate limited diff from {} (retry in {}s)",
+                        diff.source_node, secs
+                    );
                     return;
                 }
                 RateLimitResult::BackedOff(secs) => {
-                    println!("[network] Backed off peer {} ({}s remaining)", diff.source_node, secs);
+                    println!(
+                        "[network] Backed off peer {} ({}s remaining)",
+                        diff.source_node, secs
+                    );
                     return;
                 }
             }
@@ -310,7 +327,10 @@ impl NetworkManager {
 
         // Basic confidence check
         if diff.confidence <= 0.0 || diff.confidence > 1.0 {
-            println!("[network] Rejected diff from {}: invalid confidence {}", diff.source_node, diff.confidence);
+            println!(
+                "[network] Rejected diff from {}: invalid confidence {}",
+                diff.source_node, diff.confidence
+            );
             return;
         }
 
@@ -447,11 +467,7 @@ impl NetworkManager {
     }
 
     /// Handle an incoming gossip message.
-    pub async fn handle_message(
-        &self,
-        message: GossipMessage,
-        local_grid: &mut [Vec<Vec<f64>>],
-    ) {
+    pub async fn handle_message(&self, message: GossipMessage, local_grid: &mut [Vec<Vec<f64>>]) {
         match message {
             GossipMessage::PeerAnnounce(announce) => {
                 self.handle_announce(announce).await;
@@ -460,7 +476,10 @@ impl NetworkManager {
                 self.handle_incoming_diff(diff, local_grid).await;
             }
             GossipMessage::GridStateRequest(req) => {
-                println!("[network] Grid state request from {} (full={})", req.requesting_node, req.full_state);
+                println!(
+                    "[network] Grid state request from {} (full={})",
+                    req.requesting_node, req.full_state
+                );
                 // Response would be sent via transport — placeholder
             }
             GossipMessage::GridStateResponse(resp) => {
@@ -471,7 +490,12 @@ impl NetworkManager {
                     GridStateResponse::Diff(diff) => {
                         self.handle_incoming_diff(diff, local_grid).await;
                     }
-                    GridStateResponse::FullState { node_id, grid: _, confidence: _, .. } => {
+                    GridStateResponse::FullState {
+                        node_id,
+                        grid: _,
+                        confidence: _,
+                        ..
+                    } => {
                         println!("[network] Received full state from {node_id}");
                         // For full state, we'd do a weighted merge of the entire grid
                     }

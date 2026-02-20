@@ -3,10 +3,10 @@
 //! Measures encoding speed, retrieval accuracy, diff sizes,
 //! merge quality, grid capacity, and network simulation.
 
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::Grid;
-use std::time::Instant;
 use serde::Serialize;
+use std::time::Instant;
 
 #[derive(Serialize, Clone, Debug)]
 struct BenchmarkResults {
@@ -81,108 +81,354 @@ struct NetworkSimResult {
 fn get_facts() -> Vec<(&'static str, &'static str)> {
     // (fact, topic_tag)
     vec![
-        ("The speed of light is approximately 299792458 meters per second", "physics"),
-        ("Water freezes at zero degrees celsius at standard pressure", "chemistry"),
+        (
+            "The speed of light is approximately 299792458 meters per second",
+            "physics",
+        ),
+        (
+            "Water freezes at zero degrees celsius at standard pressure",
+            "chemistry",
+        ),
         ("The mitochondria is the powerhouse of the cell", "biology"),
-        ("Rust programming language focuses on memory safety", "programming"),
-        ("Python was created by Guido van Rossum in 1991", "programming"),
-        ("The earth orbits the sun in approximately 365 days", "astronomy"),
-        ("DNA stores genetic information using four nucleotide bases", "biology"),
-        ("Machine learning uses statistical models to find patterns", "ai"),
-        ("TCP provides reliable ordered delivery of data packets", "networking"),
-        ("Photosynthesis converts light energy into chemical energy", "biology"),
+        (
+            "Rust programming language focuses on memory safety",
+            "programming",
+        ),
+        (
+            "Python was created by Guido van Rossum in 1991",
+            "programming",
+        ),
+        (
+            "The earth orbits the sun in approximately 365 days",
+            "astronomy",
+        ),
+        (
+            "DNA stores genetic information using four nucleotide bases",
+            "biology",
+        ),
+        (
+            "Machine learning uses statistical models to find patterns",
+            "ai",
+        ),
+        (
+            "TCP provides reliable ordered delivery of data packets",
+            "networking",
+        ),
+        (
+            "Photosynthesis converts light energy into chemical energy",
+            "biology",
+        ),
         ("The Fibonacci sequence starts with zero and one", "math"),
-        ("Neural networks are inspired by biological brain neurons", "ai"),
-        ("HTTP is the protocol used for web communication", "networking"),
-        ("Gravity acceleration on earth is about 9.8 meters per second squared", "physics"),
-        ("The linux kernel was created by Linus Torvalds in 1991", "programming"),
-        ("Oxygen makes up about 21 percent of earths atmosphere", "chemistry"),
-        ("Binary search has logarithmic time complexity", "algorithms"),
-        ("The moon orbits earth approximately every 27 days", "astronomy"),
-        ("Quantum computers use qubits instead of classical bits", "computing"),
-        ("The human genome contains approximately 3 billion base pairs", "biology"),
-        ("SHA256 produces a 256 bit cryptographic hash", "cryptography"),
+        (
+            "Neural networks are inspired by biological brain neurons",
+            "ai",
+        ),
+        (
+            "HTTP is the protocol used for web communication",
+            "networking",
+        ),
+        (
+            "Gravity acceleration on earth is about 9.8 meters per second squared",
+            "physics",
+        ),
+        (
+            "The linux kernel was created by Linus Torvalds in 1991",
+            "programming",
+        ),
+        (
+            "Oxygen makes up about 21 percent of earths atmosphere",
+            "chemistry",
+        ),
+        (
+            "Binary search has logarithmic time complexity",
+            "algorithms",
+        ),
+        (
+            "The moon orbits earth approximately every 27 days",
+            "astronomy",
+        ),
+        (
+            "Quantum computers use qubits instead of classical bits",
+            "computing",
+        ),
+        (
+            "The human genome contains approximately 3 billion base pairs",
+            "biology",
+        ),
+        (
+            "SHA256 produces a 256 bit cryptographic hash",
+            "cryptography",
+        ),
         ("Mars is the fourth planet from the sun", "astronomy"),
-        ("Transistors are the building blocks of modern processors", "computing"),
-        ("RNA acts as a messenger between DNA and protein synthesis", "biology"),
+        (
+            "Transistors are the building blocks of modern processors",
+            "computing",
+        ),
+        (
+            "RNA acts as a messenger between DNA and protein synthesis",
+            "biology",
+        ),
         ("Graph databases store data as nodes and edges", "databases"),
-        ("The speed of sound in air is approximately 343 meters per second", "physics"),
-        ("JavaScript was created in 10 days by Brendan Eich", "programming"),
-        ("Sodium chloride is the chemical name for table salt", "chemistry"),
+        (
+            "The speed of sound in air is approximately 343 meters per second",
+            "physics",
+        ),
+        (
+            "JavaScript was created in 10 days by Brendan Eich",
+            "programming",
+        ),
+        (
+            "Sodium chloride is the chemical name for table salt",
+            "chemistry",
+        ),
         ("Backpropagation is used to train neural networks", "ai"),
-        ("The great wall of china is over 13000 miles long", "geography"),
+        (
+            "The great wall of china is over 13000 miles long",
+            "geography",
+        ),
         ("Pi is approximately 3.14159265358979", "math"),
-        ("Kubernetes orchestrates containerized applications", "devops"),
-        ("The amazon river is the largest river by volume", "geography"),
+        (
+            "Kubernetes orchestrates containerized applications",
+            "devops",
+        ),
+        (
+            "The amazon river is the largest river by volume",
+            "geography",
+        ),
         ("Euler's number e is approximately 2.71828", "math"),
-        ("Git was created by Linus Torvalds for linux development", "programming"),
+        (
+            "Git was created by Linus Torvalds for linux development",
+            "programming",
+        ),
         ("Helium is the second lightest element", "chemistry"),
         ("Redis is an in-memory key value data store", "databases"),
-        ("The pacific ocean is the largest ocean on earth", "geography"),
+        (
+            "The pacific ocean is the largest ocean on earth",
+            "geography",
+        ),
         ("Gradient descent optimizes neural network parameters", "ai"),
-        ("Assembly language provides direct hardware control", "programming"),
-        ("Calcium is essential for bone formation in humans", "biology"),
-        ("Docker containers share the host operating system kernel", "devops"),
-        ("Venus is the hottest planet in our solar system", "astronomy"),
+        (
+            "Assembly language provides direct hardware control",
+            "programming",
+        ),
+        (
+            "Calcium is essential for bone formation in humans",
+            "biology",
+        ),
+        (
+            "Docker containers share the host operating system kernel",
+            "devops",
+        ),
+        (
+            "Venus is the hottest planet in our solar system",
+            "astronomy",
+        ),
         ("Merge sort has a time complexity of n log n", "algorithms"),
-        ("The boiling point of water is 100 degrees celsius", "chemistry"),
-        ("Blockchain is a distributed immutable ledger technology", "cryptography"),
-        ("The sahara is the largest hot desert in the world", "geography"),
-        ("Transformers use self attention mechanisms for sequences", "ai"),
-        ("PostgreSQL is an advanced open source relational database", "databases"),
-        ("The human brain has approximately 86 billion neurons", "biology"),
+        (
+            "The boiling point of water is 100 degrees celsius",
+            "chemistry",
+        ),
+        (
+            "Blockchain is a distributed immutable ledger technology",
+            "cryptography",
+        ),
+        (
+            "The sahara is the largest hot desert in the world",
+            "geography",
+        ),
+        (
+            "Transformers use self attention mechanisms for sequences",
+            "ai",
+        ),
+        (
+            "PostgreSQL is an advanced open source relational database",
+            "databases",
+        ),
+        (
+            "The human brain has approximately 86 billion neurons",
+            "biology",
+        ),
         // Additional facts to reach 100
-        ("Iron is the most abundant element in earths core", "chemistry"),
-        ("Jupiter is the largest planet in our solar system", "astronomy"),
-        ("Dijkstra algorithm finds shortest paths in weighted graphs", "algorithms"),
+        (
+            "Iron is the most abundant element in earths core",
+            "chemistry",
+        ),
+        (
+            "Jupiter is the largest planet in our solar system",
+            "astronomy",
+        ),
+        (
+            "Dijkstra algorithm finds shortest paths in weighted graphs",
+            "algorithms",
+        ),
         ("The nile is the longest river in the world", "geography"),
-        ("Convolutional neural networks excel at image recognition", "ai"),
+        (
+            "Convolutional neural networks excel at image recognition",
+            "ai",
+        ),
         ("MongoDB is a document oriented NoSQL database", "databases"),
-        ("The human heart beats approximately 100000 times per day", "biology"),
-        ("Rust uses ownership and borrowing for memory management", "programming"),
-        ("The deepest point in the ocean is the mariana trench", "geography"),
-        ("Quick sort has average case n log n time complexity", "algorithms"),
-        ("Saturn has the most prominent ring system of any planet", "astronomy"),
+        (
+            "The human heart beats approximately 100000 times per day",
+            "biology",
+        ),
+        (
+            "Rust uses ownership and borrowing for memory management",
+            "programming",
+        ),
+        (
+            "The deepest point in the ocean is the mariana trench",
+            "geography",
+        ),
+        (
+            "Quick sort has average case n log n time complexity",
+            "algorithms",
+        ),
+        (
+            "Saturn has the most prominent ring system of any planet",
+            "astronomy",
+        ),
         ("Recurrent neural networks process sequential data", "ai"),
-        ("TLS encrypts data transmitted over computer networks", "cryptography"),
-        ("The amazon rainforest produces 20 percent of world oxygen", "geography"),
-        ("Haskell is a purely functional programming language", "programming"),
+        (
+            "TLS encrypts data transmitted over computer networks",
+            "cryptography",
+        ),
+        (
+            "The amazon rainforest produces 20 percent of world oxygen",
+            "geography",
+        ),
+        (
+            "Haskell is a purely functional programming language",
+            "programming",
+        ),
         ("The periodic table has 118 confirmed elements", "chemistry"),
-        ("B trees are commonly used in database indexing", "databases"),
-        ("Neptune is the farthest known planet from the sun", "astronomy"),
+        (
+            "B trees are commonly used in database indexing",
+            "databases",
+        ),
+        (
+            "Neptune is the farthest known planet from the sun",
+            "astronomy",
+        ),
         ("Reinforcement learning uses rewards to train agents", "ai"),
-        ("The great barrier reef is the largest coral reef system", "geography"),
-        ("Go programming language was designed at Google", "programming"),
-        ("Carbon dioxide is a greenhouse gas in earths atmosphere", "chemistry"),
-        ("Hash tables provide average constant time lookup", "algorithms"),
-        ("Mercury is the smallest planet in our solar system", "astronomy"),
-        ("Generative adversarial networks use two competing networks", "ai"),
-        ("Mount everest is the tallest mountain above sea level", "geography"),
+        (
+            "The great barrier reef is the largest coral reef system",
+            "geography",
+        ),
+        (
+            "Go programming language was designed at Google",
+            "programming",
+        ),
+        (
+            "Carbon dioxide is a greenhouse gas in earths atmosphere",
+            "chemistry",
+        ),
+        (
+            "Hash tables provide average constant time lookup",
+            "algorithms",
+        ),
+        (
+            "Mercury is the smallest planet in our solar system",
+            "astronomy",
+        ),
+        (
+            "Generative adversarial networks use two competing networks",
+            "ai",
+        ),
+        (
+            "Mount everest is the tallest mountain above sea level",
+            "geography",
+        ),
         ("Elixir runs on the erlang virtual machine", "programming"),
-        ("Hydrogen is the most abundant element in the universe", "chemistry"),
-        ("Cassandra is a distributed wide column NoSQL database", "databases"),
-        ("The andromeda galaxy is the nearest large galaxy to us", "astronomy"),
-        ("Natural language processing enables computers to understand text", "ai"),
-        ("The dead sea is the lowest point on earths surface", "geography"),
-        ("C programming language was created by Dennis Ritchie", "programming"),
-        ("Ozone in the stratosphere protects earth from UV radiation", "chemistry"),
-        ("Depth first search explores as far as possible along branches", "algorithms"),
-        ("Uranus rotates on its side with an axial tilt of 98 degrees", "astronomy"),
-        ("Attention mechanisms let models focus on relevant input parts", "ai"),
-        ("Lake baikal is the deepest freshwater lake in the world", "geography"),
+        (
+            "Hydrogen is the most abundant element in the universe",
+            "chemistry",
+        ),
+        (
+            "Cassandra is a distributed wide column NoSQL database",
+            "databases",
+        ),
+        (
+            "The andromeda galaxy is the nearest large galaxy to us",
+            "astronomy",
+        ),
+        (
+            "Natural language processing enables computers to understand text",
+            "ai",
+        ),
+        (
+            "The dead sea is the lowest point on earths surface",
+            "geography",
+        ),
+        (
+            "C programming language was created by Dennis Ritchie",
+            "programming",
+        ),
+        (
+            "Ozone in the stratosphere protects earth from UV radiation",
+            "chemistry",
+        ),
+        (
+            "Depth first search explores as far as possible along branches",
+            "algorithms",
+        ),
+        (
+            "Uranus rotates on its side with an axial tilt of 98 degrees",
+            "astronomy",
+        ),
+        (
+            "Attention mechanisms let models focus on relevant input parts",
+            "ai",
+        ),
+        (
+            "Lake baikal is the deepest freshwater lake in the world",
+            "geography",
+        ),
         ("TypeScript adds static types to JavaScript", "programming"),
-        ("Noble gases are chemically inert and rarely form compounds", "chemistry"),
-        ("A star search uses heuristics to find optimal paths", "algorithms"),
-        ("Pluto was reclassified as a dwarf planet in 2006", "astronomy"),
-        ("Word embeddings represent words as dense numeric vectors", "ai"),
-        ("The sahel is a semiarid region south of the sahara", "geography"),
-        ("Scala combines object oriented and functional programming", "programming"),
+        (
+            "Noble gases are chemically inert and rarely form compounds",
+            "chemistry",
+        ),
+        (
+            "A star search uses heuristics to find optimal paths",
+            "algorithms",
+        ),
+        (
+            "Pluto was reclassified as a dwarf planet in 2006",
+            "astronomy",
+        ),
+        (
+            "Word embeddings represent words as dense numeric vectors",
+            "ai",
+        ),
+        (
+            "The sahel is a semiarid region south of the sahara",
+            "geography",
+        ),
+        (
+            "Scala combines object oriented and functional programming",
+            "programming",
+        ),
         ("Acids have a pH less than 7 on the pH scale", "chemistry"),
-        ("Breadth first search explores all neighbors at current depth first", "algorithms"),
-        ("Proxima centauri is the closest star to our sun", "astronomy"),
-        ("Batch normalization stabilizes and accelerates neural network training", "ai"),
-        ("Antarctica contains about 70 percent of earths fresh water", "geography"),
-        ("Swift was created by Apple for iOS development", "programming"),
+        (
+            "Breadth first search explores all neighbors at current depth first",
+            "algorithms",
+        ),
+        (
+            "Proxima centauri is the closest star to our sun",
+            "astronomy",
+        ),
+        (
+            "Batch normalization stabilizes and accelerates neural network training",
+            "ai",
+        ),
+        (
+            "Antarctica contains about 70 percent of earths fresh water",
+            "geography",
+        ),
+        (
+            "Swift was created by Apple for iOS development",
+            "programming",
+        ),
     ]
 }
 
@@ -245,7 +491,8 @@ fn bench_retrieval_accuracy() -> RetrievalAccuracyResult {
     store.config.ollama_url = None;
 
     // Build a map: topic -> list of fact indices
-    let mut topic_facts: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+    let mut topic_facts: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::new();
     for (i, &(fact, topic)) in facts.iter().enumerate() {
         store.encode(fact, 0.9);
         topic_facts.entry(topic).or_default().push(i);
@@ -336,15 +583,21 @@ fn bench_merge_quality() -> MergeQualityResult {
     store_a.merge(&store_b.grid, 0.8);
 
     // Check retrievability
-    let a_retrievable = a_facts.iter().filter(|f| {
-        let r = store_a.query(f, 3);
-        r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
-    }).count();
+    let a_retrievable = a_facts
+        .iter()
+        .filter(|f| {
+            let r = store_a.query(f, 3);
+            r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
+        })
+        .count();
 
-    let b_retrievable = b_facts.iter().filter(|f| {
-        let r = store_a.query(f, 3);
-        r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
-    }).count();
+    let b_retrievable = b_facts
+        .iter()
+        .filter(|f| {
+            let r = store_a.query(f, 3);
+            r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
+        })
+        .count();
 
     // Measure degradation at different fill levels
     let mut fill_levels = Vec::new();
@@ -359,10 +612,14 @@ fn bench_merge_quality() -> MergeQualityResult {
         }
         // Sample up to 50 items for quality check
         let sample_size = fill.min(50);
-        let retrievable = encoded_facts.iter().take(sample_size).filter(|f| {
-            let r = s.query(f, 3);
-            r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
-        }).count();
+        let retrievable = encoded_facts
+            .iter()
+            .take(sample_size)
+            .filter(|f| {
+                let r = s.query(f, 3);
+                r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
+            })
+            .count();
         fill_levels.push(FillLevelResult {
             items_encoded: fill,
             retrievable,
@@ -400,10 +657,14 @@ fn bench_grid_capacity() -> GridCapacityResult {
             facts.push(f);
         }
         let sample = count.min(50);
-        let found = facts.iter().take(sample).filter(|f| {
-            let r = store.query(f, 3);
-            r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
-        }).count();
+        let found = facts
+            .iter()
+            .take(sample)
+            .filter(|f| {
+                let r = store.query(f, 3);
+                r.iter().any(|res| res.text.as_deref() == Some(f.as_str()))
+            })
+            .count();
         let quality = found as f64 / sample as f64;
         measurements.push((count, quality));
 
@@ -470,7 +731,9 @@ fn bench_network_simulation() -> Vec<NetworkSimResult> {
         let mut checked = 0;
         'outer: for node_facts in &all_facts {
             for fact in node_facts {
-                if checked >= sample_size { break 'outer; }
+                if checked >= sample_size {
+                    break 'outer;
+                }
                 let r = nodes[0].query(fact, 5);
                 if !r.is_empty() {
                     found += 1;
@@ -479,7 +742,9 @@ fn bench_network_simulation() -> Vec<NetworkSimResult> {
             }
         }
 
-        let storage_bytes = bincode::serialize(&nodes[0].grid).map(|b| b.len()).unwrap_or(0);
+        let storage_bytes = bincode::serialize(&nodes[0].grid)
+            .map(|b| b.len())
+            .unwrap_or(0);
 
         results.push(NetworkSimResult {
             node_count,
@@ -506,50 +771,71 @@ fn print_table(results: &BenchmarkResults) {
     println!("║  Items       │  Total (ms)  │  Per Item (µs)                   ║");
     println!("╟──────────────┼──────────────┼──────────────────────────────────╢");
     for r in &results.encoding_speed {
-        println!("║  {:>10}  │  {:>10.1} │  {:>10.1}                         ║", r.item_count, r.total_ms, r.per_item_us);
+        println!(
+            "║  {:>10}  │  {:>10.1} │  {:>10.1}                         ║",
+            r.item_count, r.total_ms, r.per_item_us
+        );
     }
 
     // Retrieval accuracy
     println!("╟──────────────────────────────────────────────────────────────────╢");
     println!("║  🔍 Retrieval Accuracy                                         ║");
-    println!("║  Facts: {:>4}  Queries: {:>4}  Hits: {:>4}                       ║",
+    println!(
+        "║  Facts: {:>4}  Queries: {:>4}  Hits: {:>4}                       ║",
         results.retrieval_accuracy.total_facts,
         results.retrieval_accuracy.total_queries,
-        results.retrieval_accuracy.hits);
-    println!("║  Precision: {:.1}%  Recall: {:.1}%                                ║",
+        results.retrieval_accuracy.hits
+    );
+    println!(
+        "║  Precision: {:.1}%  Recall: {:.1}%                                ║",
         results.retrieval_accuracy.precision * 100.0,
-        results.retrieval_accuracy.recall * 100.0);
+        results.retrieval_accuracy.recall * 100.0
+    );
 
     // Diff size
     println!("╟──────────────────────────────────────────────────────────────────╢");
     println!("║  📦 Diff Size (per knowledge item)                             ║");
-    println!("║  Avg changes: {:.1}  Avg bytes: {:.0}                            ║",
-        results.diff_size.avg_changes_per_item,
-        results.diff_size.avg_bytes_per_delta);
+    println!(
+        "║  Avg changes: {:.1}  Avg bytes: {:.0}                            ║",
+        results.diff_size.avg_changes_per_item, results.diff_size.avg_bytes_per_delta
+    );
 
     // Merge quality
     println!("╟──────────────────────────────────────────────────────────────────╢");
     println!("║  🔀 Merge Quality                                              ║");
-    println!("║  Node A retrievable: {:>3}/{}  Node B retrievable: {:>3}/{}       ║",
+    println!(
+        "║  Node A retrievable: {:>3}/{}  Node B retrievable: {:>3}/{}       ║",
         results.merge_quality.a_retrievable_after_merge,
         results.merge_quality.node_a_items,
         results.merge_quality.b_retrievable_after_merge,
-        results.merge_quality.node_b_items);
-    println!("║  Degradation: {:.1}%                                             ║",
-        results.merge_quality.degradation_pct);
+        results.merge_quality.node_b_items
+    );
+    println!(
+        "║  Degradation: {:.1}%                                             ║",
+        results.merge_quality.degradation_pct
+    );
     println!("║  Fill levels:                                                  ║");
     for fl in &results.merge_quality.fill_levels {
-        println!("║    {:>5} items → {:.1}% retrievable                            ║", fl.items_encoded, fl.quality_pct);
+        println!(
+            "║    {:>5} items → {:.1}% retrievable                            ║",
+            fl.items_encoded, fl.quality_pct
+        );
     }
 
     // Grid capacity
     println!("╟──────────────────────────────────────────────────────────────────╢");
     println!("║  📊 Grid Capacity                                              ║");
-    println!("║  Max items (≥50% quality): {}  Quality: {:.1}%                  ║",
+    println!(
+        "║  Max items (≥50% quality): {}  Quality: {:.1}%                  ║",
         results.grid_capacity.max_items_before_drop,
-        results.grid_capacity.quality_at_max * 100.0);
+        results.grid_capacity.quality_at_max * 100.0
+    );
     for (count, quality) in &results.grid_capacity.measurements {
-        println!("║    {:>5} items → {:.1}% quality                                ║", count, quality * 100.0);
+        println!(
+            "║    {:>5} items → {:.1}% quality                                ║",
+            count,
+            quality * 100.0
+        );
     }
 
     // Network simulation
@@ -559,11 +845,14 @@ fn print_table(results: &BenchmarkResults) {
     println!("║  Nodes   │ Items │ Quality  │ Storage  │ Gossip Rounds          ║");
     println!("╟──────────┼───────┼──────────┼──────────┼────────────────────────╢");
     for r in &results.network_simulation {
-        println!("║  {:>6}  │ {:>5} │  {:.1}%   │ {:>6}B │ {:>5}                  ║",
-            r.node_count, r.total_unique_items,
+        println!(
+            "║  {:>6}  │ {:>5} │  {:.1}%   │ {:>6}B │ {:>5}                  ║",
+            r.node_count,
+            r.total_unique_items,
             r.avg_retrieval_quality * 100.0,
             r.total_storage_bytes,
-            r.gossip_rounds);
+            r.gossip_rounds
+        );
     }
 
     println!("╚══════════════════════════════════════════════════════════════════╝");

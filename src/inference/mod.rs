@@ -4,15 +4,15 @@
 //! - `EmbeddedLLM`: Runs a quantized GGUF model in-process via candle (default)
 //! - `OllamaEngine`: HTTP client to external Ollama process (optional fallback)
 
-pub mod embedded;
-pub mod ollama;
-pub mod embeddings;
-pub mod distributed;
-pub mod nca_predictor;
-pub mod kan;
 pub mod backprop_trainer;
-pub mod reservoir;
 pub mod criticality;
+pub mod distributed;
+pub mod embedded;
+pub mod embeddings;
+pub mod kan;
+pub mod nca_predictor;
+pub mod ollama;
+pub mod reservoir;
 
 use std::error::Error;
 
@@ -88,7 +88,11 @@ pub fn default_engine() -> Box<dyn InferenceEngine> {
 }
 
 /// Create an engine with a specific preference
-pub fn engine_with_preference(prefer_ollama: bool, model: Option<&str>, ollama_url: Option<&str>) -> Box<dyn InferenceEngine> {
+pub fn engine_with_preference(
+    prefer_ollama: bool,
+    model: Option<&str>,
+    ollama_url: Option<&str>,
+) -> Box<dyn InferenceEngine> {
     if prefer_ollama {
         let ollama = ollama::OllamaEngine::new(
             model.map(|s| s.to_string()),

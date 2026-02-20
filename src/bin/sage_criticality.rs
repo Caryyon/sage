@@ -64,22 +64,70 @@ struct Opts {
 
 fn parse_opts(args: &[String]) -> Opts {
     let mut o = Opts {
-        weights_path: None, corpus_path: None, grid_size: 8,
-        samples: 100, perturbation: 0.05, critical: false,
-        crit_weight: 0.3, epochs: 30, max_examples: 50,
+        weights_path: None,
+        corpus_path: None,
+        grid_size: 8,
+        samples: 100,
+        perturbation: 0.05,
+        critical: false,
+        crit_weight: 0.3,
+        epochs: 30,
+        max_examples: 50,
     };
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--weights" => { i += 1; if i < args.len() { o.weights_path = Some(args[i].clone()); } }
-            "--corpus" => { i += 1; if i < args.len() { o.corpus_path = Some(args[i].clone()); } }
-            "--grid-size" => { i += 1; if i < args.len() { o.grid_size = args[i].parse().unwrap_or(8); } }
-            "--samples" => { i += 1; if i < args.len() { o.samples = args[i].parse().unwrap_or(100); } }
-            "--perturbation" => { i += 1; if i < args.len() { o.perturbation = args[i].parse().unwrap_or(0.05); } }
-            "--critical" => { o.critical = true; }
-            "--crit-weight" => { i += 1; if i < args.len() { o.crit_weight = args[i].parse().unwrap_or(0.3); } }
-            "--epochs" => { i += 1; if i < args.len() { o.epochs = args[i].parse().unwrap_or(30); } }
-            "--max-examples" => { i += 1; if i < args.len() { o.max_examples = args[i].parse().unwrap_or(50); } }
+            "--weights" => {
+                i += 1;
+                if i < args.len() {
+                    o.weights_path = Some(args[i].clone());
+                }
+            }
+            "--corpus" => {
+                i += 1;
+                if i < args.len() {
+                    o.corpus_path = Some(args[i].clone());
+                }
+            }
+            "--grid-size" => {
+                i += 1;
+                if i < args.len() {
+                    o.grid_size = args[i].parse().unwrap_or(8);
+                }
+            }
+            "--samples" => {
+                i += 1;
+                if i < args.len() {
+                    o.samples = args[i].parse().unwrap_or(100);
+                }
+            }
+            "--perturbation" => {
+                i += 1;
+                if i < args.len() {
+                    o.perturbation = args[i].parse().unwrap_or(0.05);
+                }
+            }
+            "--critical" => {
+                o.critical = true;
+            }
+            "--crit-weight" => {
+                i += 1;
+                if i < args.len() {
+                    o.crit_weight = args[i].parse().unwrap_or(0.3);
+                }
+            }
+            "--epochs" => {
+                i += 1;
+                if i < args.len() {
+                    o.epochs = args[i].parse().unwrap_or(30);
+                }
+            }
+            "--max-examples" => {
+                i += 1;
+                if i < args.len() {
+                    o.max_examples = args[i].parse().unwrap_or(50);
+                }
+            }
             _ => {}
         }
         i += 1;
@@ -91,7 +139,8 @@ fn cmd_measure(args: &[String]) {
     let opts = parse_opts(args);
 
     // Load weights
-    let weights_path = opts.weights_path
+    let weights_path = opts
+        .weights_path
         .map(std::path::PathBuf::from)
         .unwrap_or_else(default_weights_path);
 
@@ -114,24 +163,46 @@ fn cmd_measure(args: &[String]) {
             NcaWeights::random()
         })
     } else {
-        eprintln!("⚠️  No weights found at {}. Using random weights.", weights_path.display());
+        eprintln!(
+            "⚠️  No weights found at {}. Using random weights.",
+            weights_path.display()
+        );
         NcaWeights::random()
     };
 
     let mut predictor = NcaPredictor::with_grid_size(tokenizer, weights, 3, opts.grid_size);
-    let probe = if tokens.len() >= 5 { tokens[..5].to_vec() } else { tokens.clone() };
+    let probe = if tokens.len() >= 5 {
+        tokens[..5].to_vec()
+    } else {
+        tokens.clone()
+    };
 
-    eprintln!("🔬 Measuring criticality ({} samples, perturbation={})...", opts.samples, opts.perturbation);
+    eprintln!(
+        "🔬 Measuring criticality ({} samples, perturbation={})...",
+        opts.samples, opts.perturbation
+    );
     let metrics = measure_criticality(&mut predictor, &probe, opts.samples, opts.perturbation);
 
     println!();
     println!("╔══════════════════════════════════════════╗");
     println!("║       NCA Criticality Report             ║");
     println!("╠══════════════════════════════════════════╣");
-    println!("║  Branching ratio:    {:>8.4}  (critical=1.0) ║", metrics.branching_ratio);
-    println!("║  Lyapunov estimate:  {:>8.4}  (critical≈0.0) ║", metrics.lyapunov_estimate);
-    println!("║  Power law τ:        {:>8.4}  (critical≈1.5) ║", metrics.power_law_exponent);
-    println!("║  Criticality score:  {:>8.4}  (1.0=perfect)  ║", metrics.criticality_score);
+    println!(
+        "║  Branching ratio:    {:>8.4}  (critical=1.0) ║",
+        metrics.branching_ratio
+    );
+    println!(
+        "║  Lyapunov estimate:  {:>8.4}  (critical≈0.0) ║",
+        metrics.lyapunov_estimate
+    );
+    println!(
+        "║  Power law τ:        {:>8.4}  (critical≈1.5) ║",
+        metrics.power_law_exponent
+    );
+    println!(
+        "║  Criticality score:  {:>8.4}  (1.0=perfect)  ║",
+        metrics.criticality_score
+    );
     println!("╚══════════════════════════════════════════╝");
 
     let regime = if metrics.branching_ratio < 0.8 {
@@ -178,7 +249,11 @@ fn cmd_train(args: &[String]) {
         Ok((predictor, accuracy, crit_score)) => {
             let random = 1.0 / predictor.tokenizer.vocab_size() as f64;
             eprintln!("\n✅ Training complete!");
-            eprintln!("   Accuracy: {:.2}% ({:.1}× random)", accuracy * 100.0, accuracy / random);
+            eprintln!(
+                "   Accuracy: {:.2}% ({:.1}× random)",
+                accuracy * 100.0,
+                accuracy / random
+            );
             eprintln!("   Criticality score: {:.4}", crit_score);
 
             // Save weights
@@ -212,7 +287,10 @@ fn cmd_sweep(args: &[String]) {
     let crit_weights = [0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0];
 
     eprintln!("🔍 Criticality Weight Sweep");
-    eprintln!("   Testing {} weight configurations...\n", crit_weights.len());
+    eprintln!(
+        "   Testing {} weight configurations...\n",
+        crit_weights.len()
+    );
 
     println!("┌─────────────┬──────────┬─────────────┬──────────┐");
     println!("│ Crit Weight  │ Accuracy │ Criticality │ Combined │");
@@ -232,17 +310,28 @@ fn cmd_sweep(args: &[String]) {
         match train_nca_critical(&corpus, &config, aw, cw, false) {
             Ok((predictor, accuracy, crit_score)) => {
                 let combined = aw * accuracy + cw * crit_score;
-                println!("│ {:>11.1} │ {:>7.2}% │ {:>11.4} │ {:>8.4} │",
-                         cw, accuracy * 100.0, crit_score, combined);
+                println!(
+                    "│ {:>11.1} │ {:>7.2}% │ {:>11.4} │ {:>8.4} │",
+                    cw,
+                    accuracy * 100.0,
+                    crit_score,
+                    combined
+                );
                 results.push((cw, accuracy, crit_score, combined));
 
                 // Also measure full criticality for this configuration
                 let mut pred = predictor;
                 let tokens = pred.tokenizer.encode(&corpus);
-                let probe = if tokens.len() >= 5 { tokens[..5].to_vec() } else { tokens };
+                let probe = if tokens.len() >= 5 {
+                    tokens[..5].to_vec()
+                } else {
+                    tokens
+                };
                 let metrics = measure_criticality(&mut pred, &probe, 50, 0.05);
-                eprintln!("     → BR={:.3}, λ={:.3}, τ={:.3}",
-                         metrics.branching_ratio, metrics.lyapunov_estimate, metrics.power_law_exponent);
+                eprintln!(
+                    "     → BR={:.3}, λ={:.3}, τ={:.3}",
+                    metrics.branching_ratio, metrics.lyapunov_estimate, metrics.power_law_exponent
+                );
             }
             Err(e) => {
                 println!("│ {:>11.1} │  FAILED  │   FAILED    │  FAILED  │", cw);
@@ -254,7 +343,8 @@ fn cmd_sweep(args: &[String]) {
     println!("└─────────────┴──────────┴─────────────┴──────────┘");
 
     // Find sweet spot
-    if let Some((cw, acc, crit, _)) = results.iter()
+    if let Some((cw, acc, crit, _)) = results
+        .iter()
         .max_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
     {
         println!("\n🎯 Sweet spot: criticality_weight={:.1}", cw);

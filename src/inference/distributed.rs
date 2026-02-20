@@ -159,11 +159,7 @@ impl DistributedInference {
 
     /// Fan out a knowledge query to all peers in parallel.
     /// Returns combined, deduplicated, relevance-ranked results.
-    pub async fn query_peers(
-        &self,
-        query: &str,
-        max_results: usize,
-    ) -> DistributedKnowledgeResult {
+    pub async fn query_peers(&self, query: &str, max_results: usize) -> DistributedKnowledgeResult {
         let start = Instant::now();
         let peers = self.peers.lock().await;
         let peer_count = peers.len();
@@ -206,15 +202,23 @@ impl DistributedInference {
 
         // Sort by relevance descending
         let mut ranked = deduped;
-        ranked.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        ranked.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         ranked.truncate(max_results);
 
         let remote_count = ranked.len();
         let query_time = start.elapsed();
 
         // Update metrics
-        self.metrics.distributed_queries.fetch_add(1, Ordering::Relaxed);
-        self.metrics.peer_items_retrieved.fetch_add(remote_count as u64, Ordering::Relaxed);
+        self.metrics
+            .distributed_queries
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .peer_items_retrieved
+            .fetch_add(remote_count as u64, Ordering::Relaxed);
         self.metrics.total_queries.fetch_add(1, Ordering::Relaxed);
 
         DistributedKnowledgeResult {
@@ -229,11 +233,7 @@ impl DistributedInference {
 
     /// Send a speculative decoding request to up to MAX_SPECULATE_PEERS peers.
     /// Returns any speculation results received within timeout.
-    pub async fn speculate(
-        &self,
-        prompt_hash: u64,
-        prompt_text: &str,
-    ) -> Vec<SpeculationResult> {
+    pub async fn speculate(&self, prompt_hash: u64, prompt_text: &str) -> Vec<SpeculationResult> {
         let peers = self.peers.lock().await;
         if peers.is_empty() {
             return Vec::new();
@@ -253,18 +253,24 @@ impl DistributedInference {
         }
         drop(peers);
 
-        self.metrics.speculation_attempts.fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .speculation_attempts
+            .fetch_add(1, Ordering::Relaxed);
 
         let mut results = Vec::new();
         for handle in handles {
             if let Ok(Ok(Ok(result))) = tokio::time::timeout(PEER_QUERY_TIMEOUT, handle).await {
-                self.metrics.tokens_speculated.fetch_add(result.tokens.len() as u64, Ordering::Relaxed);
+                self.metrics
+                    .tokens_speculated
+                    .fetch_add(result.tokens.len() as u64, Ordering::Relaxed);
                 results.push(result);
             }
         }
 
         if !results.is_empty() {
-            self.metrics.speculation_hits.fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .speculation_hits
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         results
@@ -315,7 +321,10 @@ async fn query_single_peer(
 
     // Send knowledge query
     let cmd = format!("KNOWLEDGE_QUERY {}\n", query.replace('\n', " "));
-    writer.write_all(cmd.as_bytes()).await.map_err(|e| e.to_string())?;
+    writer
+        .write_all(cmd.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Read response
     let mut items = Vec::new();
@@ -360,7 +369,10 @@ async fn speculate_on_peer(
         prompt_hash,
         prompt_text.replace('\n', "\\n")
     );
-    writer.write_all(cmd.as_bytes()).await.map_err(|e| e.to_string())?;
+    writer
+        .write_all(cmd.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Read response tokens
     let mut tokens = Vec::new();

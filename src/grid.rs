@@ -1,16 +1,22 @@
 // Grid module - handles the cellular automata grid and cell operations
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub const GRID_SIZE: usize = 256;
-pub const NUM_BASE_CHANNELS: usize = 16;  // 4 RGBA + 12 hidden
-pub const NUM_PATTERN_CHANNELS: usize = 4;  // One-hot encoding for 4 patterns
-pub const NUM_ENV_CHANNELS: usize = 2;  // Food (attract) and Toxin (repel)
-pub const NUM_MEMORY_CHANNELS: usize = 4;  // Memory-augmented cell channels
-pub const NUM_KNOWLEDGE_CHANNELS: usize = 2;  // Knowledge storage channels
-pub const NUM_COMM_CHANNELS: usize = 2;  // Cross-node communication channels
-pub const NUM_META_CHANNELS: usize = 2;  // Metadata channels (timestamp, confidence)
-pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + NUM_ENV_CHANNELS + NUM_MEMORY_CHANNELS + NUM_KNOWLEDGE_CHANNELS + NUM_COMM_CHANNELS + NUM_META_CHANNELS;  // 32 total
+pub const NUM_BASE_CHANNELS: usize = 16; // 4 RGBA + 12 hidden
+pub const NUM_PATTERN_CHANNELS: usize = 4; // One-hot encoding for 4 patterns
+pub const NUM_ENV_CHANNELS: usize = 2; // Food (attract) and Toxin (repel)
+pub const NUM_MEMORY_CHANNELS: usize = 4; // Memory-augmented cell channels
+pub const NUM_KNOWLEDGE_CHANNELS: usize = 2; // Knowledge storage channels
+pub const NUM_COMM_CHANNELS: usize = 2; // Cross-node communication channels
+pub const NUM_META_CHANNELS: usize = 2; // Metadata channels (timestamp, confidence)
+pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS
+    + NUM_PATTERN_CHANNELS
+    + NUM_ENV_CHANNELS
+    + NUM_MEMORY_CHANNELS
+    + NUM_KNOWLEDGE_CHANNELS
+    + NUM_COMM_CHANNELS
+    + NUM_META_CHANNELS; // 32 total
 
 // ── Channel Partitioning (shared vs private) ───────────────────────────────
 // For p2p knowledge sharing: shared channels sync via gossip, private stay local.
@@ -32,30 +38,31 @@ pub fn is_private_channel(channel: usize) -> bool {
 }
 
 // Channel indices
-pub const FOOD_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS;  // Channel 20
-pub const TOXIN_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + 1;  // Channel 21
+pub const FOOD_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS; // Channel 20
+pub const TOXIN_CHANNEL: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + 1; // Channel 21
 
 // Memory channel indices (channels 22-25)
-pub const MEMORY_CHANNELS_START: usize = NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + NUM_ENV_CHANNELS;  // Channel 22
-pub const MEMORY_ATTENTION: usize = MEMORY_CHANNELS_START;      // Short-term attention weight
-pub const MEMORY_GATE: usize = MEMORY_CHANNELS_START + 1;       // Read/write gate (0=read, 1=write)
-pub const MEMORY_VALUE: usize = MEMORY_CHANNELS_START + 2;      // Memory value store
-pub const MEMORY_RECENCY: usize = MEMORY_CHANNELS_START + 3;    // Recency/novelty tag
+pub const MEMORY_CHANNELS_START: usize =
+    NUM_BASE_CHANNELS + NUM_PATTERN_CHANNELS + NUM_ENV_CHANNELS; // Channel 22
+pub const MEMORY_ATTENTION: usize = MEMORY_CHANNELS_START; // Short-term attention weight
+pub const MEMORY_GATE: usize = MEMORY_CHANNELS_START + 1; // Read/write gate (0=read, 1=write)
+pub const MEMORY_VALUE: usize = MEMORY_CHANNELS_START + 2; // Memory value store
+pub const MEMORY_RECENCY: usize = MEMORY_CHANNELS_START + 3; // Recency/novelty tag
 
 // Knowledge channel indices (channels 26-27)
-pub const KNOWLEDGE_CHANNELS_START: usize = MEMORY_CHANNELS_START + NUM_MEMORY_CHANNELS;  // Channel 26
-pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_CHANNELS_START;      // Encoded knowledge feature
+pub const KNOWLEDGE_CHANNELS_START: usize = MEMORY_CHANNELS_START + NUM_MEMORY_CHANNELS; // Channel 26
+pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_CHANNELS_START; // Encoded knowledge feature
 pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 1; // Knowledge activation strength
 
 // Communication channel indices (channels 28-29)
-pub const COMM_CHANNELS_START: usize = KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS;  // Channel 28
-pub const COMM_SYNC_STATE: usize = COMM_CHANNELS_START;         // Sync state for cross-node communication
-pub const COMM_NODE_ID: usize = COMM_CHANNELS_START + 1;        // Source node identifier (hashed)
+pub const COMM_CHANNELS_START: usize = KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS; // Channel 28
+pub const COMM_SYNC_STATE: usize = COMM_CHANNELS_START; // Sync state for cross-node communication
+pub const COMM_NODE_ID: usize = COMM_CHANNELS_START + 1; // Source node identifier (hashed)
 
 // Metadata channel indices (channels 30-31)
-pub const META_CHANNELS_START: usize = COMM_CHANNELS_START + NUM_COMM_CHANNELS;  // Channel 30
-pub const META_TIMESTAMP: usize = META_CHANNELS_START;           // Normalized timestamp of last write
-pub const META_CONFIDENCE: usize = META_CHANNELS_START + 1;      // Confidence score (0-1)
+pub const META_CHANNELS_START: usize = COMM_CHANNELS_START + NUM_COMM_CHANNELS; // Channel 30
+pub const META_TIMESTAMP: usize = META_CHANNELS_START; // Normalized timestamp of last write
+pub const META_CONFIDENCE: usize = META_CHANNELS_START + 1; // Confidence score (0-1)
 
 // Grid represents the cellular automata world
 #[derive(Clone, Serialize, Deserialize)]
@@ -63,9 +70,9 @@ pub struct Grid {
     pub cells: Vec<Vec<Vec<f64>>>,
     pub width: usize,
     pub height: usize,
-    pub death_counters: Vec<Vec<u32>>,  // Track how long cells have been below threshold
-    pub dead_cells: Vec<Vec<bool>>,     // Permanently dead cells
-    pub species: Vec<Vec<u8>>,          // Which species owns this cell (0=none, 1=A, 2=B)
+    pub death_counters: Vec<Vec<u32>>, // Track how long cells have been below threshold
+    pub dead_cells: Vec<Vec<bool>>,    // Permanently dead cells
+    pub species: Vec<Vec<u8>>,         // Which species owns this cell (0=none, 1=A, 2=B)
 }
 
 impl Grid {
@@ -74,7 +81,14 @@ impl Grid {
         let death_counters = vec![vec![0; width]; height];
         let dead_cells = vec![vec![false; width]; height];
         let species = vec![vec![0; width]; height];
-        Grid { cells, width, height, death_counters, dead_cells, species }
+        Grid {
+            cells,
+            width,
+            height,
+            death_counters,
+            dead_cells,
+            species,
+        }
     }
 
     pub fn seed(&mut self) {
@@ -85,7 +99,7 @@ impl Grid {
         let center_x = self.width / 2;
 
         // Create a larger, more diverse seed region with random values
-        let seed_radius = 4;  // Increased from 2 to 4 (9x9 region)
+        let seed_radius = 4; // Increased from 2 to 4 (9x9 region)
         for dy in -seed_radius..=seed_radius {
             for dx in -seed_radius..=seed_radius {
                 let y = (center_y as i32 + dy) as usize;
@@ -109,10 +123,10 @@ impl Grid {
 
                     // Initialize memory channels (22-25) with small values
                     // Memory starts "empty" but with slight noise for symmetry breaking
-                    self.cells[y][x][MEMORY_ATTENTION] = rng.gen_range(0.0..0.1);  // Low initial attention
-                    self.cells[y][x][MEMORY_GATE] = 0.0;  // Start in read mode
-                    self.cells[y][x][MEMORY_VALUE] = 0.0;  // Empty memory
-                    self.cells[y][x][MEMORY_RECENCY] = 0.0;  // No recency
+                    self.cells[y][x][MEMORY_ATTENTION] = rng.gen_range(0.0..0.1); // Low initial attention
+                    self.cells[y][x][MEMORY_GATE] = 0.0; // Start in read mode
+                    self.cells[y][x][MEMORY_VALUE] = 0.0; // Empty memory
+                    self.cells[y][x][MEMORY_RECENCY] = 0.0; // No recency
 
                     // Initialize knowledge channels (26-27) - empty
                     self.cells[y][x][KNOWLEDGE_EMBEDDING] = 0.0;
@@ -143,15 +157,13 @@ impl Grid {
     /// Calculate total mass (sum of alpha channel values)
     /// Used for tracking mass conservation
     pub fn total_mass(&self) -> f64 {
-        self.cells.iter()
-            .flatten()
-            .map(|cell| cell[3])
-            .sum()
+        self.cells.iter().flatten().map(|cell| cell[3]).sum()
     }
 
     /// Calculate mass of alive cells only (alpha > 0.1)
     pub fn alive_mass(&self) -> f64 {
-        self.cells.iter()
+        self.cells
+            .iter()
             .flatten()
             .filter(|cell| cell[3] > 0.1)
             .map(|cell| cell[3])
@@ -160,7 +172,8 @@ impl Grid {
 
     /// Count alive cells
     pub fn alive_count(&self) -> usize {
-        self.cells.iter()
+        self.cells
+            .iter()
             .flatten()
             .filter(|cell| cell[3] > 0.1)
             .count()
@@ -240,7 +253,11 @@ impl Grid {
         let mid_x = self.width / 2;
 
         for y in 0..self.height {
-            let x_range = if remove_left { 0..mid_x } else { mid_x..self.width };
+            let x_range = if remove_left {
+                0..mid_x
+            } else {
+                mid_x..self.width
+            };
             for x in x_range {
                 for channel in 0..NUM_CHANNELS {
                     self.cells[y][x][channel] = 0.0;
@@ -441,11 +458,17 @@ pub fn grid_to_ascii(grid: &Grid) -> String {
     for y in 0..grid.height {
         for x in 0..grid.width {
             let alpha = grid.cells[y][x][3];
-            let ch = if alpha > 0.8 { '█' }
-                    else if alpha > 0.5 { '▓' }
-                    else if alpha > 0.2 { '▒' }
-                    else if alpha > 0.1 { '░' }
-                    else { ' ' };
+            let ch = if alpha > 0.8 {
+                '█'
+            } else if alpha > 0.5 {
+                '▓'
+            } else if alpha > 0.2 {
+                '▒'
+            } else if alpha > 0.1 {
+                '░'
+            } else {
+                ' '
+            };
             result.push(ch);
         }
         result.push('\n');
@@ -460,8 +483,11 @@ mod tests {
     #[test]
     fn test_channel_counts() {
         assert_eq!(NUM_CHANNELS, 32, "Total channels should be 32");
-        assert_eq!(NUM_SHARED_CHANNELS + NUM_PRIVATE_CHANNELS, NUM_CHANNELS,
-            "Shared + private should equal total");
+        assert_eq!(
+            NUM_SHARED_CHANNELS + NUM_PRIVATE_CHANNELS,
+            NUM_CHANNELS,
+            "Shared + private should equal total"
+        );
     }
 
     #[test]
@@ -469,12 +495,20 @@ mod tests {
         // Channels 0..23 are shared
         for ch in 0..NUM_SHARED_CHANNELS {
             assert!(is_shared_channel(ch), "Channel {} should be shared", ch);
-            assert!(!is_private_channel(ch), "Channel {} should not be private", ch);
+            assert!(
+                !is_private_channel(ch),
+                "Channel {} should not be private",
+                ch
+            );
         }
         // Channels 24..31 are private
         for ch in PRIVATE_CHANNELS_START..NUM_CHANNELS {
             assert!(is_private_channel(ch), "Channel {} should be private", ch);
-            assert!(!is_shared_channel(ch), "Channel {} should not be shared", ch);
+            assert!(
+                !is_shared_channel(ch),
+                "Channel {} should not be shared",
+                ch
+            );
         }
     }
 

@@ -53,8 +53,8 @@ use std::time::{Duration, Instant};
 
 extern crate reqwest;
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
-use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
 use crate::inference::ollama::OllamaEngine;
+use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
 
 /// Query the NCA brain for knowledge relevant to the user's input.
 /// Returns a context string to prepend to the system prompt, or None if nothing useful found.
@@ -65,21 +65,23 @@ fn retrieve_brain_knowledge(knowledge: &NCAKnowledge, query: &str) -> Option<Str
     }
 
     // Filter to results that have actual text and meaningful relevance
-    let relevant: Vec<_> = results.iter()
-        .filter(|r| r.text.is_some() && r.relevance > 0.05)
+    let relevant: Vec<_> = results
+        .iter()
+        .filter(|r| r.text.is_some() && r.relevance > 0.3)
         .collect();
 
     if relevant.is_empty() {
         return None;
     }
 
-    let mut context = String::from("## Recalled Knowledge (from your NCA brain)\n");
-    for (i, r) in relevant.iter().enumerate() {
+    let mut context =
+        String::from("The following context from previous conversations may be relevant:\n\n");
+    for r in relevant.iter() {
         if let Some(ref text) = r.text {
-            context.push_str(&format!("{}. [relevance={:.2}] {}\n", i + 1, r.relevance, text));
+            context.push_str(&format!("- {}\n", text));
         }
     }
-    context.push_str("\nUse the above recalled knowledge to inform your response if relevant. If none of it is relevant, ignore it.\n");
+    context.push_str("\nUse the above context naturally if relevant. Do NOT mention relevance scores, NCA internals, brain cells, or any technical details about how you recalled this information. Never include metadata or scoring in your responses.\n");
     Some(context)
 }
 
@@ -104,7 +106,7 @@ const BG: Color = Color::Rgb(0x0a, 0x0a, 0x0f);
 const DIM: Color = Color::Rgb(0x44, 0x44, 0x55);
 const ORANGE: Color = Color::Rgb(0xff, 0xa5, 0x00);
 
-const BRAIN_VIZ_SIZE: usize = 32;  // Visualization grid for the brain panel
+const BRAIN_VIZ_SIZE: usize = 32; // Visualization grid for the brain panel
 
 // --- Chat Messages ---
 #[derive(Clone)]
@@ -262,11 +264,7 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
                 }
             } else if base > 0.01 {
                 let g = (0x33 as f64 + base * (0x99 - 0x33) as f64) as u8;
-                Color::Rgb(
-                    0x00,
-                    g,
-                    (0x22 as f64 + base * (0x66 - 0x22) as f64) as u8,
-                )
+                Color::Rgb(0x00, g, (0x22 as f64 + base * (0x66 - 0x22) as f64) as u8)
             } else {
                 let v = (0x0f as f64 + combined * 0x15 as f64) as u8;
                 Color::Rgb(v, v, (v as f64 * 1.2).min(255.0) as u8)
@@ -341,7 +339,11 @@ fn wrap_line(line: Line<'_>, max_width: usize) -> Vec<Line<'static>> {
                 }
                 let chunk = &remaining[..boundary];
                 let break_at = if let Some(pos) = chunk.rfind(' ') {
-                    if pos > 0 { pos + 1 } else { boundary } // break after the space
+                    if pos > 0 {
+                        pos + 1
+                    } else {
+                        boundary
+                    } // break after the space
                 } else {
                     boundary // no space found, hard break
                 };
@@ -458,7 +460,11 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     // Strategy: wrap everything at reduced width first (safe — guarantees no
     // text behind the brain), compute scroll, then re-wrap any visible lines
     // that fall below the brain panel at full width for better use of space.
-    let reduced_width = if has_brain { inner_width.saturating_sub(brain_w) } else { inner_width };
+    let reduced_width = if has_brain {
+        inner_width.saturating_sub(brain_w)
+    } else {
+        inner_width
+    };
 
     let mut wrapped_lines: Vec<Line<'static>> = Vec::new();
     for line in raw_lines {
@@ -471,7 +477,11 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     let effective_offset = state.scroll_offset.min(max_scroll);
     let scroll = max_scroll.saturating_sub(effective_offset);
 
-    let mut visible: Vec<Line<'static>> = wrapped_lines.into_iter().skip(scroll).take(chat_height).collect();
+    let mut visible: Vec<Line<'static>> = wrapped_lines
+        .into_iter()
+        .skip(scroll)
+        .take(chat_height)
+        .collect();
 
     // Clamp visible lines in the brain region to reduced_width so they
     // don't render behind the overlay. Lines beyond brain_h get full width
@@ -487,9 +497,10 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     }
     // Show scroll indicator when scrolled up
     if effective_offset > 0 && chat_height > 0 {
-        let indicator_line = Line::from(vec![
-            Span::styled(" ↑ more messages ", Style::default().fg(CYAN).add_modifier(Modifier::BOLD)),
-        ]);
+        let indicator_line = Line::from(vec![Span::styled(
+            " ↑ more messages ",
+            Style::default().fg(CYAN).add_modifier(Modifier::BOLD),
+        )]);
         // Insert indicator as first visible line
         if !visible.is_empty() {
             visible[0] = indicator_line;
@@ -511,7 +522,7 @@ fn ui(f: &mut Frame, state: &AppState) {
         .constraints([
             Constraint::Length(3), // Header
             Constraint::Length(1), // Status bar
-            Constraint::Min(5),   // Chat
+            Constraint::Min(5),    // Chat
             Constraint::Length(3), // Input
         ])
         .split(size);
@@ -522,8 +533,14 @@ fn ui(f: &mut Frame, state: &AppState) {
     let peer_color = if state.peer_count > 0 { CYAN } else { DIM };
     let peer_icon = if state.peer_count > 0 { "⬡" } else { "⬡" };
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("SAGE", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
-        Span::styled(" — Shared Adaptive Growing Experience", Style::default().fg(PURPLE)),
+        Span::styled(
+            "SAGE",
+            Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " — Shared Adaptive Growing Experience",
+            Style::default().fg(PURPLE),
+        ),
         Span::styled(format!("  v{}", version), Style::default().fg(DIM)),
     ]))
     .block(
@@ -533,7 +550,10 @@ fn ui(f: &mut Frame, state: &AppState) {
             .title_bottom(
                 Line::from(vec![
                     Span::styled(format!(" {} ", peer_icon), Style::default().fg(peer_color)),
-                    Span::styled(format!("{} peers ", peer_str), Style::default().fg(peer_color)),
+                    Span::styled(
+                        format!("{} peers ", peer_str),
+                        Style::default().fg(peer_color),
+                    ),
                 ])
                 .alignment(ratatui::layout::Alignment::Right),
             )
@@ -543,18 +563,28 @@ fn ui(f: &mut Frame, state: &AppState) {
     f.render_widget(header, chunks[0]);
 
     // Status bar
-    let engine_color = if state.engine_name.contains("Ollama") { CYAN } else { ORANGE };
+    let engine_color = if state.engine_name.contains("Ollama") {
+        CYAN
+    } else {
+        ORANGE
+    };
     let status = Paragraph::new(Line::from(vec![
         Span::styled(" ◉ ", Style::default().fg(engine_color)),
         Span::styled(&state.engine_name, Style::default().fg(engine_color)),
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("memories:", Style::default().fg(DIM)),
-        Span::styled(format!("{}", state.active_cells), Style::default().fg(PURPLE)),
+        Span::styled(
+            format!("{}", state.active_cells),
+            Style::default().fg(PURPLE),
+        ),
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("brain:", Style::default().fg(DIM)),
         Span::styled(&state.brain_path, Style::default().fg(DIM_GREEN)),
         if state.generating {
-            Span::styled("  ◌ generating…", Style::default().fg(PURPLE).add_modifier(Modifier::BOLD))
+            Span::styled(
+                "  ◌ generating…",
+                Style::default().fg(PURPLE).add_modifier(Modifier::BOLD),
+            )
         } else if state.scroll_offset > 0 {
             Span::styled("  ↑ scrolled up (PgDn to return)", Style::default().fg(DIM))
         } else {
@@ -607,7 +637,11 @@ fn simple_hash(s: &str) -> usize {
 }
 
 /// Run the ratatui TUI chat interface with local inference.
-pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    engine_mode: EngineMode,
+    model: &str,
+    ollama_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let brain_path = default_brain_path();
     let mut knowledge = NCAKnowledge::new();
     // Load existing brain if available
@@ -637,8 +671,16 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
         EngineMode::Auto => {
             // Auto-detect: prefer Ollama if running, fall back to embedded
             let ollama = OllamaEngine::new(
-                if model.is_empty() { None } else { Some(model.to_string()) },
-                if ollama_url.is_empty() { None } else { Some(ollama_url.to_string()) },
+                if model.is_empty() {
+                    None
+                } else {
+                    Some(model.to_string())
+                },
+                if ollama_url.is_empty() {
+                    None
+                } else {
+                    Some(ollama_url.to_string())
+                },
             );
             if ollama.is_available() {
                 eprintln!("🔗 Auto-detected Ollama: {}", ollama.name());
@@ -736,7 +778,10 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
             let is_newer = latest_ver > current_ver
                 || (latest_ver == current_ver && cv.contains('-') && !latest_is_prerelease);
             if is_newer {
-                Some(format!("🆕 Update available: v{} → {} — run `sage update` to upgrade", cv, tag))
+                Some(format!(
+                    "🆕 Update available: v{} → {} — run `sage update` to upgrade",
+                    cv, tag
+                ))
             } else {
                 None
             }
@@ -762,7 +807,8 @@ pub fn run(engine_mode: EngineMode, model: &str, ollama_url: &str) -> Result<(),
 - You run entirely on the user's local machine — no cloud, no data leaving their computer\n\
 - You're designed to be part of a peer-to-peer network where nodes share knowledge diffs, so the collective gets smarter as more people run SAGE\n\
 - Unlike LLMs which are frozen after training, you continuously learn and adapt from every conversation\n\n\
-Be helpful, curious, and genuine. When asked about how you work, be honest about your NCA brain architecture and how it differs from traditional LLMs. You're a new experiment in decentralized intelligence — own that.".to_string(),
+Be helpful, curious, and genuine. When asked about how you work, be honest about your NCA brain architecture and how it differs from traditional LLMs. You're a new experiment in decentralized intelligence — own that.\n\n\
+IMPORTANT: Never include internal metadata, relevance scores, debug information, or technical annotations in your responses. Never reference NCA cells, node sync status, or internal processing details unless the user specifically asks about your architecture. Always respond with a single, coherent message — never split into numbered alternative responses.".to_string(),
     };
     let mut history: Vec<ChatMessage> = vec![system_msg];
 
@@ -822,7 +868,12 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                             let mut k = knowledge.lock().unwrap();
                             let (cx, cy) = k.encode(&response, 0.8);
                             if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
-                                flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                                flash_nearby_cells(
+                                    &mut state.brain_flashes,
+                                    cx,
+                                    cy,
+                                    BrainMode::Encoding,
+                                );
                             }
                             // Update active cell count
                             state.active_cells = k.active_knowledge(0.01).len();
@@ -902,7 +953,12 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                 let mut k = knowledge.lock().unwrap();
                                 let (cx, cy) = k.encode(&input, 0.6);
                                 if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
-                                    flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                                    flash_nearby_cells(
+                                        &mut state.brain_flashes,
+                                        cx,
+                                        cy,
+                                        BrainMode::Encoding,
+                                    );
                                 }
                                 // Update knowledge count after encoding user input
                                 state.active_cells = k.active_knowledge(0.01).len();
@@ -914,13 +970,19 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                 if let Some(brain_context) = retrieve_brain_knowledge(&k, &input) {
                                     // Augment the system message with retrieved knowledge
                                     if let Some(sys) = history.first_mut() {
-                                        if sys.role == ChatRole::System && !sys.content.contains("## Recalled Knowledge") {
-                                            sys.content = format!("{}\n\n{}", sys.content, brain_context);
+                                        if sys.role == ChatRole::System
+                                            && !sys.content.contains("## Recalled Knowledge")
+                                        {
+                                            sys.content =
+                                                format!("{}\n\n{}", sys.content, brain_context);
                                         } else if sys.role == ChatRole::System {
                                             // Replace previous recalled knowledge section
-                                            if let Some(pos) = sys.content.find("\n\n## Recalled Knowledge") {
+                                            if let Some(pos) =
+                                                sys.content.find("\n\n## Recalled Knowledge")
+                                            {
                                                 sys.content.truncate(pos);
-                                                sys.content = format!("{}\n\n{}", sys.content, brain_context);
+                                                sys.content =
+                                                    format!("{}\n\n{}", sys.content, brain_context);
                                             }
                                         }
                                     }
@@ -930,7 +992,12 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                     for r in &results {
                                         let (rx, ry) = r.position;
                                         if rx < BRAIN_VIZ_SIZE && ry < BRAIN_VIZ_SIZE {
-                                            flash_nearby_cells(&mut state.brain_flashes, rx, ry, BrainMode::Retrieving);
+                                            flash_nearby_cells(
+                                                &mut state.brain_flashes,
+                                                rx,
+                                                ry,
+                                                BrainMode::Retrieving,
+                                            );
                                         }
                                     }
                                 }
@@ -941,7 +1008,12 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                 let mut k = knowledge.lock().unwrap();
                                 let (cx, cy) = k.encode(&input, 0.7);
                                 if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
-                                    flash_nearby_cells(&mut state.brain_flashes, cx, cy, BrainMode::Encoding);
+                                    flash_nearby_cells(
+                                        &mut state.brain_flashes,
+                                        cx,
+                                        cy,
+                                        BrainMode::Encoding,
+                                    );
                                 }
                             }
 
@@ -962,7 +1034,8 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                     1000,
                                     Box::new(move |token: &str| {
                                         resp_clone.lock().unwrap().push_str(token);
-                                        let _ = tx_token.send(InferenceMsg::Token(token.to_string()));
+                                        let _ =
+                                            tx_token.send(InferenceMsg::Token(token.to_string()));
                                     }),
                                 );
                                 match result {
@@ -970,7 +1043,9 @@ Be helpful, curious, and genuine. When asked about how you work, be honest about
                                         let final_text = full_response.lock().unwrap().clone();
                                         let _ = tx_clone.send(InferenceMsg::Done(final_text));
                                     }
-                                    Err(e) => { let _ = tx_clone.send(InferenceMsg::Error(e.to_string())); }
+                                    Err(e) => {
+                                        let _ = tx_clone.send(InferenceMsg::Error(e.to_string()));
+                                    }
                                 }
                             });
                         }
@@ -1063,7 +1138,10 @@ fn handle_command(state: &mut AppState, cmd: &str) {
         _ => {
             state.messages.push(TuiChatMessage {
                 role: Role::System,
-                content: format!("Unknown command: {}. Type /help for available commands.", parts[0]),
+                content: format!(
+                    "Unknown command: {}. Type /help for available commands.",
+                    parts[0]
+                ),
             });
         }
     }

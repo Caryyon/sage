@@ -4,12 +4,11 @@
 //! Uses cosine similarity for semantic matching when embeddings are available.
 //! Returns actual text snippets via the TextStore.
 
-use crate::grid::{
-    Grid, KNOWLEDGE_EMBEDDING, KNOWLEDGE_ACTIVATION,
-    META_TIMESTAMP, META_CONFIDENCE,
-};
-use super::encoder::{FeatureVector, EncoderConfig, encode_text, feature_to_position};
+use super::encoder::{encode_text, feature_to_position, EncoderConfig, FeatureVector};
 use super::text_store::TextStore;
+use crate::grid::{
+    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING, META_CONFIDENCE, META_TIMESTAMP,
+};
 
 /// A knowledge activation result from querying the grid
 #[derive(Clone, Debug)]
@@ -142,9 +141,7 @@ pub fn query_knowledge_by_features_with_text(
             let relevance = activation * 0.4 + proximity * 0.4 + confidence * 0.2;
 
             // Look up original text
-            let text = text_store.and_then(|ts| {
-                ts.peek(nx, ny).map(|s| s.to_string())
-            });
+            let text = text_store.and_then(|ts| ts.peek(nx, ny).map(|s| s.to_string()));
 
             // Deduplicate by text content
             if let Some(ref t) = text {
@@ -167,7 +164,11 @@ pub fn query_knowledge_by_features_with_text(
     }
 
     // Sort by relevance (highest first) and truncate
-    results.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.relevance
+            .partial_cmp(&a.relevance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(max_results);
     results
 }
@@ -198,7 +199,8 @@ pub fn decode_region(
             let dist = ((dx * dx + dy * dy) as f64).sqrt();
             let weight = activation / (1.0 + dist);
 
-            let offset = ((dy + r) as usize * (2 * r as usize + 1) + (dx + r) as usize) % num_features;
+            let offset =
+                ((dy + r) as usize * (2 * r as usize + 1) + (dx + r) as usize) % num_features;
             features.values[offset] += grid.cells[ny][nx][KNOWLEDGE_EMBEDDING] * weight;
             total_weight += weight;
         }
@@ -216,9 +218,9 @@ pub fn decode_region(
 
 #[cfg(test)]
 mod tests {
+    use super::super::encoder::write_knowledge;
     use super::*;
     use crate::grid::GRID_SIZE;
-    use super::super::encoder::write_knowledge;
 
     fn setup_grid_with_knowledge(text: &str) -> (Grid, EncoderConfig, (usize, usize)) {
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
@@ -234,7 +236,10 @@ mod tests {
         let (grid, config, _pos) = setup_grid_with_knowledge("rust programming language");
 
         let results = query_knowledge(&grid, "rust programming language", &config, 10);
-        assert!(!results.is_empty(), "Should find knowledge that was written");
+        assert!(
+            !results.is_empty(),
+            "Should find knowledge that was written"
+        );
         assert!(results[0].activation > 0.0);
     }
 
@@ -246,7 +251,11 @@ mod tests {
         text_store.insert(pos.0, pos.1, "rust programming language".into());
 
         let results = query_knowledge_with_text(
-            &grid, "rust programming language", &config, 10, Some(&text_store)
+            &grid,
+            "rust programming language",
+            &config,
+            10,
+            Some(&text_store),
         );
         assert!(!results.is_empty());
 
@@ -276,7 +285,10 @@ mod tests {
         let (grid, _config, _pos) = setup_grid_with_knowledge("test scan");
 
         let active = scan_active_knowledge(&grid, 0.01);
-        assert!(!active.is_empty(), "Should find active cells after writing knowledge");
+        assert!(
+            !active.is_empty(),
+            "Should find active cells after writing knowledge"
+        );
     }
 
     #[test]
@@ -315,13 +327,16 @@ mod tests {
             text_store.insert(pos.0 + 1, pos.1, "test dedup".into());
         }
 
-        let results = query_knowledge_with_text(
-            &grid, "test dedup", &config, 10, Some(&text_store)
-        );
+        let results =
+            query_knowledge_with_text(&grid, "test dedup", &config, 10, Some(&text_store));
         // Count how many results have the same text
-        let text_results: Vec<_> = results.iter()
+        let text_results: Vec<_> = results
+            .iter()
             .filter(|r| r.text.as_deref() == Some("test dedup"))
             .collect();
-        assert!(text_results.len() <= 1, "Should deduplicate identical text snippets");
+        assert!(
+            text_results.len() <= 1,
+            "Should deduplicate identical text snippets"
+        );
     }
 }

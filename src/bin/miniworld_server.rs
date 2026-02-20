@@ -5,23 +5,23 @@
 //! containing only changed characters/tiles for reduced bandwidth.
 
 use axum::{
-    Router,
-    extract::{State, WebSocketUpgrade},
     extract::ws::{Message, WebSocket},
+    extract::{State, WebSocketUpgrade},
     response::IntoResponse,
     routing::get,
+    Router,
 };
 use futures::{SinkExt, StreamExt};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
-use tower_http::cors::{CorsLayer, Any};
 
-use sage::miniworld::{World, create_default_town, town::add_default_sages, OpenClawBridge};
 use sage::miniworld::character::CharacterState;
 use sage::miniworld::openclaw_bridge::TaskType;
+use sage::miniworld::{create_default_town, town::add_default_sages, OpenClawBridge, World};
 
 /// Shared world state
 struct AppState {
@@ -109,52 +109,59 @@ fn snapshot_world(world: &World) -> WorldSnapshot {
 }
 
 fn snapshot_world_with_tasks(world: &World, task_info: &CharacterTaskInfo) -> WorldSnapshot {
-    let tiles: Vec<Vec<TileSnapshot>> = world.tiles.iter().map(|row| {
-        row.iter().map(|tile| {
-            TileSnapshot {
-                ground: format!("{:?}", tile.ground),
-                overlay: tile.overlay.map(|o| format!("{:?}", o)),
-                sprite_col: tile.sprite_col,
-                sprite_row: tile.sprite_row,
-                team_color: if tile.team_color != sage::miniworld::TeamColor::Wood {
-                    Some(format!("{:?}", tile.team_color))
-                } else {
-                    None
-                },
-            }
-        }).collect()
-    }).collect();
+    let tiles: Vec<Vec<TileSnapshot>> = world
+        .tiles
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|tile| TileSnapshot {
+                    ground: format!("{:?}", tile.ground),
+                    overlay: tile.overlay.map(|o| format!("{:?}", o)),
+                    sprite_col: tile.sprite_col,
+                    sprite_row: tile.sprite_row,
+                    team_color: if tile.team_color != sage::miniworld::TeamColor::Wood {
+                        Some(format!("{:?}", tile.team_color))
+                    } else {
+                        None
+                    },
+                })
+                .collect()
+        })
+        .collect();
 
-    let characters: HashMap<String, CharacterSnapshot> = world.characters.iter()
+    let characters: HashMap<String, CharacterSnapshot> = world
+        .characters
+        .iter()
         .map(|(id, c)| {
-            let (current_task, task_status, last_result) = task_info
-                .get(id)
-                .cloned()
-                .unwrap_or((None, None, None));
-            (id.clone(), CharacterSnapshot {
-                id: c.id.clone(),
-                name: c.name.clone(),
-                x: c.x,
-                y: c.y,
-                direction: format!("{:?}", c.direction).to_lowercase(),
-                state: match &c.state {
-                    CharacterState::Idle => "idle".to_string(),
-                    CharacterState::Walking => "walking".to_string(),
-                    CharacterState::Working => "working".to_string(),
-                    CharacterState::Talking { with } => format!("talking:{}", with),
-                    CharacterState::Sleeping => "sleeping".to_string(),
-                    CharacterState::Eating => "eating".to_string(),
-                    CharacterState::Shopping => "shopping".to_string(),
-                    CharacterState::Researching { topic } => format!("researching:{}", topic),
-                    CharacterState::Coding { project } => format!("coding:{}", project),
-                    CharacterState::Analyzing { subject } => format!("analyzing:{}", subject),
+            let (current_task, task_status, last_result) =
+                task_info.get(id).cloned().unwrap_or((None, None, None));
+            (
+                id.clone(),
+                CharacterSnapshot {
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    x: c.x,
+                    y: c.y,
+                    direction: format!("{:?}", c.direction).to_lowercase(),
+                    state: match &c.state {
+                        CharacterState::Idle => "idle".to_string(),
+                        CharacterState::Walking => "walking".to_string(),
+                        CharacterState::Working => "working".to_string(),
+                        CharacterState::Talking { with } => format!("talking:{}", with),
+                        CharacterState::Sleeping => "sleeping".to_string(),
+                        CharacterState::Eating => "eating".to_string(),
+                        CharacterState::Shopping => "shopping".to_string(),
+                        CharacterState::Researching { topic } => format!("researching:{}", topic),
+                        CharacterState::Coding { project } => format!("coding:{}", project),
+                        CharacterState::Analyzing { subject } => format!("analyzing:{}", subject),
+                    },
+                    sprite: format!("{:?}", c.sprite),
+                    anim_frame: c.anim_frame,
+                    current_task,
+                    task_status,
+                    last_result,
                 },
-                sprite: format!("{:?}", c.sprite),
-                anim_frame: c.anim_frame,
-                current_task,
-                task_status,
-                last_result,
-            })
+            )
         })
         .collect();
 
@@ -180,7 +187,9 @@ fn compute_delta(prev: &WorldSnapshot, curr: &WorldSnapshot) -> DeltaMessage {
     for (id, char_snap) in &curr.characters {
         match prev.characters.get(id) {
             Some(prev_char) if prev_char == char_snap => {} // unchanged
-            _ => { characters_changed.insert(id.clone(), char_snap.clone()); }
+            _ => {
+                characters_changed.insert(id.clone(), char_snap.clone());
+            }
         }
     }
 
@@ -206,22 +215,24 @@ fn compute_delta(prev: &WorldSnapshot, curr: &WorldSnapshot) -> DeltaMessage {
     }
 }
 
-async fn api_instances(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn api_instances(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let world = state.world.read().await;
-    let chars: Vec<serde_json::Value> = world.characters.iter().map(|(id, c)| {
-        serde_json::json!({
-            "instance_id": id,
-            "name": c.name,
-            "role": format!("{:?}", c.sprite),
-            "status": "online",
-            "total_tasks": 0,
-            "success_rate": 100.0,
-            "pending_approvals": 0,
-            "expertise_level": "Apprentice"
+    let chars: Vec<serde_json::Value> = world
+        .characters
+        .iter()
+        .map(|(id, c)| {
+            serde_json::json!({
+                "instance_id": id,
+                "name": c.name,
+                "role": format!("{:?}", c.sprite),
+                "status": "online",
+                "total_tasks": 0,
+                "success_rate": 100.0,
+                "pending_approvals": 0,
+                "expertise_level": "Apprentice"
+            })
         })
-    }).collect();
+        .collect();
     axum::Json(serde_json::json!({
         "success": true,
         "data": chars
@@ -282,13 +293,18 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8888".to_string())
-        .parse::<u16>().unwrap_or(8888);
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "8888".to_string())
+        .parse::<u16>()
+        .unwrap_or(8888);
 
     let mut world = create_default_town();
     add_default_sages(&mut world);
 
-    println!("🏘️  Created SAGE Village with {} characters", world.characters.len());
+    println!(
+        "🏘️  Created SAGE Village with {} characters",
+        world.characters.len()
+    );
 
     let (tx, _) = broadcast::channel::<String>(100);
     let (delta_tx, _) = broadcast::channel::<String>(100);
@@ -302,14 +318,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         openclaw,
     });
 
-    let research_topics = ["neural architecture search", "self-supervised learning", "meta-learning strategies",
-        "curiosity-driven exploration", "emergent behavior in multi-agent systems",
-        "transformer attention mechanisms", "reinforcement learning from human feedback"];
-    let coding_projects = ["pattern recognition module", "memory consolidation system", "adaptive learning rate scheduler",
-        "distributed training pipeline", "knowledge graph builder", "autonomous code reviewer"];
-    let analysis_subjects = ["training loss convergence patterns", "agent interaction dynamics",
-        "resource allocation efficiency", "learning transfer between domains",
-        "population diversity metrics", "novelty search effectiveness"];
+    let research_topics = [
+        "neural architecture search",
+        "self-supervised learning",
+        "meta-learning strategies",
+        "curiosity-driven exploration",
+        "emergent behavior in multi-agent systems",
+        "transformer attention mechanisms",
+        "reinforcement learning from human feedback",
+    ];
+    let coding_projects = [
+        "pattern recognition module",
+        "memory consolidation system",
+        "adaptive learning rate scheduler",
+        "distributed training pipeline",
+        "knowledge graph builder",
+        "autonomous code reviewer",
+    ];
+    let analysis_subjects = [
+        "training loss convergence patterns",
+        "agent interaction dynamics",
+        "resource allocation efficiency",
+        "learning transfer between domains",
+        "population diversity metrics",
+        "novelty search effectiveness",
+    ];
 
     // Simulation loop
     let sim_state = state.clone();
@@ -332,10 +365,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let char_ids: Vec<String> = world.characters.keys().cloned().collect();
                 for id in char_ids {
                     if let Some(character) = world.characters.get_mut(&id) {
-                        if character.state == CharacterState::Idle && character.destination.is_none()
-                            && rand::random::<f32>() < 0.05 {
-                                character.wander(w, h);
-                            }
+                        if character.state == CharacterState::Idle
+                            && character.destination.is_none()
+                            && rand::random::<f32>() < 0.05
+                        {
+                            character.wander(w, h);
+                        }
                     }
                 }
                 world.tick
@@ -345,9 +380,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if task_poll_counter.is_multiple_of(10) {
                 let char_states: Vec<(String, CharacterState, String)> = {
                     let world = sim_state.world.read().await;
-                    world.characters.iter().map(|(id, c)| {
-                        (id.clone(), c.state.clone(), format!("{:?}", c.sprite))
-                    }).collect()
+                    world
+                        .characters
+                        .iter()
+                        .map(|(id, c)| (id.clone(), c.state.clone(), format!("{:?}", c.sprite)))
+                        .collect()
                 };
 
                 for (id, state, sprite) in &char_states {
@@ -362,23 +399,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     let task_type = if sprite.contains("Mage") {
-                        let topic = research_topics[rand::random::<usize>() % research_topics.len()].to_string();
+                        let topic = research_topics
+                            [rand::random::<usize>() % research_topics.len()]
+                        .to_string();
                         TaskType::Research { topic }
                     } else if sprite.contains("Swordsman") {
-                        let project = coding_projects[rand::random::<usize>() % coding_projects.len()].to_string();
+                        let project = coding_projects
+                            [rand::random::<usize>() % coding_projects.len()]
+                        .to_string();
                         TaskType::Coding { project }
                     } else {
-                        let subject = analysis_subjects[rand::random::<usize>() % analysis_subjects.len()].to_string();
+                        let subject = analysis_subjects
+                            [rand::random::<usize>() % analysis_subjects.len()]
+                        .to_string();
                         TaskType::Analysis { subject }
                     };
 
                     let new_state = match &task_type {
-                        TaskType::Research { topic } => CharacterState::Researching { topic: topic.clone() },
-                        TaskType::Coding { project } => CharacterState::Coding { project: project.clone() },
-                        TaskType::Analysis { subject } => CharacterState::Analyzing { subject: subject.clone() },
+                        TaskType::Research { topic } => CharacterState::Researching {
+                            topic: topic.clone(),
+                        },
+                        TaskType::Coding { project } => CharacterState::Coding {
+                            project: project.clone(),
+                        },
+                        TaskType::Analysis { subject } => CharacterState::Analyzing {
+                            subject: subject.clone(),
+                        },
                     };
 
-                    if let Some(_task_id) = sim_state.openclaw.spawn_task(id, task_type, current_tick).await {
+                    if let Some(_task_id) = sim_state
+                        .openclaw
+                        .spawn_task(id, task_type, current_tick)
+                        .await
+                    {
                         let mut world = sim_state.world.write().await;
                         if let Some(character) = world.characters.get_mut(id) {
                             character.state = new_state;
@@ -453,22 +506,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/ws", get(websocket_handler))
         .route("/api/instances", get(api_instances))
         .route("/api/ws", get(websocket_handler))
-        .nest_service("/city", ServeDir::new("static/miniworld").fallback(ServeFile::new("static/miniworld/index.html")))
-        .nest_service("/dashboard", ServeDir::new("static/dashboard").fallback(ServeFile::new("static/dashboard/index.html")))
-        .nest_service("/journals", ServeDir::new("static/journals").fallback(ServeFile::new("static/journals/index.html")))
+        .nest_service(
+            "/city",
+            ServeDir::new("static/miniworld")
+                .fallback(ServeFile::new("static/miniworld/index.html")),
+        )
+        .nest_service(
+            "/dashboard",
+            ServeDir::new("static/dashboard")
+                .fallback(ServeFile::new("static/dashboard/index.html")),
+        )
+        .nest_service(
+            "/journals",
+            ServeDir::new("static/journals").fallback(ServeFile::new("static/journals/index.html")),
+        )
         .nest_service("/sprites", ServeDir::new("static/miniworld/sprites"))
-        .route("/install.sh", get(|| async {
-            match tokio::fs::read_to_string("static/install.sh").await {
-                Ok(script) => axum::response::Response::builder()
-                    .header("content-type", "text/plain; charset=utf-8")
-                    .body(axum::body::Body::from(script))
-                    .unwrap(),
-                Err(_) => axum::response::Response::builder()
-                    .status(404)
-                    .body(axum::body::Body::from("install.sh not found"))
-                    .unwrap(),
-            }
-        }))
+        .route(
+            "/install.sh",
+            get(|| async {
+                match tokio::fs::read_to_string("static/install.sh").await {
+                    Ok(script) => axum::response::Response::builder()
+                        .header("content-type", "text/plain; charset=utf-8")
+                        .body(axum::body::Body::from(script))
+                        .unwrap(),
+                    Err(_) => axum::response::Response::builder()
+                        .status(404)
+                        .body(axum::body::Body::from("install.sh not found"))
+                        .unwrap(),
+                }
+            }),
+        )
         .fallback_service(ServeDir::new("static").fallback(ServeFile::new("static/index.html")))
         .layer(cors)
         .with_state(state);

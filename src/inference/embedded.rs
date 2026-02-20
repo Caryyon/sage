@@ -37,7 +37,8 @@ impl EmbeddedLLM {
 
         let (model_file, tokenizer_file) = if let Some(path) = model_path {
             // User-provided model path — look for tokenizer.json next to it
-            let tokenizer_path = path.parent()
+            let tokenizer_path = path
+                .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .join("tokenizer.json");
             if !path.exists() {
@@ -132,7 +133,10 @@ impl EmbeddedLLM {
                     prompt.push_str(&format!("<|im_start|>user\n{}<|im_end|>\n", msg.content));
                 }
                 ChatRole::Assistant => {
-                    prompt.push_str(&format!("<|im_start|>assistant\n{}<|im_end|>\n", msg.content));
+                    prompt.push_str(&format!(
+                        "<|im_start|>assistant\n{}<|im_end|>\n",
+                        msg.content
+                    ));
                 }
             }
         }
@@ -147,7 +151,9 @@ impl EmbeddedLLM {
         max_tokens: usize,
         mut callback: Option<Box<dyn FnMut(&str) + Send>>,
     ) -> Result<String, Box<dyn Error>> {
-        let encoding = self.tokenizer.encode(prompt, true)
+        let encoding = self
+            .tokenizer
+            .encode(prompt, true)
             .map_err(|e| format!("Tokenizer error: {}", e))?;
         let prompt_tokens = encoding.get_ids().to_vec();
 
@@ -163,13 +169,14 @@ impl EmbeddedLLM {
         // Clone model for mutable forward pass
         let mut model = self.model.clone();
         let mut generated = String::new();
-        let eos_token = self.tokenizer.token_to_id("<|im_end|>")
+        let eos_token = self
+            .tokenizer
+            .token_to_id("<|im_end|>")
             .or_else(|| self.tokenizer.token_to_id("</s>"))
             .unwrap_or(2);
 
         // Process prompt
-        let prompt_tensor = Tensor::new(prompt_tokens.as_slice(), &self.device)?
-            .unsqueeze(0)?;
+        let prompt_tensor = Tensor::new(prompt_tokens.as_slice(), &self.device)?.unsqueeze(0)?;
         let logits = model.forward(&prompt_tensor, 0)?;
         let logits = logits.squeeze(0)?;
         let logits = if logits.dims().len() == 1 {

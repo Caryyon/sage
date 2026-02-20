@@ -55,8 +55,8 @@ pub struct OllamaEngine {
 
 impl OllamaEngine {
     pub fn new(model: Option<String>, url: Option<String>) -> Self {
-        let default_url = std::env::var("OLLAMA_HOST")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let default_url =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
         let model = model.unwrap_or_else(|| "qwen2.5:14b".to_string());
         let display_name = format!("Ollama ({})", model);
         Self {
@@ -67,14 +67,17 @@ impl OllamaEngine {
     }
 
     fn chat_messages_to_ollama(messages: &[ChatMessage]) -> Vec<OllamaChatMessage> {
-        messages.iter().map(|m| OllamaChatMessage {
-            role: match m.role {
-                ChatRole::System => "system".to_string(),
-                ChatRole::User => "user".to_string(),
-                ChatRole::Assistant => "assistant".to_string(),
-            },
-            content: m.content.clone(),
-        }).collect()
+        messages
+            .iter()
+            .map(|m| OllamaChatMessage {
+                role: match m.role {
+                    ChatRole::System => "system".to_string(),
+                    ChatRole::User => "user".to_string(),
+                    ChatRole::Assistant => "assistant".to_string(),
+                },
+                content: m.content.clone(),
+            })
+            .collect()
     }
 }
 
@@ -116,7 +119,8 @@ impl InferenceEngine for OllamaEngine {
         }
 
         let body: OllamaChatResponse = resp.json()?;
-        Ok(body.message
+        Ok(body
+            .message
             .and_then(|m| m.content)
             .unwrap_or_default()
             .trim()
@@ -143,7 +147,9 @@ impl InferenceEngine for OllamaEngine {
         let reader = std::io::BufReader::new(resp);
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             if let Ok(val) = serde_json::from_str::<OllamaGenerateResponse>(&line) {
                 if let Some(text) = val.response {
                     callback(&text);
@@ -176,7 +182,9 @@ impl InferenceEngine for OllamaEngine {
         let reader = std::io::BufReader::new(resp);
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             if let Ok(val) = serde_json::from_str::<OllamaChatResponse>(&line) {
                 if let Some(msg) = val.message {
                     if let Some(content) = msg.content {

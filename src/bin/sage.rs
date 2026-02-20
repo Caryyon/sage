@@ -7,7 +7,7 @@
 //!   sage config     — show/edit configuration
 
 use clap::{Parser, Subcommand};
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore, default_brain_path};
+use sage::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -102,8 +102,18 @@ fn main() {
     match cli.command {
         None | Some(Commands::Chat { .. }) => {
             let (ollama, embedded, model, ollama_url) = match cli.command {
-                Some(Commands::Chat { ollama, embedded, model, ollama_url }) => (ollama, embedded, model, ollama_url),
-                _ => (false, false, "qwen2.5:14b".to_string(), "http://localhost:11434".to_string()),
+                Some(Commands::Chat {
+                    ollama,
+                    embedded,
+                    model,
+                    ollama_url,
+                }) => (ollama, embedded, model, ollama_url),
+                _ => (
+                    false,
+                    false,
+                    "qwen2.5:14b".to_string(),
+                    "http://localhost:11434".to_string(),
+                ),
             };
 
             // Determine engine mode: force-ollama, force-embedded, or auto-detect
@@ -134,7 +144,14 @@ fn main() {
             run_update(quiet);
         }
         Some(Commands::Node { command }) => match command {
-            NodeCommands::Start { port, chat_port, sync_interval, no_mdns, foreground, daemon_internal } => {
+            NodeCommands::Start {
+                port,
+                chat_port,
+                sync_interval,
+                no_mdns,
+                foreground,
+                daemon_internal,
+            } => {
                 if foreground || daemon_internal {
                     // Run directly (foreground mode or we ARE the daemon)
                     if daemon_internal {
@@ -210,13 +227,17 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
 
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["node", "start", "--daemon-internal"])
-        .arg("--port").arg(port.to_string())
-        .arg("--chat-port").arg(chat_port.to_string())
-        .arg("--sync-interval").arg(sync_interval.to_string());
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--chat-port")
+        .arg(chat_port.to_string())
+        .arg("--sync-interval")
+        .arg(sync_interval.to_string());
     if no_mdns {
         cmd.arg("--no-mdns");
     }
-    cmd.stdout(log).stderr(log_err)
+    cmd.stdout(log)
+        .stderr(log_err)
         .stdin(std::process::Stdio::null());
 
     // Detach from parent process group on Unix
@@ -241,12 +262,12 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
 
 /// Start the SAGE node.
 fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) {
-    use sage::network::{NetworkManager, NetworkConfig};
     use sage::network::identity::NodeIdentity;
+    use sage::network::{NetworkConfig, NetworkManager};
     use std::sync::Arc;
-    use tokio::sync::Mutex;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
+    use tokio::sync::Mutex;
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
@@ -255,12 +276,14 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
         let _ = knowledge.load(&brain_path); // load existing if available
         let knowledge: Arc<Mutex<NCAKnowledge>> = Arc::new(Mutex::new(knowledge));
 
-        let identity = NodeIdentity::load_or_generate(None)
-            .expect("Failed to load/create node identity");
+        let identity =
+            NodeIdentity::load_or_generate(None).expect("Failed to load/create node identity");
         println!("🧠 SAGE Node starting...");
         println!("   Identity: {}", identity.node_id);
-        println!("   Brain: {brain_path} ({} active cells)",
-                 knowledge.lock().await.active_knowledge(0.01).len());
+        println!(
+            "   Brain: {brain_path} ({} active cells)",
+            knowledge.lock().await.active_knowledge(0.01).len()
+        );
 
         let net_config = NetworkConfig {
             listen_port: port,
@@ -291,8 +314,12 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
                         let _ = writer.write_all(b"SAGE node connected.\n").await;
                         while let Ok(Some(line)) = lines.next_line().await {
                             let line = line.trim().to_string();
-                            if line.is_empty() { continue; }
-                            if line == "/quit" { break; }
+                            if line.is_empty() {
+                                continue;
+                            }
+                            if line == "/quit" {
+                                break;
+                            }
                             let k3: tokio::sync::MutexGuard<'_, NCAKnowledge> = k2.lock().await;
                             let results = k3.query(&line, 3);
                             if results.is_empty() {
@@ -358,7 +385,10 @@ fn run_node_stop() {
                 eprintln!("Invalid PID file");
             }
         }
-        Err(_) => eprintln!("No running SAGE node found (no PID file at {})", pid_file.display()),
+        Err(_) => eprintln!(
+            "No running SAGE node found (no PID file at {})",
+            pid_file.display()
+        ),
     }
 }
 
@@ -369,12 +399,22 @@ fn run_update(quiet: bool) {
     let repo = std::env::var("SAGE_REPO").unwrap_or_else(|_| "Caryyon/sage".to_string());
 
     // Detect OS/arch
-    let os = if cfg!(target_os = "linux") { "linux" }
-             else if cfg!(target_os = "macos") { "darwin" }
-             else { eprintln!("Unsupported OS"); return; };
-    let arch = if cfg!(target_arch = "x86_64") { "x86_64" }
-               else if cfg!(target_arch = "aarch64") { "arm64" }
-               else { eprintln!("Unsupported arch"); return; };
+    let os = if cfg!(target_os = "linux") {
+        "linux"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        eprintln!("Unsupported OS");
+        return;
+    };
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x86_64"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        eprintln!("Unsupported arch");
+        return;
+    };
 
     // Fetch latest release tag from GitHub API
     let api_url = format!("https://api.github.com/repos/{repo}/releases/latest");
@@ -383,22 +423,27 @@ fn run_update(quiet: bool) {
         .build()
         .unwrap();
     let version = match client.get(&api_url).send() {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.text() {
-                Ok(body) => {
-                    body.split("\"tag_name\"").nth(1)
-                        .and_then(|s| s.split('"').nth(1))
-                        .map(|s| s.to_string())
-                        .unwrap_or_default()
-                }
-                _ => { eprintln!("Failed to parse release info"); return; }
+        Ok(resp) if resp.status().is_success() => match resp.text() {
+            Ok(body) => body
+                .split("\"tag_name\"")
+                .nth(1)
+                .and_then(|s| s.split('"').nth(1))
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+            _ => {
+                eprintln!("Failed to parse release info");
+                return;
             }
+        },
+        _ => {
+            eprintln!("Failed to check for updates");
+            return;
         }
-        _ => { eprintln!("Failed to check for updates"); return; }
     };
 
     if version.is_empty() {
-        eprintln!("No releases found"); return;
+        eprintln!("No releases found");
+        return;
     }
 
     println!("📦 Latest version: {version}");
@@ -418,7 +463,8 @@ fn run_update(quiet: bool) {
                     if let Some(body) = text.split("\"body\":\"").nth(1) {
                         if let Some(body) = body.split("\",\"").next() {
                             let body = body.replace("\\r\\n", "\n").replace("\\n", "\n");
-                            let preview: String = body.lines().take(20).collect::<Vec<_>>().join("\n");
+                            let preview: String =
+                                body.lines().take(20).collect::<Vec<_>>().join("\n");
                             if !preview.is_empty() {
                                 println!("\n📋 Release notes:\n{preview}\n");
                             }
@@ -446,8 +492,8 @@ fn run_update(quiet: bool) {
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
-                        let _ = std::fs::set_permissions(&tmp,
-                            std::fs::Permissions::from_mode(0o755));
+                        let _ =
+                            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
                     }
                     // Atomic rename
                     if let Err(e) = std::fs::rename(&tmp, &bin_path) {
@@ -456,11 +502,20 @@ fn run_update(quiet: bool) {
                     }
                     println!("✅ Binary updated at {}", bin_path.display());
                 }
-                Err(e) => { eprintln!("Download error: {e}"); return; }
+                Err(e) => {
+                    eprintln!("Download error: {e}");
+                    return;
+                }
             }
         }
-        Ok(resp) => { eprintln!("Download failed: HTTP {}", resp.status()); return; }
-        Err(e) => { eprintln!("Connection error: {e}"); return; }
+        Ok(resp) => {
+            eprintln!("Download failed: HTTP {}", resp.status());
+            return;
+        }
+        Err(e) => {
+            eprintln!("Connection error: {e}");
+            return;
+        }
     }
 
     // Run brain migration if needed
@@ -481,7 +536,10 @@ fn run_update(quiet: bool) {
         }
     }
 
-    println!("\n🎉 Update complete! Data in {} preserved.", home.display());
+    println!(
+        "\n🎉 Update complete! Data in {} preserved.",
+        home.display()
+    );
 }
 
 fn run_node_status() {
@@ -494,10 +552,19 @@ fn run_node_status() {
     println!("SAGE Node Status");
     println!("─────────────────");
     println!("  Home:     {}", home.display());
-    println!("  Config:   {} {}", config_path.display(),
-             if config_path.exists() { "✓" } else { "✗" });
-    println!("  Brain:    {brain_path} {}",
-             if std::path::Path::new(&brain_path).exists() { "✓" } else { "✗" });
+    println!(
+        "  Config:   {} {}",
+        config_path.display(),
+        if config_path.exists() { "✓" } else { "✗" }
+    );
+    println!(
+        "  Brain:    {brain_path} {}",
+        if std::path::Path::new(&brain_path).exists() {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
     println!("  Log:      {}", log_file.display());
 
     if pid_file.exists() {

@@ -6,8 +6,7 @@
 //! Spatial locality: related knowledge clusters in nearby cells.
 
 use crate::grid::{
-    Grid, KNOWLEDGE_EMBEDDING, KNOWLEDGE_ACTIVATION,
-    META_TIMESTAMP, META_CONFIDENCE,
+    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING, META_CONFIDENCE, META_TIMESTAMP,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -66,7 +65,12 @@ impl FeatureVector {
         if self.values.len() != other.values.len() {
             return 0.0;
         }
-        let dot: f64 = self.values.iter().zip(&other.values).map(|(a, b)| a * b).sum();
+        let dot: f64 = self
+            .values
+            .iter()
+            .zip(&other.values)
+            .map(|(a, b)| a * b)
+            .sum();
         let mag_a: f64 = self.values.iter().map(|v| v * v).sum::<f64>().sqrt();
         let mag_b: f64 = other.values.iter().map(|v| v * v).sum::<f64>().sqrt();
         if mag_a < 1e-10 || mag_b < 1e-10 {
@@ -118,17 +122,15 @@ pub fn get_ollama_embedding(text: &str, config: &EncoderConfig) -> Option<Vec<f6
         .build()
         .ok()?;
 
-    let resp = client.post(&endpoint)
-        .json(&body)
-        .send()
-        .ok()?;
+    let resp = client.post(&endpoint).json(&body).send().ok()?;
 
     if !resp.status().is_success() {
         return None;
     }
 
     let json: serde_json::Value = resp.json().ok()?;
-    let embedding = json.get("embedding")?
+    let embedding = json
+        .get("embedding")?
         .as_array()?
         .iter()
         .filter_map(|v| v.as_f64())
@@ -152,7 +154,11 @@ pub fn reduce_embedding(full: &[f64], target_size: usize) -> Vec<f64> {
     let mut reduced = Vec::with_capacity(target_size);
     for i in 0..target_size {
         let start = i * chunk_size;
-        let end = if i == target_size - 1 { full.len() } else { start + chunk_size };
+        let end = if i == target_size - 1 {
+            full.len()
+        } else {
+            start + chunk_size
+        };
         let avg: f64 = full[start..end].iter().sum::<f64>() / (end - start) as f64;
         reduced.push(avg);
     }
@@ -210,7 +216,11 @@ pub fn encode_text_hash(text: &str, config: &EncoderConfig) -> FeatureVector {
 
 /// Map a feature vector to a primary grid position using spatial hashing.
 /// Uses multiple feature dimensions for better distribution across large grids.
-pub fn feature_to_position(features: &FeatureVector, grid_width: usize, grid_height: usize) -> (usize, usize) {
+pub fn feature_to_position(
+    features: &FeatureVector,
+    grid_width: usize,
+    grid_height: usize,
+) -> (usize, usize) {
     if features.values.is_empty() {
         return (grid_width / 2, grid_height / 2);
     }
@@ -220,13 +230,17 @@ pub fn feature_to_position(features: &FeatureVector, grid_width: usize, grid_hei
     let n = features.values.len();
     let fx = if n >= 4 {
         // Mix multiple dimensions for x: use dims 0, 2, 4...
-        let mix = features.values[0] * 0.5 + features.values[2.min(n-1)] * 0.3 + features.values[4.min(n-1)] * 0.2;
+        let mix = features.values[0] * 0.5
+            + features.values[2.min(n - 1)] * 0.3
+            + features.values[4.min(n - 1)] * 0.2;
         (mix + 1.0) / 2.0
     } else {
         (features.values[0] + 1.0) / 2.0
     };
     let fy = if n >= 4 {
-        let mix = features.values[1.min(n-1)] * 0.5 + features.values[3.min(n-1)] * 0.3 + features.values[5.min(n-1)] * 0.2;
+        let mix = features.values[1.min(n - 1)] * 0.5
+            + features.values[3.min(n - 1)] * 0.3
+            + features.values[5.min(n - 1)] * 0.2;
         (mix + 1.0) / 2.0
     } else if n > 1 {
         (features.values[1] + 1.0) / 2.0
@@ -262,15 +276,17 @@ pub fn write_knowledge(
 
             let decay = config.spatial_decay.powf(dist);
 
-            let offset = (dy + radius) as usize * (2 * radius as usize + 1) + (dx + radius) as usize;
+            let offset =
+                (dy + radius) as usize * (2 * radius as usize + 1) + (dx + radius) as usize;
             let feat_idx = offset % features.values.len().max(1);
             let embedding_val = features.values[feat_idx];
 
             let existing_embed = grid.cells[ny][nx][KNOWLEDGE_EMBEDDING];
             let existing_act = grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
 
-            grid.cells[ny][nx][KNOWLEDGE_EMBEDDING] =
-                (existing_embed * (1.0 - decay * 0.5) + embedding_val * decay * 0.5).clamp(-1.0, 1.0);
+            grid.cells[ny][nx][KNOWLEDGE_EMBEDDING] = (existing_embed * (1.0 - decay * 0.5)
+                + embedding_val * decay * 0.5)
+                .clamp(-1.0, 1.0);
             grid.cells[ny][nx][KNOWLEDGE_ACTIVATION] =
                 (existing_act + decay * confidence).clamp(0.0, 1.0);
 
@@ -314,7 +330,8 @@ mod tests {
         assert!(
             sim_close > sim_far,
             "Similar texts should have higher similarity: close={} far={}",
-            sim_close, sim_far
+            sim_close,
+            sim_far
         );
     }
 
@@ -324,7 +341,11 @@ mod tests {
         config.ollama_url = None;
         let features = encode_text("test normalization", &config);
         let mag: f64 = features.values.iter().map(|v| v * v).sum::<f64>().sqrt();
-        assert!((mag - 1.0).abs() < 0.01, "Feature vector should be L2-normalized, got mag={}", mag);
+        assert!(
+            (mag - 1.0).abs() < 0.01,
+            "Feature vector should be L2-normalized, got mag={}",
+            mag
+        );
     }
 
     #[test]
@@ -360,7 +381,8 @@ mod tests {
         assert!(
             center_act >= edge_act,
             "Center activation ({}) should be >= edge activation ({})",
-            center_act, edge_act
+            center_act,
+            edge_act
         );
     }
 

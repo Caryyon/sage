@@ -152,10 +152,7 @@ impl GossipTransport for Libp2pTransport {
         for addr_str in &self.config.bootstrap_nodes {
             if let Ok(addr) = addr_str.parse::<Multiaddr>() {
                 if let Some(peer_id) = extract_peer_id(&addr) {
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, addr);
+                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                 }
             }
         }

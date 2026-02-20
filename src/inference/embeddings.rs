@@ -42,7 +42,10 @@ impl EmbeddingEngine {
                 Self { mode }
             }
             Err(e) => {
-                eprintln!("⚠️  Semantic embeddings unavailable ({}), using hash-based fallback", e);
+                eprintln!(
+                    "⚠️  Semantic embeddings unavailable ({}), using hash-based fallback",
+                    e
+                );
                 Self {
                     mode: EmbeddingMode::HashBased,
                 }
@@ -63,9 +66,8 @@ impl EmbeddingEngine {
             .map_err(|e| format!("tokenizer load error: {}", e))?;
 
         let device = Device::Cpu;
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &device)?
-        };
+        let vb =
+            unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &device)? };
         let model = BertModel::load(vb, &config)?;
 
         Ok(EmbeddingMode::Semantic {
@@ -154,7 +156,11 @@ fn semantic_embed(
     let values: Vec<f32> = pooled.to_vec1()?;
 
     // L2 normalize
-    let mag: f64 = values.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt();
+    let mag: f64 = values
+        .iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt();
     let embedding: Vec<f64> = if mag > 0.0 {
         values.iter().map(|x| (*x as f64) / mag).collect()
     } else {

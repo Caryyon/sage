@@ -169,10 +169,7 @@ mod tests {
     fn test_add_and_len() {
         let mut q = Quarantine::new();
         assert!(q.is_empty());
-        q.add(
-            make_diff("a", vec![change(0, 0, 0, 0.5)]),
-            "test".into(),
-        );
+        q.add(make_diff("a", vec![change(0, 0, 0, 0.5)]), "test".into());
         assert_eq!(q.len(), 1);
     }
 
@@ -226,14 +223,8 @@ mod tests {
     #[test]
     fn test_different_diffs_separate() {
         let mut q = Quarantine::new();
-        q.add(
-            make_diff("a", vec![change(0, 0, 0, 0.5)]),
-            "reason".into(),
-        );
-        q.add(
-            make_diff("b", vec![change(5, 5, 2, 0.9)]),
-            "reason".into(),
-        );
+        q.add(make_diff("a", vec![change(0, 0, 0, 0.5)]), "reason".into());
+        q.add(make_diff("b", vec![change(5, 5, 2, 0.9)]), "reason".into());
         assert_eq!(q.len(), 2);
     }
 

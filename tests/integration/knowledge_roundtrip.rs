@@ -3,20 +3,29 @@
 //! Encodes text knowledge into NCA grids, queries back, and verifies
 //! correctness, topic isolation, and persistence.
 
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
-use sage::distributed_knowledge::encoder::{EncoderConfig, encode_text};
+use sage::distributed_knowledge::encoder::{encode_text, EncoderConfig};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
 #[test]
 fn encode_and_query_basic() {
     let mut store = NCAKnowledge::new();
 
-    store.encode("rust is a systems programming language focused on safety", 0.9);
-    store.encode("python is popular for data science and machine learning", 0.9);
+    store.encode(
+        "rust is a systems programming language focused on safety",
+        0.9,
+    );
+    store.encode(
+        "python is popular for data science and machine learning",
+        0.9,
+    );
     store.encode("javascript runs in web browsers and nodejs", 0.9);
 
     let results = store.query("rust systems programming", 10);
     assert!(!results.is_empty(), "Should find results for rust query");
-    assert!(results[0].relevance > 0.0, "Top result should have positive relevance");
+    assert!(
+        results[0].relevance > 0.0,
+        "Top result should have positive relevance"
+    );
 }
 
 #[test]
@@ -29,7 +38,10 @@ fn related_query_returns_results() {
 
     // A related query should return results
     let ml_results = store.query("machine learning algorithms", 10);
-    assert!(!ml_results.is_empty(), "Related ML query should find results");
+    assert!(
+        !ml_results.is_empty(),
+        "Related ML query should find results"
+    );
 }
 
 #[test]
@@ -37,15 +49,24 @@ fn different_topics_should_not_cross_contaminate() {
     let mut store = NCAKnowledge::new();
 
     // Encode very different topics
-    store.encode("quantum physics describes subatomic particle behavior", 0.95);
+    store.encode(
+        "quantum physics describes subatomic particle behavior",
+        0.95,
+    );
     store.encode("italian cooking uses olive oil garlic and tomatoes", 0.95);
 
     let physics_results = store.query("quantum physics particles", 5);
     let cooking_results = store.query("italian cooking olive oil", 5);
 
     // Both should find something
-    assert!(!physics_results.is_empty(), "Physics query should return results");
-    assert!(!cooking_results.is_empty(), "Cooking query should return results");
+    assert!(
+        !physics_results.is_empty(),
+        "Physics query should return results"
+    );
+    assert!(
+        !cooking_results.is_empty(),
+        "Cooking query should return results"
+    );
 
     // The top result for each query should be in different grid positions
     // (indicating they're stored in different regions)
@@ -71,7 +92,10 @@ fn multiple_encodings_accumulate() {
 
     store.encode("second piece of knowledge about biology", 0.8);
     let after_two = store.active_knowledge(0.01).len();
-    assert!(after_two >= after_one, "Active cells should not decrease after more encoding");
+    assert!(
+        after_two >= after_one,
+        "Active cells should not decrease after more encoding"
+    );
 
     store.encode("third piece about chemistry and reactions", 0.8);
     let after_three = store.active_knowledge(0.01).len();
@@ -86,15 +110,22 @@ fn confidence_affects_activation() {
     store_high.encode("test knowledge item", 0.95);
     store_low.encode("test knowledge item", 0.1);
 
-    let high_max: f64 = store_high.active_knowledge(0.01)
-        .iter().map(|k| k.activation).fold(0.0, f64::max);
-    let low_max: f64 = store_low.active_knowledge(0.01)
-        .iter().map(|k| k.activation).fold(0.0, f64::max);
+    let high_max: f64 = store_high
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .fold(0.0, f64::max);
+    let low_max: f64 = store_low
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .fold(0.0, f64::max);
 
     assert!(
         high_max > low_max,
         "Higher confidence should produce higher activation: high={} low={}",
-        high_max, low_max
+        high_max,
+        low_max
     );
 }
 
@@ -118,7 +149,8 @@ fn persistence_save_load_roundtrip() {
     let loaded_results = loaded.query("databases", 5);
 
     assert_eq!(
-        orig_results.len(), loaded_results.len(),
+        orig_results.len(),
+        loaded_results.len(),
         "Loaded store should return same number of results"
     );
 
@@ -127,7 +159,8 @@ fn persistence_save_load_roundtrip() {
         assert!(
             (o.activation - l.activation).abs() < 1e-10,
             "Activations should match after load: {} vs {}",
-            o.activation, l.activation
+            o.activation,
+            l.activation
         );
         assert_eq!(o.position, l.position, "Positions should match");
     }
@@ -135,7 +168,10 @@ fn persistence_save_load_roundtrip() {
     // Active knowledge count should match
     let orig_active = store.active_knowledge(0.01).len();
     let loaded_active = loaded.active_knowledge(0.01).len();
-    assert_eq!(orig_active, loaded_active, "Active knowledge count should match");
+    assert_eq!(
+        orig_active, loaded_active,
+        "Active knowledge count should match"
+    );
 
     // Cleanup
     let _ = std::fs::remove_file(path);
@@ -149,12 +185,20 @@ fn persistence_survives_multiple_save_load_cycles() {
     let path = "/tmp/sage_cycles_brain.bin";
 
     for i in 0..3 {
-        store.save(path).expect(&format!("Save cycle {} should succeed", i));
+        store
+            .save(path)
+            .expect(&format!("Save cycle {} should succeed", i));
         let mut reloaded = NCAKnowledge::new();
-        reloaded.load(path).expect(&format!("Load cycle {} should succeed", i));
+        reloaded
+            .load(path)
+            .expect(&format!("Load cycle {} should succeed", i));
 
         let results = reloaded.query("cycle test", 5);
-        assert!(!results.is_empty(), "Cycle {} should still have knowledge", i);
+        assert!(
+            !results.is_empty(),
+            "Cycle {} should still have knowledge",
+            i
+        );
 
         store = reloaded;
     }
@@ -167,17 +211,24 @@ fn encoding_same_text_twice_increases_activation() {
     let mut store = NCAKnowledge::new();
 
     store.encode("reinforced knowledge pattern", 0.5);
-    let first_max: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).fold(0.0, f64::max);
+    let first_max: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .fold(0.0, f64::max);
 
     store.encode("reinforced knowledge pattern", 0.5);
-    let second_max: f64 = store.active_knowledge(0.01)
-        .iter().map(|k| k.activation).fold(0.0, f64::max);
+    let second_max: f64 = store
+        .active_knowledge(0.01)
+        .iter()
+        .map(|k| k.activation)
+        .fold(0.0, f64::max);
 
     assert!(
         second_max >= first_max,
         "Re-encoding should not decrease activation: first={} second={}",
-        first_max, second_max
+        first_max,
+        second_max
     );
 }
 
@@ -212,6 +263,7 @@ fn encoder_similarity_sanity_check() {
     assert!(
         sim_related > sim_unrelated,
         "Related texts should be more similar: related={:.4} unrelated={:.4}",
-        sim_related, sim_unrelated
+        sim_related,
+        sim_unrelated
     );
 }

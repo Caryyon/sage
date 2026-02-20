@@ -42,7 +42,10 @@ pub enum GroundTile {
 impl GroundTile {
     /// Can characters walk on this ground?
     pub fn is_walkable(&self) -> bool {
-        !matches!(self, GroundTile::Water | GroundTile::Cliff | GroundTile::CliffWater)
+        !matches!(
+            self,
+            GroundTile::Water | GroundTile::Cliff | GroundTile::CliffWater
+        )
     }
 
     /// RGB color for simple rendering
@@ -53,11 +56,18 @@ impl GroundTile {
             GroundTile::GrassDark => [100, 150, 70],
             GroundTile::GrassTextured => [110, 165, 75],
             GroundTile::DeadGrass => [160, 140, 80],
-            GroundTile::Path | GroundTile::PathVertical | GroundTile::PathHorizontal |
-            GroundTile::PathCornerNE | GroundTile::PathCornerNW |
-            GroundTile::PathCornerSE | GroundTile::PathCornerSW |
-            GroundTile::PathCross | GroundTile::PathTeeN | GroundTile::PathTeeS |
-            GroundTile::PathTeeE | GroundTile::PathTeeW => [194, 178, 128],
+            GroundTile::Path
+            | GroundTile::PathVertical
+            | GroundTile::PathHorizontal
+            | GroundTile::PathCornerNE
+            | GroundTile::PathCornerNW
+            | GroundTile::PathCornerSE
+            | GroundTile::PathCornerSW
+            | GroundTile::PathCross
+            | GroundTile::PathTeeN
+            | GroundTile::PathTeeS
+            | GroundTile::PathTeeE
+            | GroundTile::PathTeeW => [194, 178, 128],
             GroundTile::Water => [64, 164, 223],
             GroundTile::WaterShore => [84, 184, 243],
             GroundTile::Sand => [238, 214, 175],
@@ -74,13 +84,23 @@ impl GroundTile {
     /// ASCII character for text rendering
     pub fn ascii_char(&self) -> char {
         match self {
-            GroundTile::Grass | GroundTile::GrassLight | GroundTile::GrassDark |
-            GroundTile::GrassTextured | GroundTile::DeadGrass => '.',
-            GroundTile::Path | GroundTile::PathVertical | GroundTile::PathHorizontal |
-            GroundTile::PathCornerNE | GroundTile::PathCornerNW |
-            GroundTile::PathCornerSE | GroundTile::PathCornerSW |
-            GroundTile::PathCross | GroundTile::PathTeeN | GroundTile::PathTeeS |
-            GroundTile::PathTeeE | GroundTile::PathTeeW => '#',
+            GroundTile::Grass
+            | GroundTile::GrassLight
+            | GroundTile::GrassDark
+            | GroundTile::GrassTextured
+            | GroundTile::DeadGrass => '.',
+            GroundTile::Path
+            | GroundTile::PathVertical
+            | GroundTile::PathHorizontal
+            | GroundTile::PathCornerNE
+            | GroundTile::PathCornerNW
+            | GroundTile::PathCornerSE
+            | GroundTile::PathCornerSW
+            | GroundTile::PathCross
+            | GroundTile::PathTeeN
+            | GroundTile::PathTeeS
+            | GroundTile::PathTeeE
+            | GroundTile::PathTeeW => '#',
             GroundTile::Water => '~',
             GroundTile::WaterShore => '~',
             GroundTile::Sand => ',',
@@ -195,21 +215,38 @@ impl OverlayTile {
     pub fn blocks_movement(&self) -> bool {
         match self {
             // Nature objects block
-            OverlayTile::TreeOak | OverlayTile::TreePine | OverlayTile::TreeDead |
-            OverlayTile::TreeCoconut | OverlayTile::Rock | OverlayTile::Cactus => true,
+            OverlayTile::TreeOak
+            | OverlayTile::TreePine
+            | OverlayTile::TreeDead
+            | OverlayTile::TreeCoconut
+            | OverlayTile::Rock
+            | OverlayTile::Cactus => true,
             // Walls and fences block
-            OverlayTile::Wall | OverlayTile::WallCorner | OverlayTile::Fence |
-            OverlayTile::FenceCorner => true,
+            OverlayTile::Wall
+            | OverlayTile::WallCorner
+            | OverlayTile::Fence
+            | OverlayTile::FenceCorner => true,
             // Buildings are enterable
-            OverlayTile::House | OverlayTile::HouseLarge | OverlayTile::Tavern |
-            OverlayTile::Market | OverlayTile::Blacksmith | OverlayTile::Church |
-            OverlayTile::Chapel | OverlayTile::Barracks | OverlayTile::Tower |
-            OverlayTile::Well | OverlayTile::Workshop | OverlayTile::Dock |
-            OverlayTile::Keep | OverlayTile::Gate => false,
+            OverlayTile::House
+            | OverlayTile::HouseLarge
+            | OverlayTile::Tavern
+            | OverlayTile::Market
+            | OverlayTile::Blacksmith
+            | OverlayTile::Church
+            | OverlayTile::Chapel
+            | OverlayTile::Barracks
+            | OverlayTile::Tower
+            | OverlayTile::Well
+            | OverlayTile::Workshop
+            | OverlayTile::Dock
+            | OverlayTile::Keep
+            | OverlayTile::Gate => false,
             // Misc blocking
             OverlayTile::Cave | OverlayTile::Mausoleum => true,
             // Animals don't block
-            OverlayTile::Sheep | OverlayTile::Chicken | OverlayTile::Pig | OverlayTile::Horse => false,
+            OverlayTile::Sheep | OverlayTile::Chicken | OverlayTile::Pig | OverlayTile::Horse => {
+                false
+            }
             // Small things don't block
             _ => false,
         }
@@ -217,12 +254,24 @@ impl OverlayTile {
 
     /// Is this a building?
     pub fn is_building(&self) -> bool {
-        matches!(self,
-            OverlayTile::House | OverlayTile::HouseLarge | OverlayTile::Tavern |
-            OverlayTile::Market | OverlayTile::Blacksmith | OverlayTile::Church |
-            OverlayTile::Chapel | OverlayTile::Barracks | OverlayTile::Tower |
-            OverlayTile::Well | OverlayTile::Workshop | OverlayTile::Dock |
-            OverlayTile::Keep | OverlayTile::Hut | OverlayTile::Cave | OverlayTile::Mausoleum
+        matches!(
+            self,
+            OverlayTile::House
+                | OverlayTile::HouseLarge
+                | OverlayTile::Tavern
+                | OverlayTile::Market
+                | OverlayTile::Blacksmith
+                | OverlayTile::Church
+                | OverlayTile::Chapel
+                | OverlayTile::Barracks
+                | OverlayTile::Tower
+                | OverlayTile::Well
+                | OverlayTile::Workshop
+                | OverlayTile::Dock
+                | OverlayTile::Keep
+                | OverlayTile::Hut
+                | OverlayTile::Cave
+                | OverlayTile::Mausoleum
         )
     }
 
@@ -380,7 +429,7 @@ impl OverlayTile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TeamColor {
     #[default]
-    Wood,  // Neutral/wood colored
+    Wood, // Neutral/wood colored
     Cyan,
     Lime,
     Purple,
@@ -428,9 +477,9 @@ impl TeamColor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum BuildingPart {
     #[default]
-    Single,     // 1×1 structure (trees, wells, etc.)
-    Top,        // Top part of 1×2 building (roof)
-    Bottom,     // Bottom part of 1×2 building (door)
+    Single, // 1×1 structure (trees, wells, etc.)
+    Top,    // Top part of 1×2 building (roof)
+    Bottom, // Bottom part of 1×2 building (door)
 }
 
 /// A single tile in the world - now with proper layering!
@@ -558,22 +607,37 @@ pub enum TileType {
 impl TileType {
     pub fn is_walkable(&self) -> bool {
         match self {
-            TileType::Grass | TileType::GrassLight | TileType::GrassDark |
-            TileType::Path | TileType::PathCorner |
-            TileType::Sand | TileType::Stone |
-            TileType::Bridge | TileType::Gate => true,
-            TileType::House | TileType::Tavern | TileType::Market |
-            TileType::Blacksmith | TileType::Church | TileType::Barracks |
-            TileType::Well => true,
+            TileType::Grass
+            | TileType::GrassLight
+            | TileType::GrassDark
+            | TileType::Path
+            | TileType::PathCorner
+            | TileType::Sand
+            | TileType::Stone
+            | TileType::Bridge
+            | TileType::Gate => true,
+            TileType::House
+            | TileType::Tavern
+            | TileType::Market
+            | TileType::Blacksmith
+            | TileType::Church
+            | TileType::Barracks
+            | TileType::Well => true,
             _ => false,
         }
     }
 
     pub fn is_building(&self) -> bool {
-        matches!(self,
-            TileType::House | TileType::Tavern | TileType::Market |
-            TileType::Blacksmith | TileType::Church | TileType::Barracks |
-            TileType::Tower | TileType::Well
+        matches!(
+            self,
+            TileType::House
+                | TileType::Tavern
+                | TileType::Market
+                | TileType::Blacksmith
+                | TileType::Church
+                | TileType::Barracks
+                | TileType::Tower
+                | TileType::Well
         )
     }
 

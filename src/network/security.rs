@@ -154,9 +154,10 @@ impl RateLimiter {
     /// Check if a connection from this IP is allowed.
     pub fn check_connection(&mut self, ip: &str) -> RateLimitResult {
         let now = Instant::now();
-        let bucket = self.connections.entry(ip.to_string()).or_insert(ConnectionBucket {
-            timestamps: vec![],
-        });
+        let bucket = self
+            .connections
+            .entry(ip.to_string())
+            .or_insert(ConnectionBucket { timestamps: vec![] });
 
         // Prune timestamps older than 1 minute
         let one_min_ago = now - std::time::Duration::from_secs(60);
@@ -218,8 +219,9 @@ impl RateLimiter {
         });
 
         bucket.consecutive_failures += 1;
-        let backoff_secs = (self.config.base_backoff_secs * 2u64.pow(bucket.consecutive_failures.min(16)))
-            .min(self.config.max_backoff_secs);
+        let backoff_secs = (self.config.base_backoff_secs
+            * 2u64.pow(bucket.consecutive_failures.min(16)))
+        .min(self.config.max_backoff_secs);
         bucket.backoff_until = Some(Instant::now() + std::time::Duration::from_secs(backoff_secs));
     }
 
@@ -236,7 +238,8 @@ impl RateLimiter {
         let now = Instant::now();
         let one_hour = std::time::Duration::from_secs(3600);
         self.connections.retain(|_, b| {
-            b.timestamps.retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(60));
+            b.timestamps
+                .retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(60));
             !b.timestamps.is_empty()
         });
         self.diffs.retain(|_, b| {
@@ -283,13 +286,28 @@ mod tests {
         };
         let mut limiter = RateLimiter::new(config);
 
-        assert_eq!(limiter.check_connection("1.2.3.4"), RateLimitResult::Allowed);
-        assert_eq!(limiter.check_connection("1.2.3.4"), RateLimitResult::Allowed);
-        assert_eq!(limiter.check_connection("1.2.3.4"), RateLimitResult::Allowed);
+        assert_eq!(
+            limiter.check_connection("1.2.3.4"),
+            RateLimitResult::Allowed
+        );
+        assert_eq!(
+            limiter.check_connection("1.2.3.4"),
+            RateLimitResult::Allowed
+        );
+        assert_eq!(
+            limiter.check_connection("1.2.3.4"),
+            RateLimitResult::Allowed
+        );
         // 4th should be limited
-        assert!(matches!(limiter.check_connection("1.2.3.4"), RateLimitResult::Limited(_)));
+        assert!(matches!(
+            limiter.check_connection("1.2.3.4"),
+            RateLimitResult::Limited(_)
+        ));
         // Different IP should be fine
-        assert_eq!(limiter.check_connection("5.6.7.8"), RateLimitResult::Allowed);
+        assert_eq!(
+            limiter.check_connection("5.6.7.8"),
+            RateLimitResult::Allowed
+        );
     }
 
     #[test]
@@ -302,7 +320,10 @@ mod tests {
 
         assert_eq!(limiter.check_diff("peer-1"), RateLimitResult::Allowed);
         assert_eq!(limiter.check_diff("peer-1"), RateLimitResult::Allowed);
-        assert!(matches!(limiter.check_diff("peer-1"), RateLimitResult::Limited(_)));
+        assert!(matches!(
+            limiter.check_diff("peer-1"),
+            RateLimitResult::Limited(_)
+        ));
     }
 
     #[test]
@@ -316,7 +337,10 @@ mod tests {
 
         limiter.record_failure("peer-1");
         // Should be backed off
-        assert!(matches!(limiter.check_diff("peer-1"), RateLimitResult::BackedOff(_)));
+        assert!(matches!(
+            limiter.check_diff("peer-1"),
+            RateLimitResult::BackedOff(_)
+        ));
 
         // Success resets
         limiter.record_success("peer-1");

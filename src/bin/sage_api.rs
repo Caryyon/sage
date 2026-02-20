@@ -187,7 +187,9 @@ struct KnowledgeQuery {
     limit: usize,
 }
 
-fn default_limit() -> usize { 10 }
+fn default_limit() -> usize {
+    10
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -230,7 +232,10 @@ fn flatten_messages(messages: &[MessageInput]) -> String {
             last.content.clone()
         }
     } else {
-        messages.last().map(|m| m.content.clone()).unwrap_or_default()
+        messages
+            .last()
+            .map(|m| m.content.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -309,7 +314,9 @@ async fn chat_completions(
                     return;
                 }
             };
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(120))).ok();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(120)))
+                .ok();
             let _ = stream.write_all(format!("CHAT {}\n", message).as_bytes());
             let _ = stream.flush();
 
@@ -338,9 +345,12 @@ async fn chat_completions(
                             finish_reason: None,
                         }],
                     };
-                    if tx.blocking_send(Ok(
-                        Event::default().data(serde_json::to_string(&chunk).unwrap())
-                    )).is_err() {
+                    if tx
+                        .blocking_send(Ok(
+                            Event::default().data(serde_json::to_string(&chunk).unwrap())
+                        ))
+                        .is_err()
+                    {
                         break;
                     }
                 } else if let Some(_err) = trimmed.strip_prefix("ERROR ") {
@@ -379,7 +389,9 @@ async fn chat_completions(
         let result = tokio::task::spawn_blocking(move || {
             let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
                 .map_err(|e| format!("Cannot connect to sage-node: {}", e))?;
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(120))).ok();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(120)))
+                .ok();
             stream
                 .write_all(format!("CHAT {}\n", message).as_bytes())
                 .map_err(|e| format!("Write: {}", e))?;
@@ -414,7 +426,11 @@ async fn chat_completions(
             )
         })?;
 
-        let prompt_tokens = req.messages.iter().map(|m| m.content.len() / 4).sum::<usize>() as u32;
+        let prompt_tokens = req
+            .messages
+            .iter()
+            .map(|m| m.content.len() / 4)
+            .sum::<usize>() as u32;
         let completion_tokens = (result.len() / 4) as u32;
 
         Ok(Json(ChatCompletionResponse {
@@ -484,8 +500,18 @@ async fn sage_status(
     let port = state.node_port;
     let lines = tokio::task::spawn_blocking(move || node_request(port, "STATUS"))
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e})),
+            )
+        })?;
 
     // First line should be JSON status
     if let Some(first) = lines.first() {
@@ -502,8 +528,18 @@ async fn sage_peers(
     let port = state.node_port;
     let lines = tokio::task::spawn_blocking(move || node_request(port, "PEERS"))
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e})),
+            )
+        })?;
 
     let peers: Vec<&str> = lines
         .iter()
@@ -522,10 +558,21 @@ async fn sage_knowledge(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let port = state.node_port;
     let query = req.query;
-    let lines = tokio::task::spawn_blocking(move || node_request(port, &format!("KNOWLEDGE {}", query)))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))?;
+    let lines =
+        tokio::task::spawn_blocking(move || node_request(port, &format!("KNOWLEDGE {}", query)))
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e.to_string()})),
+                )
+            })?
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({"error": e})),
+                )
+            })?;
 
     Ok(Json(serde_json::json!({
         "results": lines,
@@ -568,7 +615,10 @@ async fn main() {
     println!("   API port:   {}", cli.api_port);
     println!();
     println!("   OpenAI-compatible endpoint:");
-    println!("   POST http://localhost:{}/v1/chat/completions", cli.api_port);
+    println!(
+        "   POST http://localhost:{}/v1/chat/completions",
+        cli.api_port
+    );
     println!();
     println!("   Use with any OpenAI client:");
     println!("   OPENAI_API_BASE=http://localhost:{}/v1", cli.api_port);

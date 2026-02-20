@@ -11,20 +11,18 @@
 //! - Channels 28-29: Communication (sync state + node ID) — NEW
 //! - Channels 30-31: Metadata (timestamp + confidence) — NEW
 
-pub mod encoder;
 pub mod decoder;
+pub mod encoder;
 pub mod text_store;
 
 use crate::grid::{
-    Grid, GRID_SIZE, NUM_CHANNELS,
-    KNOWLEDGE_EMBEDDING, KNOWLEDGE_ACTIVATION,
-    COMM_SYNC_STATE, COMM_NODE_ID,
-    META_TIMESTAMP, META_CONFIDENCE,
+    Grid, COMM_NODE_ID, COMM_SYNC_STATE, GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING,
+    META_CONFIDENCE, META_TIMESTAMP, NUM_CHANNELS,
 };
-use encoder::{EncoderConfig, encode_text, write_knowledge};
-use decoder::{KnowledgeActivation, scan_active_knowledge};
-pub use text_store::{TextStore, default_text_store_path};
-use serde::{Serialize, Deserialize};
+use decoder::{scan_active_knowledge, KnowledgeActivation};
+use encoder::{encode_text, write_knowledge, EncoderConfig};
+use serde::{Deserialize, Serialize};
+pub use text_store::{default_text_store_path, TextStore};
 
 // ── Brain file versioning ──────────────────────────────────────────────────
 
@@ -81,7 +79,8 @@ impl BrainHeader {
             channels: 0,
             created_at: 0,
             node_id: [0u8; 32],
-        }).unwrap_or(64) as usize
+        })
+        .unwrap_or(64) as usize
     }
 }
 
@@ -113,9 +112,9 @@ pub fn migrate_v1_to_v2(old_grid: &Grid, target_size: usize) -> Grid {
                 let v01 = old_grid.cells[y1][x0][ch];
                 let v11 = old_grid.cells[y1][x1][ch];
                 let val = v00 * (1.0 - fx) * (1.0 - fy)
-                        + v10 * fx * (1.0 - fy)
-                        + v01 * (1.0 - fx) * fy
-                        + v11 * fx * fy;
+                    + v10 * fx * (1.0 - fy)
+                    + v01 * (1.0 - fx) * fy
+                    + v11 * fx * fy;
                 new_grid.cells[ny][nx][ch] = val;
             }
         }
@@ -236,7 +235,13 @@ impl KnowledgeStore for NCAKnowledge {
     }
 
     fn query(&self, query: &str, max_results: usize) -> Vec<KnowledgeActivation> {
-        decoder::query_knowledge_with_text(&self.grid, query, &self.config, max_results, Some(&self.text_store))
+        decoder::query_knowledge_with_text(
+            &self.grid,
+            query,
+            &self.config,
+            max_results,
+            Some(&self.text_store),
+        )
     }
 
     fn merge(&mut self, other: &Grid, merge_strength: f64) {
@@ -251,15 +256,12 @@ impl KnowledgeStore for NCAKnowledge {
                     // Other has stronger knowledge here — blend in
                     self.grid.cells[y][x][KNOWLEDGE_EMBEDDING] =
                         self.grid.cells[y][x][KNOWLEDGE_EMBEDDING] * (1.0 - s)
-                        + other.cells[y][x][KNOWLEDGE_EMBEDDING] * s;
+                            + other.cells[y][x][KNOWLEDGE_EMBEDDING] * s;
                     self.grid.cells[y][x][KNOWLEDGE_ACTIVATION] =
                         self_act * (1.0 - s) + other_act * s;
-                    self.grid.cells[y][x][META_CONFIDENCE] =
-                        self.grid.cells[y][x][META_CONFIDENCE].max(
-                            other.cells[y][x][META_CONFIDENCE] * s
-                        );
-                    self.grid.cells[y][x][META_TIMESTAMP] =
-                        other.cells[y][x][META_TIMESTAMP];
+                    self.grid.cells[y][x][META_CONFIDENCE] = self.grid.cells[y][x][META_CONFIDENCE]
+                        .max(other.cells[y][x][META_CONFIDENCE] * s);
+                    self.grid.cells[y][x][META_TIMESTAMP] = other.cells[y][x][META_TIMESTAMP];
                 }
             }
         }
@@ -273,9 +275,12 @@ impl KnowledgeStore for NCAKnowledge {
             for x in 0..self.grid.width.min(other.width) {
                 let mut has_diff = false;
                 let channels = [
-                    KNOWLEDGE_EMBEDDING, KNOWLEDGE_ACTIVATION,
-                    COMM_SYNC_STATE, COMM_NODE_ID,
-                    META_TIMESTAMP, META_CONFIDENCE,
+                    KNOWLEDGE_EMBEDDING,
+                    KNOWLEDGE_ACTIVATION,
+                    COMM_SYNC_STATE,
+                    COMM_NODE_ID,
+                    META_TIMESTAMP,
+                    META_CONFIDENCE,
                 ];
 
                 let mut values = [0.0f64; 6];
@@ -302,9 +307,12 @@ impl KnowledgeStore for NCAKnowledge {
 
     fn apply_delta(&mut self, delta: &GridDelta) {
         let channels = [
-            KNOWLEDGE_EMBEDDING, KNOWLEDGE_ACTIVATION,
-            COMM_SYNC_STATE, COMM_NODE_ID,
-            META_TIMESTAMP, META_CONFIDENCE,
+            KNOWLEDGE_EMBEDDING,
+            KNOWLEDGE_ACTIVATION,
+            COMM_SYNC_STATE,
+            COMM_NODE_ID,
+            META_TIMESTAMP,
+            META_CONFIDENCE,
         ];
 
         for change in &delta.changes {
@@ -317,7 +325,9 @@ impl KnowledgeStore for NCAKnowledge {
                     // For activation: take max; for others: take incoming if activation is higher
                     if ch == KNOWLEDGE_ACTIVATION {
                         self.grid.cells[change.y][change.x][ch] = current.max(incoming);
-                    } else if change.values[1] > self.grid.cells[change.y][change.x][KNOWLEDGE_ACTIVATION] {
+                    } else if change.values[1]
+                        > self.grid.cells[change.y][change.x][KNOWLEDGE_ACTIVATION]
+                    {
                         self.grid.cells[change.y][change.x][ch] = incoming;
                     }
                 }
@@ -338,32 +348,30 @@ impl KnowledgeStore for NCAKnowledge {
         let header = BrainHeader::new(self.grid.width, NUM_CHANNELS, node_id_bytes);
         let header_data = bincode::serialize(&header)
             .map_err(|e| format!("Header serialization error: {}", e))?;
-        let grid_data = bincode::serialize(&self.grid)
-            .map_err(|e| format!("Serialization error: {}", e))?;
+        let grid_data =
+            bincode::serialize(&self.grid).map_err(|e| format!("Serialization error: {}", e))?;
 
         // Create parent directories
         if let Some(parent) = std::path::Path::new(path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Dir creation error: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("Dir creation error: {}", e))?;
         }
 
         let mut data = Vec::with_capacity(header_data.len() + grid_data.len());
         data.extend_from_slice(&header_data);
         data.extend_from_slice(&grid_data);
-        std::fs::write(path, &data)
-            .map_err(|e| format!("Write error: {}", e))?;
+        std::fs::write(path, &data).map_err(|e| format!("Write error: {}", e))?;
 
         // Save text store alongside brain
         let text_store_path = text_store_path_for(path);
-        self.text_store.save(&text_store_path)
+        self.text_store
+            .save(&text_store_path)
             .unwrap_or_else(|e| eprintln!("Warning: failed to save text store: {}", e));
 
         Ok(())
     }
 
     fn load(&mut self, path: &str) -> Result<(), String> {
-        let data = std::fs::read(path)
-            .map_err(|e| format!("Read error: {}", e))?;
+        let data = std::fs::read(path).map_err(|e| format!("Read error: {}", e))?;
 
         // Try to read header
         let header_size = BrainHeader::serialized_size();
@@ -374,11 +382,19 @@ impl KnowledgeStore for NCAKnowledge {
                     let grid: Grid = bincode::deserialize(&data[header_size..])
                         .map_err(|e| format!("Grid deserialization error: {}", e))?;
 
-                    if header.version < BRAIN_VERSION || (header.grid_size as usize) < self.grid.width {
+                    if header.version < BRAIN_VERSION
+                        || (header.grid_size as usize) < self.grid.width
+                    {
                         // Need migration
-                        eprintln!("Migrating brain v{} ({}×{}) → v{} ({}×{})",
-                            header.version, header.grid_size, header.grid_size,
-                            BRAIN_VERSION, self.grid.width, self.grid.width);
+                        eprintln!(
+                            "Migrating brain v{} ({}×{}) → v{} ({}×{})",
+                            header.version,
+                            header.grid_size,
+                            header.grid_size,
+                            BRAIN_VERSION,
+                            self.grid.width,
+                            self.grid.width
+                        );
                         self.grid = migrate_v1_to_v2(&grid, self.grid.width);
                     } else {
                         self.grid = grid;
@@ -395,12 +411,14 @@ impl KnowledgeStore for NCAKnowledge {
         }
 
         // Fallback: legacy v1 file (no header)
-        let grid: Grid = bincode::deserialize(&data)
-            .map_err(|e| format!("Deserialization error: {}", e))?;
+        let grid: Grid =
+            bincode::deserialize(&data).map_err(|e| format!("Deserialization error: {}", e))?;
 
         if grid.width != self.grid.width || grid.height != self.grid.height {
-            eprintln!("Migrating legacy brain ({}×{}) → ({}×{})",
-                grid.width, grid.height, self.grid.width, self.grid.height);
+            eprintln!(
+                "Migrating legacy brain ({}×{}) → ({}×{})",
+                grid.width, grid.height, self.grid.width, self.grid.height
+            );
             self.grid = migrate_v1_to_v2(&grid, self.grid.width);
         } else {
             self.grid = grid;
@@ -430,8 +448,7 @@ fn text_store_path_for(brain_path: &str) -> String {
 
 /// Inspect a brain file and return its header info without loading the full grid.
 pub fn brain_info(path: &str) -> Result<BrainHeader, String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Read error: {}", e))?;
+    let data = std::fs::read(path).map_err(|e| format!("Read error: {}", e))?;
     let header_size = BrainHeader::serialized_size();
     if data.len() < header_size {
         return Err("File too small for brain header (possibly legacy v1)".into());
@@ -480,7 +497,8 @@ mod tests {
         assert!(
             after_active >= before_active,
             "Merge should not decrease active knowledge: before={} after={}",
-            before_active, after_active
+            before_active,
+            after_active
         );
     }
 
@@ -492,13 +510,19 @@ mod tests {
         store_a.encode("some new knowledge", 0.9);
 
         let delta = store_a.diff(&store_b.grid);
-        assert!(!delta.changes.is_empty(), "Should have changes after encoding");
+        assert!(
+            !delta.changes.is_empty(),
+            "Should have changes after encoding"
+        );
 
         let mut store_c = NCAKnowledge::new().with_node_id(3.0);
         store_c.apply_delta(&delta);
 
         let active = store_c.active_knowledge(0.01);
-        assert!(!active.is_empty(), "Applied delta should create active knowledge");
+        assert!(
+            !active.is_empty(),
+            "Applied delta should create active knowledge"
+        );
     }
 
     #[test]
@@ -506,13 +530,19 @@ mod tests {
         let mut store = NCAKnowledge::new();
         store.encode("decaying knowledge", 0.9);
 
-        let before: f64 = store.active_knowledge(0.01)
-            .iter().map(|k| k.activation).sum();
+        let before: f64 = store
+            .active_knowledge(0.01)
+            .iter()
+            .map(|k| k.activation)
+            .sum();
 
         store.decay_knowledge(0.5);
 
-        let after: f64 = store.active_knowledge(0.01)
-            .iter().map(|k| k.activation).sum();
+        let after: f64 = store
+            .active_knowledge(0.01)
+            .iter()
+            .map(|k| k.activation)
+            .sum();
 
         assert!(after < before, "Decay should reduce activation");
     }
@@ -529,7 +559,10 @@ mod tests {
         loaded.load(path).expect("Load should succeed");
 
         let results = loaded.active_knowledge(0.01);
-        assert!(!results.is_empty(), "Loaded grid should have active knowledge");
+        assert!(
+            !results.is_empty(),
+            "Loaded grid should have active knowledge"
+        );
 
         // Cleanup
         let _ = std::fs::remove_file(path);
@@ -546,7 +579,13 @@ mod tests {
         let header = BrainHeader::new(256, 32, [0u8; 32]);
         let data = bincode::serialize(&header).unwrap();
         let expected = BrainHeader::serialized_size();
-        assert_eq!(data.len(), expected, "serialized_size() must match actual bincode output: actual={}, expected={}", data.len(), expected);
+        assert_eq!(
+            data.len(),
+            expected,
+            "serialized_size() must match actual bincode output: actual={}, expected={}",
+            data.len(),
+            expected
+        );
     }
 
     #[test]
@@ -578,10 +617,12 @@ mod tests {
 
         // The center of the new grid should have interpolated values
         // Check that knowledge was spread via interpolation (center ≈ 128)
-        let has_knowledge = (120..136).any(|y| {
-            (120..136).any(|x| new_grid.cells[y][x][KNOWLEDGE_ACTIVATION] > 0.01)
-        });
-        assert!(has_knowledge, "Migrated grid should have knowledge near center");
+        let has_knowledge = (120..136)
+            .any(|y| (120..136).any(|x| new_grid.cells[y][x][KNOWLEDGE_ACTIVATION] > 0.01));
+        assert!(
+            has_knowledge,
+            "Migrated grid should have knowledge near center"
+        );
     }
 
     #[test]

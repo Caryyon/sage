@@ -27,16 +27,16 @@
 //! renderer::save_render(&world, "/tmp/sage_village.png", 16)?;
 //! ```
 
-pub mod tiles;
-pub mod world;
 pub mod character;
-pub mod renderer;
-pub mod town;
 pub mod openclaw_bridge;
+pub mod renderer;
+pub mod tiles;
+pub mod town;
+pub mod world;
 
 // Re-export main types for convenience
-pub use tiles::{Tile, GroundTile, OverlayTile, TeamColor, TileType, BuildingPart};
-pub use world::{World, WorldConfig, Building};
 pub use character::{Character, CharacterSprite, CharacterState, Direction};
-pub use town::create_default_town;
 pub use openclaw_bridge::OpenClawBridge;
+pub use tiles::{BuildingPart, GroundTile, OverlayTile, TeamColor, Tile, TileType};
+pub use town::create_default_town;
+pub use world::{Building, World, WorldConfig};

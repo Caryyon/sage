@@ -1,7 +1,7 @@
 //! World state and simulation
 
-use super::tiles::{Tile, GroundTile, OverlayTile, TeamColor, BuildingPart};
 use super::character::{Character, CharacterState};
+use super::tiles::{BuildingPart, GroundTile, OverlayTile, TeamColor, Tile};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -226,7 +226,8 @@ impl World {
             };
 
             let arrived = character.step_toward_destination(dt);
-            let should_wander = arrived && character.state == CharacterState::Idle && rand::random::<f32>() < 0.01;
+            let should_wander =
+                arrived && character.state == CharacterState::Idle && rand::random::<f32>() < 0.01;
             (arrived, should_wander)
         };
 

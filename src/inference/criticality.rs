@@ -126,7 +126,11 @@ pub fn measure_avalanche_distribution(
         histogram[s] += 1;
     }
 
-    AvalancheStats { sizes, histogram, max_size }
+    AvalancheStats {
+        sizes,
+        histogram,
+        max_size,
+    }
 }
 
 /// Run one NCA step on an external grid using given weights.
@@ -241,7 +245,9 @@ pub fn measure_branching_ratio(
         let mut affected = 0;
         for r in 0..gs {
             for c in 0..gs {
-                if r == pr && c == pc { continue; }
+                if r == pr && c == pc {
+                    continue;
+                }
                 let mut diff = 0.0;
                 for ch in 0..NCA_CHANNELS {
                     diff += (orig_next[r][c][ch] - pert_next[r][c][ch]).abs();
@@ -386,22 +392,34 @@ pub fn measure_criticality(
     let threshold = perturbation_size * 0.5;
 
     let branching_ratio = measure_branching_ratio(
-        predictor, input_tokens, n_samples, perturbation_size, threshold,
+        predictor,
+        input_tokens,
+        n_samples,
+        perturbation_size,
+        threshold,
     );
 
     let lyapunov_estimate = measure_lyapunov(
-        predictor, input_tokens, n_samples.min(50), perturbation_size * 0.1, 15,
+        predictor,
+        input_tokens,
+        n_samples.min(50),
+        perturbation_size * 0.1,
+        15,
     );
 
     let avalanche_stats = measure_avalanche_distribution(
-        predictor, input_tokens, n_samples, perturbation_size, 10, threshold,
+        predictor,
+        input_tokens,
+        n_samples,
+        perturbation_size,
+        10,
+        threshold,
     );
 
     let power_law_exponent = fit_power_law_exponent(&avalanche_stats);
 
-    let criticality_score = compute_criticality_score(
-        branching_ratio, lyapunov_estimate, power_law_exponent,
-    );
+    let criticality_score =
+        compute_criticality_score(branching_ratio, lyapunov_estimate, power_law_exponent);
 
     CriticalityMetrics {
         branching_ratio,
@@ -454,9 +472,8 @@ impl CriticalityRegularizer {
             return 0.0;
         }
 
-        let mut predictor = NcaPredictor::with_grid_size(
-            tokenizer.clone(), weights.clone(), nca_steps, grid_size,
-        );
+        let mut predictor =
+            NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
 
         let metrics = measure_criticality(
             &mut predictor,
@@ -482,9 +499,8 @@ impl CriticalityRegularizer {
             return 0.0;
         }
 
-        let mut predictor = NcaPredictor::with_grid_size(
-            tokenizer.clone(), weights.clone(), nca_steps, grid_size,
-        );
+        let mut predictor =
+            NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
 
         // Fast approximation: just branching ratio (most informative, cheapest)
         let threshold = self.perturbation_size * 0.5;
@@ -529,13 +545,23 @@ pub fn train_nca_critical(
 
     if verbose {
         eprintln!("🔥 Criticality-driven NCA training");
-        eprintln!("   Accuracy weight: {:.1}, Criticality weight: {:.1}", accuracy_weight, criticality_weight);
-        eprintln!("   Vocab: {}, Grid: {}×{}, Random baseline: {:.4}%",
-                  vocab_size, grid_size, grid_size, random_accuracy * 100.0);
+        eprintln!(
+            "   Accuracy weight: {:.1}, Criticality weight: {:.1}",
+            accuracy_weight, criticality_weight
+        );
+        eprintln!(
+            "   Vocab: {}, Grid: {}×{}, Random baseline: {:.4}%",
+            vocab_size,
+            grid_size,
+            grid_size,
+            random_accuracy * 100.0
+        );
     }
 
     // Build training examples
-    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
+    let max_examples = config
+        .max_examples
+        .min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_examples).max(1);
     let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
         .step_by(step)
@@ -570,8 +596,11 @@ pub fn train_nca_critical(
         let mut fitnesses: Vec<f64> = Vec::with_capacity(config.population_size);
 
         for _ in 0..config.population_size {
-            let noise: Vec<f64> = (0..n_params).map(|_| rng.gen::<f64>() * 2.0 - 1.0).collect();
-            let perturbed: Vec<f64> = base_params.iter()
+            let noise: Vec<f64> = (0..n_params)
+                .map(|_| rng.gen::<f64>() * 2.0 - 1.0)
+                .collect();
+            let perturbed: Vec<f64> = base_params
+                .iter()
                 .zip(&noise)
                 .map(|(p, n)| p + config.sigma * n)
                 .collect();
@@ -579,7 +608,8 @@ pub fn train_nca_critical(
             let w = NcaWeights::from_vec(&perturbed);
 
             // Accuracy component
-            let accuracy = evaluate_fitness_internal(&tokenizer, &w, &examples, grid_size, config.nca_steps);
+            let accuracy =
+                evaluate_fitness_internal(&tokenizer, &w, &examples, grid_size, config.nca_steps);
 
             // Criticality component
             let crit_score = regularizer.score(&tokenizer, &w, grid_size, config.nca_steps);
@@ -592,7 +622,8 @@ pub fn train_nca_critical(
         // Normalize and update (same ES update as original)
         let mean_f: f64 = fitnesses.iter().sum::<f64>() / fitnesses.len() as f64;
         let std_f: f64 = {
-            let var = fitnesses.iter().map(|f| (f - mean_f).powi(2)).sum::<f64>() / fitnesses.len() as f64;
+            let var = fitnesses.iter().map(|f| (f - mean_f).powi(2)).sum::<f64>()
+                / fitnesses.len() as f64;
             var.sqrt().max(1e-8)
         };
         let norm_fitnesses: Vec<f64> = fitnesses.iter().map(|f| (f - mean_f) / std_f).collect();
@@ -608,7 +639,13 @@ pub fn train_nca_critical(
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
-        let new_acc = evaluate_fitness_internal(&tokenizer, &new_weights, &examples, grid_size, config.nca_steps);
+        let new_acc = evaluate_fitness_internal(
+            &tokenizer,
+            &new_weights,
+            &examples,
+            grid_size,
+            config.nca_steps,
+        );
         let new_crit = regularizer.score(&tokenizer, &new_weights, grid_size, config.nca_steps);
         let new_fitness = accuracy_weight * new_acc + criticality_weight * new_crit;
 
@@ -620,12 +657,19 @@ pub fn train_nca_critical(
         }
 
         if verbose {
-            eprintln!("  Epoch {}/{}: acc={:.2}%, crit={:.3}, fitness={:.4}",
-                      epoch + 1, config.epochs, best_accuracy * 100.0, best_crit_score, best_fitness);
+            eprintln!(
+                "  Epoch {}/{}: acc={:.2}%, crit={:.3}, fitness={:.4}",
+                epoch + 1,
+                config.epochs,
+                best_accuracy * 100.0,
+                best_crit_score,
+                best_fitness
+            );
         }
     }
 
-    let predictor = NcaPredictor::with_grid_size(tokenizer, best_weights, config.nca_steps, grid_size);
+    let predictor =
+        NcaPredictor::with_grid_size(tokenizer, best_weights, config.nca_steps, grid_size);
     Ok((predictor, best_accuracy, best_crit_score))
 }
 
@@ -637,11 +681,16 @@ fn evaluate_fitness_internal(
     grid_size: usize,
     nca_steps: usize,
 ) -> f64 {
-    let mut predictor = NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
+    let mut predictor =
+        NcaPredictor::with_grid_size(tokenizer.clone(), weights.clone(), nca_steps, grid_size);
     let mut correct = 0;
     for (ctx, target) in examples {
         let activations = predictor.run_and_read(ctx);
-        let mut indexed: Vec<(usize, f64)> = activations.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+        let mut indexed: Vec<(usize, f64)> = activations
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| (i, v))
+            .collect();
         indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         if indexed.iter().take(5).any(|(id, _)| id == target) {
             correct += 1;
@@ -696,8 +745,14 @@ mod tests {
         let sizes = vec![1, 1, 1, 1, 2, 2, 2, 3, 3, 5, 8, 15];
         let max_size = 15;
         let mut histogram = vec![0; 16];
-        for &s in &sizes { histogram[s] += 1; }
-        let stats = AvalancheStats { sizes, histogram, max_size };
+        for &s in &sizes {
+            histogram[s] += 1;
+        }
+        let stats = AvalancheStats {
+            sizes,
+            histogram,
+            max_size,
+        };
         let tau = fit_power_law_exponent(&stats);
         assert!(tau > 0.0, "exponent should be positive, got {}", tau);
     }
@@ -706,11 +761,19 @@ mod tests {
     fn test_criticality_score_bounds() {
         // Perfect criticality
         let score = compute_criticality_score(1.0, 0.0, 1.5);
-        assert!((score - 1.0).abs() < 0.01, "perfect criticality should score ~1.0, got {}", score);
+        assert!(
+            (score - 1.0).abs() < 0.01,
+            "perfect criticality should score ~1.0, got {}",
+            score
+        );
 
         // Far from critical
         let score2 = compute_criticality_score(5.0, 3.0, 0.0);
-        assert!(score2 < 0.3, "far from critical should score low, got {}", score2);
+        assert!(
+            score2 < 0.3,
+            "far from critical should score low, got {}",
+            score2
+        );
     }
 
     #[test]

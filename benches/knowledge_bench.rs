@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::Grid;
 
 fn bench_encode(c: &mut Criterion) {
@@ -22,13 +22,14 @@ fn bench_query(c: &mut Criterion) {
     let mut store = NCAKnowledge::new();
     store.config.ollama_url = None;
     for i in 0..100 {
-        store.encode(&format!("fact about topic {} with details {}", i, i * 7), 0.8);
+        store.encode(
+            &format!("fact about topic {} with details {}", i, i * 7),
+            0.8,
+        );
     }
 
     c.bench_function("knowledge_query_top5", |b| {
-        b.iter(|| {
-            store.query(black_box("topic 42 details"), 5)
-        });
+        b.iter(|| store.query(black_box("topic 42 details"), 5));
     });
 }
 
@@ -67,9 +68,7 @@ fn bench_diff(c: &mut Criterion) {
     let empty = Grid::new(32, 32);
 
     c.bench_function("knowledge_diff", |b| {
-        b.iter(|| {
-            store.diff(black_box(&empty))
-        });
+        b.iter(|| store.diff(black_box(&empty)));
     });
 }
 

@@ -4,7 +4,7 @@
 //! Persisted alongside brain.bin as text_store.bin.
 //! LRU eviction at ~10MB to keep memory bounded.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Maximum total text bytes before LRU eviction kicks in (~10MB)
@@ -59,10 +59,13 @@ impl TextStore {
         }
 
         self.access_counter += 1;
-        self.entries.insert(key, TextEntry {
-            text,
-            last_access: self.access_counter,
-        });
+        self.entries.insert(
+            key,
+            TextEntry {
+                text,
+                last_access: self.access_counter,
+            },
+        );
         self.total_bytes += text_len;
 
         // Evict LRU entries if over budget
@@ -102,27 +105,25 @@ impl TextStore {
 
     /// Save to disk
     pub fn save(&self, path: &str) -> Result<(), String> {
-        let data = bincode::serialize(self)
-            .map_err(|e| format!("TextStore serialize error: {}", e))?;
+        let data =
+            bincode::serialize(self).map_err(|e| format!("TextStore serialize error: {}", e))?;
         if let Some(parent) = std::path::Path::new(path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Dir creation error: {}", e))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("Dir creation error: {}", e))?;
         }
-        std::fs::write(path, &data)
-            .map_err(|e| format!("TextStore write error: {}", e))?;
+        std::fs::write(path, &data).map_err(|e| format!("TextStore write error: {}", e))?;
         Ok(())
     }
 
     /// Load from disk
     pub fn load(path: &str) -> Result<Self, String> {
-        let data = std::fs::read(path)
-            .map_err(|e| format!("TextStore read error: {}", e))?;
-        bincode::deserialize(&data)
-            .map_err(|e| format!("TextStore deserialize error: {}", e))
+        let data = std::fs::read(path).map_err(|e| format!("TextStore read error: {}", e))?;
+        bincode::deserialize(&data).map_err(|e| format!("TextStore deserialize error: {}", e))
     }
 
     fn evict_lru(&mut self) {
-        if let Some(lru_key) = self.entries.iter()
+        if let Some(lru_key) = self
+            .entries
+            .iter()
             .min_by_key(|(_, v)| v.last_access)
             .map(|(k, _)| k.clone())
         {
@@ -164,7 +165,10 @@ mod tests {
     fn test_save_and_load() {
         let mut store = TextStore::new();
         store.insert(3, 7, "persistent text".into());
-        let path = format!("/tmp/sage_test_text_store_{:?}.bin", std::thread::current().id());
+        let path = format!(
+            "/tmp/sage_test_text_store_{:?}.bin",
+            std::thread::current().id()
+        );
         store.save(&path).unwrap();
         let loaded = TextStore::load(&path).unwrap();
         assert_eq!(loaded.peek(3, 7), Some("persistent text"));

@@ -2,9 +2,9 @@
 //! PII filtering, and local-only knowledge support.
 
 use rand::Rng;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use regex::Regex;
 
 use super::diff::{CellChange, KnowledgeDiff};
 
@@ -301,7 +301,9 @@ mod tests {
 
         // Values should be changed (with overwhelming probability)
         let noised_values: Vec<f64> = diff.changes.iter().map(|c| c.new_value).collect();
-        let any_changed = original_values.iter().zip(noised_values.iter())
+        let any_changed = original_values
+            .iter()
+            .zip(noised_values.iter())
             .any(|(o, n)| (o - n).abs() > 1e-15);
         assert!(any_changed, "Differential privacy should add noise");
     }
@@ -309,9 +311,7 @@ mod tests {
     #[test]
     fn test_dp_higher_epsilon_less_noise() {
         // With very high epsilon, noise should be small
-        let changes = vec![
-            CellChange::new(0, 0, 0, 0.0, 100.0),
-        ];
+        let changes = vec![CellChange::new(0, 0, 0, 0.0, 100.0)];
         let mut diff = make_diff(changes);
         let config = PrivacyConfig {
             epsilon: 1000.0,
@@ -399,7 +399,10 @@ mod tests {
             response: "I dunno".into(),
             response_hash: [0u8; 32],
         };
-        assert!(matches!(challenge.verify(&response), ChallengeResult::Failed(_)));
+        assert!(matches!(
+            challenge.verify(&response),
+            ChallengeResult::Failed(_)
+        ));
     }
 
     #[test]
@@ -413,10 +416,15 @@ mod tests {
         let response = ChallengeResponse {
             challenge_id: "wrong-id".into(),
             node_id: "peer".into(),
-            response: "some long response with enough words and characters to pass other checks easily".into(),
+            response:
+                "some long response with enough words and characters to pass other checks easily"
+                    .into(),
             response_hash: [0u8; 32],
         };
-        assert!(matches!(challenge.verify(&response), ChallengeResult::Failed(_)));
+        assert!(matches!(
+            challenge.verify(&response),
+            ChallengeResult::Failed(_)
+        ));
     }
 
     #[test]

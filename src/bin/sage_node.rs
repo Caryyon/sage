@@ -22,23 +22,21 @@
 //!   SAGE_HOME — data directory (default ~/.sage)
 
 use clap::Parser;
-use sage::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::GRID_SIZE;
-use sage::network::identity::NodeIdentity;
-use sage::network::libp2p_transport::{Libp2pTransport, Libp2pConfig};
-use sage::network::gossip::{GossipMessage, GossipTransport};
-use sage::network::{NetworkManager, NetworkConfig};
-use sage::network::diff::KnowledgeDiff;
+use sage::inference::distributed::{handle_knowledge_query, DistributedInference, InferenceStats};
 use sage::inference::{self, ChatMessage as InfChatMessage, ChatRole, InferenceEngine};
-use sage::inference::distributed::{
-    DistributedInference, InferenceStats, handle_knowledge_query,
-};
+use sage::network::diff::KnowledgeDiff;
+use sage::network::gossip::{GossipMessage, GossipTransport};
+use sage::network::identity::NodeIdentity;
+use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
+use sage::network::{NetworkConfig, NetworkManager};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 
 #[derive(Parser)]
 #[command(name = "sage-node", about = "SAGE decentralized AI node daemon")]
@@ -170,9 +168,7 @@ async fn handle_client(
                 "distributed_peers": dist_peers,
                 "distributed": dist_peers > 0,
             });
-            let _ = writer
-                .write_all(format!("{}\n", status).as_bytes())
-                .await;
+            let _ = writer.write_all(format!("{}\n", status).as_bytes()).await;
             let _ = writer.write_all(b"DONE\n").await;
         } else if line == "PEERS" {
             let s = state.lock().await;
@@ -183,9 +179,7 @@ async fn handle_client(
                     .await;
             } else {
                 for p in &peers {
-                    let _ = writer
-                        .write_all(format!("PEER {}\n", p).as_bytes())
-                        .await;
+                    let _ = writer.write_all(format!("PEER {}\n", p).as_bytes()).await;
                 }
             }
             let _ = writer.write_all(b"DONE\n").await;
@@ -195,7 +189,12 @@ async fn handle_client(
             // Send as rows of space-separated f64 values (activation channel only)
             for y in 0..GRID_SIZE {
                 let row: Vec<String> = (0..GRID_SIZE)
-                    .map(|x| format!("{:.4}", s.knowledge.grid.cells[y][x][sage::grid::KNOWLEDGE_ACTIVATION]))
+                    .map(|x| {
+                        format!(
+                            "{:.4}",
+                            s.knowledge.grid.cells[y][x][sage::grid::KNOWLEDGE_ACTIVATION]
+                        )
+                    })
                     .collect();
                 let _ = writer
                     .write_all(format!("ROW {}\n", row.join(" ")).as_bytes())
@@ -267,7 +266,13 @@ async fn handle_client(
                     ))
                 };
 
-                let total_sources = if peer_responded > 0 { peer_responded + 1 } else if local_count > 0 { 1 } else { 0 };
+                let total_sources = if peer_responded > 0 {
+                    peer_responded + 1
+                } else if local_count > 0 {
+                    1
+                } else {
+                    0
+                };
                 (ctx, peer_result.peers_queried, total_sources)
             };
             let _ = (dist_peer_count, dist_source_count); // used for future status reporting
@@ -325,13 +330,15 @@ async fn handle_client(
             let (token_tx, mut token_rx) = tokio::sync::mpsc::channel::<String>(256);
 
             let inf_handle = tokio::task::spawn_blocking(move || {
-                engine.chat_streaming(
-                    &inf_msgs,
-                    2000,
-                    Box::new(move |token: &str| {
-                        let _ = token_tx.blocking_send(token.to_string());
-                    }),
-                ).map_err(|e| e.to_string())
+                engine
+                    .chat_streaming(
+                        &inf_msgs,
+                        2000,
+                        Box::new(move |token: &str| {
+                            let _ = token_tx.blocking_send(token.to_string());
+                        }),
+                    )
+                    .map_err(|e| e.to_string())
             });
 
             // Stream tokens to client
@@ -348,14 +355,10 @@ async fn handle_client(
             match inf_handle.await {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {
-                    let _ = writer
-                        .write_all(format!("ERROR {}\n", e).as_bytes())
-                        .await;
+                    let _ = writer.write_all(format!("ERROR {}\n", e).as_bytes()).await;
                 }
                 Err(e) => {
-                    let _ = writer
-                        .write_all(format!("ERROR {}\n", e).as_bytes())
-                        .await;
+                    let _ = writer.write_all(format!("ERROR {}\n", e).as_bytes()).await;
                 }
             }
 
@@ -452,9 +455,7 @@ async fn handle_client(
                 "metrics": metrics,
                 "inference_stats": s.inference_stats,
             });
-            let _ = writer
-                .write_all(format!("{}\n", status).as_bytes())
-                .await;
+            let _ = writer.write_all(format!("{}\n", status).as_bytes()).await;
             let _ = writer.write_all(b"DONE\n").await;
         } else {
             let _ = writer
@@ -489,8 +490,9 @@ async fn main() {
 
     // Load NCA knowledge grid
     let bp = brain_path();
-    let node_id_f64 =
-        f64::from_bits(u64::from_le_bytes(identity.public_key[..8].try_into().unwrap()));
+    let node_id_f64 = f64::from_bits(u64::from_le_bytes(
+        identity.public_key[..8].try_into().unwrap(),
+    ));
     let mut knowledge = NCAKnowledge::new().with_node_id(node_id_f64);
     if Path::new(&bp).exists() {
         if let Err(e) = knowledge.load(&bp) {
@@ -510,7 +512,10 @@ async fn main() {
     println!("   Home:      {}", home.display());
     println!("   Port:      {}", cli.port);
     println!("   Engine:    {}", engine.name());
-    println!("   mDNS:      {}", if cli.no_mdns { "disabled" } else { "enabled" });
+    println!(
+        "   mDNS:      {}",
+        if cli.no_mdns { "disabled" } else { "enabled" }
+    );
     println!("   Knowledge: {} active cells", active_count);
     println!();
 

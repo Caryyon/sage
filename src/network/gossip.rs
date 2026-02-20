@@ -3,8 +3,8 @@
 //! Defines the message types exchanged between SAGE nodes.
 //! The actual libp2p transport is stubbed — this module provides the types and traits.
 
-use serde::{Deserialize, Serialize};
 use super::diff::KnowledgeDiff;
+use serde::{Deserialize, Serialize};
 
 /// Topic names for GossipSub channels.
 pub const TOPIC_KNOWLEDGE: &str = "/sage/knowledge/1.0";

@@ -13,11 +13,10 @@
 //! Loss: cross-entropy on softmax of activation channel values at token positions.
 //! Optimizer: Adam with gradient clipping.
 
-use rand::Rng;
 use super::nca_predictor::{
-    NcaWeights, NcaPredictor, SimpleTokenizer, TrainingConfig,
-    NCA_CHANNELS, default_weights_path,
+    default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer, TrainingConfig, NCA_CHANNELS,
 };
+use rand::Rng;
 
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
 const HIDDEN1_SIZE: usize = 384;
@@ -76,11 +75,17 @@ impl NcaGradients {
     /// Flatten to vec (same order as NcaWeights::to_vec)
     fn to_vec(&self) -> Vec<f64> {
         let mut v = Vec::new();
-        for row in &self.dw1 { v.extend(row); }
+        for row in &self.dw1 {
+            v.extend(row);
+        }
         v.extend(&self.db1);
-        for row in &self.dw2 { v.extend(row); }
+        for row in &self.dw2 {
+            v.extend(row);
+        }
         v.extend(&self.db2);
-        for row in &self.dw3 { v.extend(row); }
+        for row in &self.dw3 {
+            v.extend(row);
+        }
         v.extend(&self.db3);
         v
     }
@@ -91,12 +96,30 @@ impl NcaGradients {
         let norm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
         if norm > max_norm {
             let scale = max_norm / norm;
-            for row in &mut self.dw1 { for x in row.iter_mut() { *x *= scale; } }
-            for x in &mut self.db1 { *x *= scale; }
-            for row in &mut self.dw2 { for x in row.iter_mut() { *x *= scale; } }
-            for x in &mut self.db2 { *x *= scale; }
-            for row in &mut self.dw3 { for x in row.iter_mut() { *x *= scale; } }
-            for x in &mut self.db3 { *x *= scale; }
+            for row in &mut self.dw1 {
+                for x in row.iter_mut() {
+                    *x *= scale;
+                }
+            }
+            for x in &mut self.db1 {
+                *x *= scale;
+            }
+            for row in &mut self.dw2 {
+                for x in row.iter_mut() {
+                    *x *= scale;
+                }
+            }
+            for x in &mut self.db2 {
+                *x *= scale;
+            }
+            for row in &mut self.dw3 {
+                for x in row.iter_mut() {
+                    *x *= scale;
+                }
+            }
+            for x in &mut self.db3 {
+                *x *= scale;
+            }
         }
     }
 }
@@ -106,9 +129,9 @@ impl NcaGradients {
 // ---------------------------------------------------------------------------
 
 struct AdamState {
-    m: Vec<f64>,  // first moment
-    v: Vec<f64>,  // second moment
-    t: usize,     // timestep
+    m: Vec<f64>, // first moment
+    v: Vec<f64>, // second moment
+    t: usize,    // timestep
     lr: f64,
     beta1: f64,
     beta2: f64,
@@ -154,19 +177,19 @@ impl AdamState {
 
 /// Per-cell intermediate values for one NCA step
 struct CellTrace {
-    input: Vec<f64>,      // [PERCEPTION_SIZE] - perception input
-    pre_h1: Vec<f64>,     // [HIDDEN1_SIZE] - before relu
-    h1: Vec<f64>,         // [HIDDEN1_SIZE] - after relu
-    pre_h2: Vec<f64>,     // [HIDDEN2_SIZE] - before relu
-    h2: Vec<f64>,         // [HIDDEN2_SIZE] - after relu
-    pre_out: Vec<f64>,    // [NCA_CHANNELS] - before tanh
-    delta: Vec<f64>,      // [NCA_CHANNELS] - after tanh * 0.1
-    pre_clamp: Vec<f64>,  // [NCA_CHANNELS] - grid + delta before clamp
+    input: Vec<f64>,     // [PERCEPTION_SIZE] - perception input
+    pre_h1: Vec<f64>,    // [HIDDEN1_SIZE] - before relu
+    h1: Vec<f64>,        // [HIDDEN1_SIZE] - after relu
+    pre_h2: Vec<f64>,    // [HIDDEN2_SIZE] - before relu
+    h2: Vec<f64>,        // [HIDDEN2_SIZE] - after relu
+    pre_out: Vec<f64>,   // [NCA_CHANNELS] - before tanh
+    delta: Vec<f64>,     // [NCA_CHANNELS] - after tanh * 0.1
+    pre_clamp: Vec<f64>, // [NCA_CHANNELS] - grid + delta before clamp
 }
 
 /// All traces for one NCA step across the whole grid
 struct StepTrace {
-    cells: Vec<Vec<CellTrace>>, // [grid_size][grid_size]
+    cells: Vec<Vec<CellTrace>>,                 // [grid_size][grid_size]
     grid_before: Vec<Vec<[f64; NCA_CHANNELS]>>, // grid state before this step
 }
 
@@ -402,7 +425,10 @@ fn backward_through_steps(
 /// Returns (loss, d_activations) where d_activations[i] = softmax(activations)[i] - target_one_hot[i]
 fn cross_entropy_loss(activations: &[f64], target: usize) -> (f64, Vec<f64>) {
     // Softmax
-    let max_val = activations.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_val = activations
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     let exps: Vec<f64> = activations.iter().map(|&a| (a - max_val).exp()).collect();
     let sum: f64 = exps.iter().sum();
     let probs: Vec<f64> = exps.iter().map(|e| e / sum).collect();
@@ -440,7 +466,7 @@ pub struct BackpropConfig {
     pub grid_size: usize,
     pub context_window: usize,
     pub max_examples: usize,
-    pub lr_decay: bool,  // cosine decay
+    pub lr_decay: bool, // cosine decay
 }
 
 impl Default for BackpropConfig {
@@ -492,7 +518,9 @@ pub fn train_nca_backprop(
     let random_accuracy = 1.0 / vocab_size as f64;
 
     // Build training examples
-    let max_examples = config.max_examples.min(tokens.len() - config.context_window);
+    let max_examples = config
+        .max_examples
+        .min(tokens.len() - config.context_window);
     let step = ((tokens.len() - config.context_window) / max_examples).max(1);
     let examples: Vec<(Vec<usize>, usize)> = (0..tokens.len() - config.context_window)
         .step_by(step)
@@ -506,13 +534,27 @@ pub fn train_nca_backprop(
 
     if verbose {
         eprintln!("📊 Optimizer: backprop (Adam)");
-        eprintln!("📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
-                  vocab_size, tokens.len(), grid_size, grid_size, random_accuracy * 100.0);
+        eprintln!(
+            "📊 Vocab: {}, Tokens: {}, Grid: {}×{}, Random: {:.4}%",
+            vocab_size,
+            tokens.len(),
+            grid_size,
+            grid_size,
+            random_accuracy * 100.0
+        );
         let pc = NcaWeights::random().param_count();
         eprintln!("📊 NCA params: {} ({:.1} KB)", pc, pc as f64 * 8.0 / 1024.0);
-        eprintln!("📊 Training examples: {}, NCA steps: {}, LR: {}, Epochs: {}",
-                  examples.len(), config.nca_steps, config.learning_rate, config.epochs);
-        eprintln!("📊 Grad clip: {}, LR decay: {}", config.grad_clip, config.lr_decay);
+        eprintln!(
+            "📊 Training examples: {}, NCA steps: {}, LR: {}, Epochs: {}",
+            examples.len(),
+            config.nca_steps,
+            config.learning_rate,
+            config.epochs
+        );
+        eprintln!(
+            "📊 Grad clip: {}, LR decay: {}",
+            config.grad_clip, config.lr_decay
+        );
     }
 
     let mut weights = NcaWeights::random();
@@ -583,12 +625,30 @@ pub fn train_nca_backprop(
         epoch_loss /= n_ex;
 
         // Scale gradients by 1/n_examples
-        for row in &mut epoch_grads.dw1 { for x in row.iter_mut() { *x /= n_ex; } }
-        for x in &mut epoch_grads.db1 { *x /= n_ex; }
-        for row in &mut epoch_grads.dw2 { for x in row.iter_mut() { *x /= n_ex; } }
-        for x in &mut epoch_grads.db2 { *x /= n_ex; }
-        for row in &mut epoch_grads.dw3 { for x in row.iter_mut() { *x /= n_ex; } }
-        for x in &mut epoch_grads.db3 { *x /= n_ex; }
+        for row in &mut epoch_grads.dw1 {
+            for x in row.iter_mut() {
+                *x /= n_ex;
+            }
+        }
+        for x in &mut epoch_grads.db1 {
+            *x /= n_ex;
+        }
+        for row in &mut epoch_grads.dw2 {
+            for x in row.iter_mut() {
+                *x /= n_ex;
+            }
+        }
+        for x in &mut epoch_grads.db2 {
+            *x /= n_ex;
+        }
+        for row in &mut epoch_grads.dw3 {
+            for x in row.iter_mut() {
+                *x /= n_ex;
+            }
+        }
+        for x in &mut epoch_grads.db3 {
+            *x /= n_ex;
+        }
 
         // Clip gradients
         epoch_grads.clip_norm(config.grad_clip);
@@ -608,9 +668,15 @@ pub fn train_nca_backprop(
         }
 
         if verbose {
-            eprintln!("  Epoch {}/{}: loss = {:.4}, top-5 = {:.2}% (best = {:.2}%, random = {:.4}%)",
-                      epoch + 1, config.epochs, epoch_loss, accuracy * 100.0,
-                      best_accuracy * 100.0, random_accuracy * 100.0);
+            eprintln!(
+                "  Epoch {}/{}: loss = {:.4}, top-5 = {:.2}% (best = {:.2}%, random = {:.4}%)",
+                epoch + 1,
+                config.epochs,
+                epoch_loss,
+                accuracy * 100.0,
+                best_accuracy * 100.0,
+                random_accuracy * 100.0
+            );
         }
     }
 
@@ -634,7 +700,11 @@ fn evaluate_top5(
         for (pos, &tid) in ctx.iter().enumerate() {
             let (r, c) = token_to_coord(tid, grid_size);
             grid[r][c][ACTIVATION_CH] = 1.0;
-            let pos_norm = if ctx.len() > 1 { pos as f64 / (ctx.len() - 1) as f64 } else { 1.0 };
+            let pos_norm = if ctx.len() > 1 {
+                pos as f64 / (ctx.len() - 1) as f64
+            } else {
+                1.0
+            };
             grid[r][c][1] = pos_norm;
             grid[r][c][2] = (pos + 1) as f64 / ctx.len() as f64;
         }
@@ -659,18 +729,24 @@ fn evaluate_top5(
                     let mut h1 = vec![0.0; HIDDEN1_SIZE];
                     for h in 0..HIDDEN1_SIZE {
                         let mut sum = weights.b1[h];
-                        for i in 0..PERCEPTION_SIZE { sum += weights.w1[h][i] * input[i]; }
+                        for i in 0..PERCEPTION_SIZE {
+                            sum += weights.w1[h][i] * input[i];
+                        }
                         h1[h] = sum.max(0.0);
                     }
                     let mut h2 = vec![0.0; HIDDEN2_SIZE];
                     for h in 0..HIDDEN2_SIZE {
                         let mut sum = weights.b2[h];
-                        for i in 0..HIDDEN1_SIZE { sum += weights.w2[h][i] * h1[i]; }
+                        for i in 0..HIDDEN1_SIZE {
+                            sum += weights.w2[h][i] * h1[i];
+                        }
                         h2[h] = sum.max(0.0);
                     }
                     for ch in 0..NCA_CHANNELS {
                         let mut sum = weights.b3[ch];
-                        for h in 0..HIDDEN2_SIZE { sum += weights.w3[ch][h] * h2[h]; }
+                        for h in 0..HIDDEN2_SIZE {
+                            sum += weights.w3[ch][h] * h2[h];
+                        }
                         deltas[r][c][ch] = sum.tanh() * 0.1;
                     }
                 }

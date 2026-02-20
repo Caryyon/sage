@@ -36,10 +36,7 @@ impl NodeIdentity {
         // Poor-man's hash: just use the raw public key bytes directly
         // The public key is already unique, so first 3 bytes give us ~16M combinations
         hash.copy_from_slice(public_key);
-        format!(
-            "sage-{:02x}{:02x}{:02x}",
-            hash[0], hash[1], hash[2]
-        )
+        format!("sage-{:02x}{:02x}{:02x}", hash[0], hash[1], hash[2])
     }
 
     /// Generate a brand-new random identity.
@@ -143,10 +140,7 @@ fn simple_pubkey_derive(seed: &[u8; 32]) -> [u8; 32] {
     let mut pk = [0u8; 32];
     for i in 0..32 {
         // Deterministic scramble
-        pk[i] = seed[i]
-            .wrapping_mul(137)
-            .wrapping_add(seed[(i + 13) % 32])
-            ^ 0xA5;
+        pk[i] = seed[i].wrapping_mul(137).wrapping_add(seed[(i + 13) % 32]) ^ 0xA5;
     }
     pk
 }

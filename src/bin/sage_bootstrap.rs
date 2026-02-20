@@ -26,7 +26,10 @@ struct BootstrapBehaviour {
 }
 
 #[derive(Parser)]
-#[command(name = "sage-bootstrap", about = "SAGE bootstrap/rendezvous node for internet-wide peer discovery")]
+#[command(
+    name = "sage-bootstrap",
+    about = "SAGE bootstrap/rendezvous node for internet-wide peer discovery"
+)]
 struct Cli {
     /// Port to listen on
     #[arg(short, long, default_value_t = 4001)]
@@ -89,11 +92,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
 
             // mDNS — optional LAN discovery
-            let mdns = mdns::tokio::Behaviour::new(
-                mdns::Config::default(),
-                key.public().to_peer_id(),
-            )
-            .expect("valid mdns");
+            let mdns =
+                mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())
+                    .expect("valid mdns");
 
             Ok(BootstrapBehaviour {
                 gossipsub: gs,
@@ -118,10 +119,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🌐 SAGE Bootstrap Node");
     println!("   Peer ID:  {local_peer_id}");
     println!("   Port:     {}", cli.port);
-    println!("   mDNS:     {}", if cli.no_mdns { "disabled" } else { "enabled" });
+    println!(
+        "   mDNS:     {}",
+        if cli.no_mdns { "disabled" } else { "enabled" }
+    );
     println!();
     println!("   Nodes should connect to:");
-    println!("   /dns4/bootstrap.whatssage.ai/tcp/{}/p2p/{local_peer_id}", cli.port);
+    println!(
+        "   /dns4/bootstrap.whatssage.ai/tcp/{}/p2p/{local_peer_id}",
+        cli.port
+    );
     println!();
 
     let mut peer_count: usize = 0;

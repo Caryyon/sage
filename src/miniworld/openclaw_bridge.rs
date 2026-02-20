@@ -146,7 +146,10 @@ impl OpenClawBridge {
     pub fn new() -> Self {
         let config = OpenClawConfig::from_default_path();
         if let Some(ref c) = config {
-            println!("🔗 OpenClaw bridge initialized (gateway at {})", c.gateway_url);
+            println!(
+                "🔗 OpenClaw bridge initialized (gateway at {})",
+                c.gateway_url
+            );
         } else {
             println!("⚠️  OpenClaw config not found — bridge running in simulation mode");
         }
@@ -262,7 +265,11 @@ impl OpenClawBridge {
     }
 
     /// Check on a running task's status via the gateway
-    async fn check_via_gateway(&self, config: &OpenClawConfig, task_id: &str) -> Option<(TaskStatus, Option<String>)> {
+    async fn check_via_gateway(
+        &self,
+        config: &OpenClawConfig,
+        task_id: &str,
+    ) -> Option<(TaskStatus, Option<String>)> {
         let url = format!("{}/api/v1/sessions/{}", config.gateway_url, task_id);
 
         let client = reqwest::Client::new();
@@ -278,8 +285,14 @@ impl OpenClawBridge {
         }
 
         let json: serde_json::Value = resp.json().await.ok()?;
-        let status_str = json.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let result = json.get("result").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let status_str = json
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let result = json
+            .get("result")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         let status = match status_str {
             "pending" => TaskStatus::Pending,
@@ -363,13 +376,22 @@ impl OpenClawBridge {
         } else {
             let result = match &task.task_type {
                 TaskType::Research { topic } => {
-                    format!("Completed research on '{}'. Found 3 key insights and 5 relevant papers.", topic)
+                    format!(
+                        "Completed research on '{}'. Found 3 key insights and 5 relevant papers.",
+                        topic
+                    )
                 }
                 TaskType::Coding { project } => {
-                    format!("Finished coding task '{}'. Implemented core logic with tests passing.", project)
+                    format!(
+                        "Finished coding task '{}'. Implemented core logic with tests passing.",
+                        project
+                    )
                 }
                 TaskType::Analysis { subject } => {
-                    format!("Analysis of '{}' complete. Identified 4 patterns and 2 anomalies.", subject)
+                    format!(
+                        "Analysis of '{}' complete. Identified 4 patterns and 2 anomalies.",
+                        subject
+                    )
                 }
             };
             (TaskStatus::Completed, Some(result))
@@ -390,7 +412,10 @@ impl OpenClawBridge {
                 if task.status == TaskStatus::Completed || task.status == TaskStatus::Failed {
                     (None, None)
                 } else {
-                    (Some(task.description.clone()), Some(task.status.to_string()))
+                    (
+                        Some(task.description.clone()),
+                        Some(task.status.to_string()),
+                    )
                 }
             } else {
                 (None, None)
