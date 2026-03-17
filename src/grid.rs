@@ -7,23 +7,23 @@ pub const NUM_BASE_CHANNELS: usize = 16; // 4 RGBA + 12 hidden
 pub const NUM_PATTERN_CHANNELS: usize = 4; // One-hot encoding for 4 patterns
 pub const NUM_ENV_CHANNELS: usize = 2; // Food (attract) and Toxin (repel)
 pub const NUM_MEMORY_CHANNELS: usize = 4; // Memory-augmented cell channels
-pub const NUM_KNOWLEDGE_CHANNELS: usize = 2; // Knowledge storage channels
+pub const NUM_KNOWLEDGE_CHANNELS: usize = 8; // Knowledge storage channels (6 embedding + activation + confidence)
 pub const NUM_COMM_CHANNELS: usize = 2; // Cross-node communication channels
-pub const NUM_META_CHANNELS: usize = 2; // Metadata channels (timestamp, confidence)
+pub const NUM_META_CHANNELS: usize = 2; // Metadata channels (timestamp, legacy confidence alias)
 pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS
     + NUM_PATTERN_CHANNELS
     + NUM_ENV_CHANNELS
     + NUM_MEMORY_CHANNELS
     + NUM_KNOWLEDGE_CHANNELS
     + NUM_COMM_CHANNELS
-    + NUM_META_CHANNELS; // 32 total
+    + NUM_META_CHANNELS; // 38 total
 
 // ── Channel Partitioning (shared vs private) ───────────────────────────────
 // For p2p knowledge sharing: shared channels sync via gossip, private stay local.
-// Layout: channels 0..23 are shared (synced across nodes), channels 24..31 are private.
-pub const NUM_SHARED_CHANNELS: usize = 24;
-pub const NUM_PRIVATE_CHANNELS: usize = 8;
-pub const PRIVATE_CHANNELS_START: usize = NUM_SHARED_CHANNELS; // Channel 24
+// Layout: channels 0..35 are shared (synced across nodes), channels 36..37 are private.
+pub const NUM_SHARED_CHANNELS: usize = 36;
+pub const NUM_PRIVATE_CHANNELS: usize = 2;
+pub const PRIVATE_CHANNELS_START: usize = NUM_SHARED_CHANNELS; // Channel 36
 
 /// Returns true if the given channel index is shared (synced via gossip).
 #[inline]
@@ -49,20 +49,32 @@ pub const MEMORY_GATE: usize = MEMORY_CHANNELS_START + 1; // Read/write gate (0=
 pub const MEMORY_VALUE: usize = MEMORY_CHANNELS_START + 2; // Memory value store
 pub const MEMORY_RECENCY: usize = MEMORY_CHANNELS_START + 3; // Recency/novelty tag
 
-// Knowledge channel indices (channels 26-27)
+// Knowledge channel indices (channels 26-33)
+// Layout: 6 embedding slots + activation + confidence
 pub const KNOWLEDGE_CHANNELS_START: usize = MEMORY_CHANNELS_START + NUM_MEMORY_CHANNELS; // Channel 26
-pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_CHANNELS_START; // Encoded knowledge feature
-pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 1; // Knowledge activation strength
+pub const KNOWLEDGE_EMBEDDING_0: usize = KNOWLEDGE_CHANNELS_START;     // Embedding slot 0
+pub const KNOWLEDGE_EMBEDDING_1: usize = KNOWLEDGE_CHANNELS_START + 1; // Embedding slot 1
+pub const KNOWLEDGE_EMBEDDING_2: usize = KNOWLEDGE_CHANNELS_START + 2; // Embedding slot 2
+pub const KNOWLEDGE_EMBEDDING_3: usize = KNOWLEDGE_CHANNELS_START + 3; // Embedding slot 3
+pub const KNOWLEDGE_EMBEDDING_4: usize = KNOWLEDGE_CHANNELS_START + 4; // Embedding slot 4
+pub const KNOWLEDGE_EMBEDDING_5: usize = KNOWLEDGE_CHANNELS_START + 5; // Embedding slot 5
+pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 6;  // Knowledge activation strength
+pub const KNOWLEDGE_CONFIDENCE: usize = KNOWLEDGE_CHANNELS_START + 7;  // Confidence score (0-1)
 
-// Communication channel indices (channels 28-29)
-pub const COMM_CHANNELS_START: usize = KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS; // Channel 28
+// Backward-compat aliases (KNOWLEDGE_EMBEDDING points to slot 0; META_* point into knowledge)
+pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_EMBEDDING_0;
+pub const META_CONFIDENCE: usize = KNOWLEDGE_CONFIDENCE;
+pub const META_TIMESTAMP: usize = KNOWLEDGE_EMBEDDING_5; // Slot 5 doubles as timestamp when not embedding
+
+// Communication channel indices (channels 34-35)
+pub const COMM_CHANNELS_START: usize = KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS; // Channel 34
 pub const COMM_SYNC_STATE: usize = COMM_CHANNELS_START; // Sync state for cross-node communication
 pub const COMM_NODE_ID: usize = COMM_CHANNELS_START + 1; // Source node identifier (hashed)
 
-// Metadata channel indices (channels 30-31)
-pub const META_CHANNELS_START: usize = COMM_CHANNELS_START + NUM_COMM_CHANNELS; // Channel 30
-pub const META_TIMESTAMP: usize = META_CHANNELS_START; // Normalized timestamp of last write
-pub const META_CONFIDENCE: usize = META_CHANNELS_START + 1; // Confidence score (0-1)
+// Metadata channel indices (channels 36-37) — legacy/compat, kept for serialization stability
+pub const META_CHANNELS_START: usize = COMM_CHANNELS_START + NUM_COMM_CHANNELS; // Channel 36
+pub const META_TIMESTAMP_LEGACY: usize = META_CHANNELS_START;     // Legacy timestamp slot
+pub const META_CONFIDENCE_LEGACY: usize = META_CHANNELS_START + 1; // Legacy confidence slot
 
 // Grid represents the cellular automata world
 #[derive(Clone, Serialize, Deserialize)]
@@ -128,17 +140,14 @@ impl Grid {
                     self.cells[y][x][MEMORY_VALUE] = 0.0; // Empty memory
                     self.cells[y][x][MEMORY_RECENCY] = 0.0; // No recency
 
-                    // Initialize knowledge channels (26-27) - empty
-                    self.cells[y][x][KNOWLEDGE_EMBEDDING] = 0.0;
-                    self.cells[y][x][KNOWLEDGE_ACTIVATION] = 0.0;
+                    // Initialize knowledge channels (26-33) - empty
+                    for ke in KNOWLEDGE_CHANNELS_START..KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS {
+                        self.cells[y][x][ke] = 0.0;
+                    }
 
-                    // Initialize communication channels (28-29) - empty
+                    // Initialize communication channels (34-35) - empty
                     self.cells[y][x][COMM_SYNC_STATE] = 0.0;
                     self.cells[y][x][COMM_NODE_ID] = 0.0;
-
-                    // Initialize metadata channels (30-31) - empty
-                    self.cells[y][x][META_TIMESTAMP] = 0.0;
-                    self.cells[y][x][META_CONFIDENCE] = 0.0;
                 }
             }
         }
@@ -482,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_channel_counts() {
-        assert_eq!(NUM_CHANNELS, 32, "Total channels should be 32");
+        assert_eq!(NUM_CHANNELS, 38, "Total channels should be 38");
         assert_eq!(
             NUM_SHARED_CHANNELS + NUM_PRIVATE_CHANNELS,
             NUM_CHANNELS,

@@ -3,6 +3,7 @@
 #[allow(unused_assignments, dead_code, unused_imports)]
 pub mod chat_tui;
 pub mod distributed_knowledge; // NCA-based distributed knowledge storage
+pub mod knowledge_loop; // Core intelligence cycle: Text → NCA → Knowledge → LLM
 pub mod grid;
 pub mod inference; // Unified inference engine (embedded candle + Ollama fallback)
 pub mod miniworld; // Pixel art town simulation for SAGE instances

@@ -16,8 +16,8 @@ pub mod encoder;
 pub mod text_store;
 
 use crate::grid::{
-    Grid, COMM_NODE_ID, COMM_SYNC_STATE, GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING,
-    META_CONFIDENCE, META_TIMESTAMP, NUM_CHANNELS,
+    Grid, COMM_NODE_ID, COMM_SYNC_STATE, GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START,
+    KNOWLEDGE_CONFIDENCE, NUM_CHANNELS, NUM_KNOWLEDGE_CHANNELS,
 };
 use decoder::{scan_active_knowledge, KnowledgeActivation};
 use encoder::{encode_text, write_knowledge, EncoderConfig};
@@ -161,8 +161,8 @@ pub struct GridDelta {
 pub struct CellDelta {
     pub x: usize,
     pub y: usize,
-    /// Values for channels 26-31 (knowledge + comm + meta)
-    pub values: [f64; 6],
+    /// Values for knowledge channels (26-33) + comm channels (34-35) = 10 total
+    pub values: [f64; 10],
 }
 
 /// NCA-based knowledge store implementation
@@ -253,15 +253,19 @@ impl KnowledgeStore for NCAKnowledge {
                 let self_act = self.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
 
                 if other_act > self_act {
-                    // Other has stronger knowledge here — blend in
-                    self.grid.cells[y][x][KNOWLEDGE_EMBEDDING] =
-                        self.grid.cells[y][x][KNOWLEDGE_EMBEDDING] * (1.0 - s)
-                            + other.cells[y][x][KNOWLEDGE_EMBEDDING] * s;
+                    // Blend all embedding slots
+                    for slot in 0..NUM_KNOWLEDGE_CHANNELS {
+                        let ch = KNOWLEDGE_CHANNELS_START + slot;
+                        self.grid.cells[y][x][ch] = self.grid.cells[y][x][ch] * (1.0 - s)
+                            + other.cells[y][x][ch] * s;
+                    }
+                    // Activation
                     self.grid.cells[y][x][KNOWLEDGE_ACTIVATION] =
                         self_act * (1.0 - s) + other_act * s;
-                    self.grid.cells[y][x][META_CONFIDENCE] = self.grid.cells[y][x][META_CONFIDENCE]
-                        .max(other.cells[y][x][META_CONFIDENCE] * s);
-                    self.grid.cells[y][x][META_TIMESTAMP] = other.cells[y][x][META_TIMESTAMP];
+                    // Confidence
+                    self.grid.cells[y][x][KNOWLEDGE_CONFIDENCE] = self.grid.cells[y][x]
+                        [KNOWLEDGE_CONFIDENCE]
+                        .max(other.cells[y][x][KNOWLEDGE_CONFIDENCE] * s);
                 }
             }
         }
@@ -271,19 +275,18 @@ impl KnowledgeStore for NCAKnowledge {
         let mut changes = Vec::new();
         let threshold = 0.01;
 
+        // channels: all NUM_KNOWLEDGE_CHANNELS knowledge + 2 comm = 10
+        let mut channels = [0usize; 10];
+        for i in 0..NUM_KNOWLEDGE_CHANNELS {
+            channels[i] = KNOWLEDGE_CHANNELS_START + i;
+        }
+        channels[NUM_KNOWLEDGE_CHANNELS] = COMM_SYNC_STATE;
+        channels[NUM_KNOWLEDGE_CHANNELS + 1] = COMM_NODE_ID;
+
         for y in 0..self.grid.height.min(other.height) {
             for x in 0..self.grid.width.min(other.width) {
                 let mut has_diff = false;
-                let channels = [
-                    KNOWLEDGE_EMBEDDING,
-                    KNOWLEDGE_ACTIVATION,
-                    COMM_SYNC_STATE,
-                    COMM_NODE_ID,
-                    META_TIMESTAMP,
-                    META_CONFIDENCE,
-                ];
-
-                let mut values = [0.0f64; 6];
+                let mut values = [0.0f64; 10];
                 for (i, &ch) in channels.iter().enumerate() {
                     let diff = self.grid.cells[y][x][ch] - other.cells[y][x][ch];
                     if diff.abs() > threshold {
@@ -306,26 +309,26 @@ impl KnowledgeStore for NCAKnowledge {
     }
 
     fn apply_delta(&mut self, delta: &GridDelta) {
-        let channels = [
-            KNOWLEDGE_EMBEDDING,
-            KNOWLEDGE_ACTIVATION,
-            COMM_SYNC_STATE,
-            COMM_NODE_ID,
-            META_TIMESTAMP,
-            META_CONFIDENCE,
-        ];
+        let mut channels = [0usize; 10];
+        for i in 0..NUM_KNOWLEDGE_CHANNELS {
+            channels[i] = KNOWLEDGE_CHANNELS_START + i;
+        }
+        channels[NUM_KNOWLEDGE_CHANNELS] = COMM_SYNC_STATE;
+        channels[NUM_KNOWLEDGE_CHANNELS + 1] = COMM_NODE_ID;
+
+        // Index of KNOWLEDGE_ACTIVATION within our channels array
+        let act_idx = KNOWLEDGE_ACTIVATION - KNOWLEDGE_CHANNELS_START;
 
         for change in &delta.changes {
             if change.x < self.grid.width && change.y < self.grid.height {
                 for (i, &ch) in channels.iter().enumerate() {
-                    // Only apply if the incoming value is "newer" (higher activation or timestamp)
                     let incoming = change.values[i];
                     let current = self.grid.cells[change.y][change.x][ch];
 
                     // For activation: take max; for others: take incoming if activation is higher
                     if ch == KNOWLEDGE_ACTIVATION {
                         self.grid.cells[change.y][change.x][ch] = current.max(incoming);
-                    } else if change.values[1]
+                    } else if change.values[act_idx]
                         > self.grid.cells[change.y][change.x][KNOWLEDGE_ACTIVATION]
                     {
                         self.grid.cells[change.y][change.x][ch] = incoming;
@@ -590,11 +593,11 @@ mod tests {
 
     #[test]
     fn test_brain_header_roundtrip() {
-        let header = BrainHeader::new(256, 32, [42u8; 32]);
+        let header = BrainHeader::new(256, 38, [42u8; 32]);
         assert_eq!(header.magic, BRAIN_MAGIC);
         assert_eq!(header.version, BRAIN_VERSION);
         assert_eq!(header.grid_size, 256);
-        assert_eq!(header.channels, 32);
+        assert_eq!(header.channels, 38);
 
         let data = bincode::serialize(&header).unwrap();
         let restored: BrainHeader = bincode::deserialize(&data).unwrap();
@@ -608,7 +611,7 @@ mod tests {
         // Create a small "v1" grid (32×32)
         let mut old_grid = Grid::new(32, 32);
         // Put some knowledge in the center
-        old_grid.cells[16][16][KNOWLEDGE_EMBEDDING] = 0.9;
+        old_grid.cells[16][16][KNOWLEDGE_CHANNELS_START] = 0.9; // embedding slot 0
         old_grid.cells[16][16][KNOWLEDGE_ACTIVATION] = 0.8;
 
         let new_grid = migrate_v1_to_v2(&old_grid, 256);

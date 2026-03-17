@@ -4,10 +4,10 @@
 //! Uses cosine similarity for semantic matching when embeddings are available.
 //! Returns actual text snippets via the TextStore.
 
-use super::encoder::{encode_text, feature_to_position, EncoderConfig, FeatureVector};
+use super::encoder::{encode_text, feature_to_position, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{
-    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING, META_CONFIDENCE, META_TIMESTAMP,
+    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
 };
 
 /// A knowledge activation result from querying the grid
@@ -29,6 +29,39 @@ pub struct KnowledgeActivation {
     pub text: Option<String>,
 }
 
+/// Read the first embedding slot value for a cell (backward-compat helper).
+fn cell_embedding(grid: &Grid, y: usize, x: usize) -> f64 {
+    grid.cells[y][x][KNOWLEDGE_CHANNELS_START]
+}
+
+/// Extract the 6-slot embedding vector from a cell.
+pub fn cell_embedding_vec(grid: &Grid, y: usize, x: usize) -> [f64; NUM_EMBED_SLOTS] {
+    let mut v = [0.0f64; NUM_EMBED_SLOTS];
+    for (i, slot) in v.iter_mut().enumerate() {
+        *slot = grid.cells[y][x][KNOWLEDGE_CHANNELS_START + i];
+    }
+    v
+}
+
+/// Cosine similarity between a feature vector and a cell's 6 embedding slots.
+fn cosine_sim_query_cell(query_features: &FeatureVector, cell_embed: &[f64; NUM_EMBED_SLOTS]) -> f64 {
+    // Extract the first NUM_EMBED_SLOTS values from the query feature vector
+    let feat_len = query_features.values.len().max(1);
+    let mut query_slots = [0.0f64; NUM_EMBED_SLOTS];
+    for (i, slot) in query_slots.iter_mut().enumerate() {
+        let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
+        *slot = query_features.values[feat_idx];
+    }
+
+    let dot: f64 = query_slots.iter().zip(cell_embed.iter()).map(|(a, b)| a * b).sum();
+    let mag_q: f64 = query_slots.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let mag_c: f64 = cell_embed.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if mag_q < 1e-10 || mag_c < 1e-10 {
+        return 0.0;
+    }
+    (dot / (mag_q * mag_c)).clamp(-1.0, 1.0)
+}
+
 /// Read the knowledge state at a specific grid cell
 pub fn read_cell_knowledge(grid: &Grid, x: usize, y: usize) -> Option<KnowledgeActivation> {
     if x >= grid.width || y >= grid.height {
@@ -43,9 +76,9 @@ pub fn read_cell_knowledge(grid: &Grid, x: usize, y: usize) -> Option<KnowledgeA
     Some(KnowledgeActivation {
         position: (x, y),
         activation,
-        confidence: grid.cells[y][x][META_CONFIDENCE],
-        timestamp: grid.cells[y][x][META_TIMESTAMP],
-        embedding: grid.cells[y][x][KNOWLEDGE_EMBEDDING],
+        confidence: grid.cells[y][x][KNOWLEDGE_CONFIDENCE],
+        timestamp: 0.0,
+        embedding: cell_embedding(grid, y, x),
         relevance: activation,
         text: None,
     })
@@ -62,9 +95,9 @@ pub fn scan_active_knowledge(grid: &Grid, min_activation: f64) -> Vec<KnowledgeA
                 results.push(KnowledgeActivation {
                     position: (x, y),
                     activation,
-                    confidence: grid.cells[y][x][META_CONFIDENCE],
-                    timestamp: grid.cells[y][x][META_TIMESTAMP],
-                    embedding: grid.cells[y][x][KNOWLEDGE_EMBEDDING],
+                    confidence: grid.cells[y][x][KNOWLEDGE_CONFIDENCE],
+                    timestamp: 0.0,
+                    embedding: cell_embedding(grid, y, x),
                     relevance: activation,
                     text: None,
                 });
@@ -108,7 +141,8 @@ pub fn query_knowledge_by_features(
     query_knowledge_by_features_with_text(grid, query_features, config, max_results, None)
 }
 
-/// Query with pre-computed features and optional text store
+/// Query with pre-computed features and optional text store.
+/// Uses cosine similarity (70%) + proximity (30%) for semantic retrieval.
 pub fn query_knowledge_by_features_with_text(
     grid: &Grid,
     query_features: &FeatureVector,
@@ -135,10 +169,17 @@ pub fn query_knowledge_by_features_with_text(
 
             let dist = ((dx * dx + dy * dy) as f64).sqrt();
             let proximity = 1.0 / (1.0 + dist);
-            let confidence = grid.cells[ny][nx][META_CONFIDENCE];
+            let confidence = grid.cells[ny][nx][KNOWLEDGE_CONFIDENCE];
 
-            // Relevance combines activation, proximity, and confidence
-            let relevance = activation * 0.4 + proximity * 0.4 + confidence * 0.2;
+            // Cosine similarity between query embedding and cell embedding slots
+            let cell_embed = cell_embedding_vec(grid, ny, nx);
+            let cos_sim = cosine_sim_query_cell(query_features, &cell_embed);
+            // Clamp to [0, 1] for scoring (negative similarity → 0)
+            let cos_sim_pos = cos_sim.max(0.0);
+
+            // Semantic retrieval: 70% cosine similarity, 30% proximity
+            // Also factor in activation as a multiplier so empty cells don't score
+            let relevance = activation * (0.3 * proximity + 0.7 * cos_sim_pos + 0.1 * confidence);
 
             // Look up original text
             let text = text_store.and_then(|ts| ts.peek(nx, ny).map(|s| s.to_string()));
@@ -155,8 +196,8 @@ pub fn query_knowledge_by_features_with_text(
                 position: (nx, ny),
                 activation,
                 confidence,
-                timestamp: grid.cells[ny][nx][META_TIMESTAMP],
-                embedding: grid.cells[ny][nx][KNOWLEDGE_EMBEDDING],
+                timestamp: 0.0,
+                embedding: cell_embedding(grid, ny, nx),
                 relevance,
                 text,
             });
@@ -201,7 +242,7 @@ pub fn decode_region(
 
             let offset =
                 ((dy + r) as usize * (2 * r as usize + 1) + (dx + r) as usize) % num_features;
-            features.values[offset] += grid.cells[ny][nx][KNOWLEDGE_EMBEDDING] * weight;
+            features.values[offset] += grid.cells[ny][nx][KNOWLEDGE_CHANNELS_START] * weight;
             total_weight += weight;
         }
     }

@@ -6,7 +6,8 @@
 //! Spatial locality: related knowledge clusters in nearby cells.
 
 use crate::grid::{
-    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_EMBEDDING, META_CONFIDENCE, META_TIMESTAMP,
+    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
+    NUM_KNOWLEDGE_CHANNELS,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -253,7 +254,12 @@ pub fn feature_to_position(
     (x, y)
 }
 
-/// Write encoded knowledge into the NCA grid's knowledge channels
+/// Number of embedding slots in the knowledge channels (channels 26-31).
+/// Channels 26..KNOWLEDGE_CHANNELS_START+6 are embedding, +6 is activation, +7 is confidence.
+pub const NUM_EMBED_SLOTS: usize = 6;
+
+/// Write encoded knowledge into the NCA grid's knowledge channels.
+/// Distributes the feature vector across 6 embedding slots per cell.
 pub fn write_knowledge(
     grid: &mut Grid,
     features: &FeatureVector,
@@ -261,8 +267,11 @@ pub fn write_knowledge(
     timestamp: f64,
     config: &EncoderConfig,
 ) -> (usize, usize) {
+    let _ = timestamp; // Kept in signature for API compat; activation encodes recency
     let (cx, cy) = feature_to_position(features, grid.width, grid.height);
     let radius = config.spread_radius as i32;
+
+    let feat_len = features.values.len().max(1);
 
     for dy in -radius..=radius {
         for dx in -radius..=radius {
@@ -276,24 +285,25 @@ pub fn write_knowledge(
 
             let decay = config.spatial_decay.powf(dist);
 
-            let offset =
-                (dy + radius) as usize * (2 * radius as usize + 1) + (dx + radius) as usize;
-            let feat_idx = offset % features.values.len().max(1);
-            let embedding_val = features.values[feat_idx];
+            // Write 6 embedding slots: evenly spaced strides through the feature vec
+            for slot in 0..NUM_EMBED_SLOTS {
+                let feat_idx = (slot * feat_len / NUM_EMBED_SLOTS) % feat_len;
+                let embedding_val = features.values[feat_idx];
+                let ch = KNOWLEDGE_CHANNELS_START + slot;
+                let existing = grid.cells[ny][nx][ch];
+                grid.cells[ny][nx][ch] =
+                    (existing * (1.0 - decay * 0.5) + embedding_val * decay * 0.5).clamp(-1.0, 1.0);
+            }
 
-            let existing_embed = grid.cells[ny][nx][KNOWLEDGE_EMBEDDING];
+            // Write activation
             let existing_act = grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
-
-            grid.cells[ny][nx][KNOWLEDGE_EMBEDDING] = (existing_embed * (1.0 - decay * 0.5)
-                + embedding_val * decay * 0.5)
-                .clamp(-1.0, 1.0);
             grid.cells[ny][nx][KNOWLEDGE_ACTIVATION] =
                 (existing_act + decay * confidence).clamp(0.0, 1.0);
 
+            // Write confidence
             if decay > 0.3 {
-                grid.cells[ny][nx][META_TIMESTAMP] = timestamp;
-                grid.cells[ny][nx][META_CONFIDENCE] =
-                    grid.cells[ny][nx][META_CONFIDENCE].max(confidence * decay);
+                grid.cells[ny][nx][KNOWLEDGE_CONFIDENCE] =
+                    grid.cells[ny][nx][KNOWLEDGE_CONFIDENCE].max(confidence * decay);
             }
         }
     }
