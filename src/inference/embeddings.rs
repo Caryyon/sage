@@ -254,6 +254,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires HuggingFace model download (all-MiniLM-L6-v2); run with --include-ignored when online"]
     fn test_embedding_dimension() {
         let engine = EmbeddingEngine::new();
         let emb = engine.embed("test").unwrap();
@@ -261,6 +262,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires HuggingFace model download (all-MiniLM-L6-v2); run with --include-ignored when online"]
     fn test_semantic_beats_hash_for_synonyms() {
         let engine = EmbeddingEngine::new();
 

@@ -544,8 +544,8 @@ pub fn perceive(grid: &Grid, y: usize, x: usize) -> Vec<f64> {
 
         for dy_offset in -1..=1 {
             for dx_offset in -1..=1 {
-                let ny = (y as i32 + dy_offset);
-                let nx = (x as i32 + dx_offset);
+                let ny = y as i32 + dy_offset;
+                let nx = x as i32 + dx_offset;
                 let cell = grid.get_cell(ny, nx);
                 let val = cell[channel];
 
