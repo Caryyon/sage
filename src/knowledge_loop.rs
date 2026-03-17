@@ -22,6 +22,9 @@ const N_DREAM_STEPS: usize = 3;
 const DREAM_WINDOW: usize = 8; // 16×16 region
 /// Number of freerun repair steps after dream cycle.
 const N_FREERUN_STEPS: usize = 3;
+/// Number of NCA update steps to run BEFORE retrieval (post-encode, pre-query).
+/// This lets the grid "react" to newly encoded input before we read from it.
+const N_PRE_RETRIEVE_STEPS: usize = 3;
 
 /// The core SAGE knowledge loop: encode → retrieve → generate → encode → dream.
 ///
@@ -267,21 +270,31 @@ impl KnowledgeLoop {
 
     /// Run one turn of the knowledge loop:
     /// 1. Encode user input into NCA grid
-    /// 2. Retrieve relevant knowledge from grid
-    /// 3. Build prompt with knowledge context
-    /// 4. Generate response via inference engine
-    /// 5. Encode response into NCA grid
+    /// 2. Run NCA update steps (grid reacts to new input via local rules)
+    /// 3. Retrieve relevant knowledge (AttentionDecoder for semantic queries)
+    /// 4. Build prompt with knowledge context
+    /// 5. Generate response via inference engine
+    /// 6. Encode response into NCA grid
+    /// 7. Dream cycle: NCA predictor runs on response region
+    /// 8. Freerun repair: consolidate via local rules
     ///
     /// Returns the assistant's response.
     pub fn chat(&mut self, user_input: &str) -> Result<String, Box<dyn Error>> {
         // 1. Encode user input into NCA grid
-        self.knowledge
+        let user_pos = self
+            .knowledge
             .encode(user_input, self.user_encode_confidence);
 
-        // 2. Retrieve relevant knowledge
+        // 2. Run NCA update steps to let the grid "react" to the new input
+        // This is the key cellular automata step: cells communicate via local rules
+        // before we query them, allowing associative pattern completion.
+        self.knowledge
+            .freerun_repair(user_pos, N_PRE_RETRIEVE_STEPS);
+
+        // 3. Retrieve relevant knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
 
-        // 3. Build message history with knowledge-augmented system prompt
+        // 4. Build message history with knowledge-augmented system prompt
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
             system = format!("{}\n\n{}", system, ctx);
@@ -297,10 +310,10 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
-        // 4. Generate response
+        // 5. Generate response
         let response = self.engine.chat(&messages, 1000)?;
 
-        // 5. Encode response into NCA grid
+        // 6. Encode response into NCA grid
         let response_pos = self
             .knowledge
             .encode(&response, self.response_encode_confidence);
@@ -309,10 +322,10 @@ impl KnowledgeLoop {
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
 
-        // 6. Dream cycle: run NCA update steps on recently-written region
+        // 7. Dream cycle: run NCA update steps on recently-written region
         self.step_knowledge(response_pos);
 
-        // 7. Freerun repair: consolidate knowledge via local rules (rNCA paper)
+        // 8. Freerun repair: consolidate knowledge via local rules (rNCA paper)
         // This lets the grid "settle" its activation patterns after the dream cycle
         self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
 
@@ -337,13 +350,18 @@ impl KnowledgeLoop {
         callback: Box<dyn FnMut(&str) + Send>,
     ) -> Result<String, Box<dyn Error>> {
         // 1. Encode user input
-        self.knowledge
+        let user_pos = self
+            .knowledge
             .encode(user_input, self.user_encode_confidence);
 
-        // 2. Retrieve knowledge
+        // 2. Run NCA update steps (grid reacts to new input via local rules)
+        self.knowledge
+            .freerun_repair(user_pos, N_PRE_RETRIEVE_STEPS);
+
+        // 3. Retrieve knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
 
-        // 3. Build messages
+        // 4. Build messages
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
             system = format!("{}\n\n{}", system, ctx);
@@ -359,7 +377,7 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
-        // 4. Stream response
+        // 5. Stream response
         let full_response = Arc::new(std::sync::Mutex::new(String::new()));
         let resp_clone = Arc::clone(&full_response);
         let wrapped_cb = Box::new(move |token: &str| {
@@ -381,17 +399,17 @@ impl KnowledgeLoop {
         self.engine.chat_streaming(&messages, 1000, combined_cb)?;
         let response = response_collector.lock().unwrap().clone();
 
-        // 5. Encode response
+        // 6. Encode response
         let response_pos = self
             .knowledge
             .encode(&response, self.response_encode_confidence);
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
 
-        // 6. Dream cycle
+        // 7. Dream cycle
         self.step_knowledge(response_pos);
 
-        // 7. Freerun repair: consolidate knowledge via local rules (rNCA paper)
+        // 8. Freerun repair: consolidate knowledge via local rules (rNCA paper)
         self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
 
         // Update history
