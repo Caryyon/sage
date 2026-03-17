@@ -5,8 +5,10 @@
 //! This is the reusable heart of SAGE, decoupled from any specific UI.
 //! The TUI, API server, and CLI all use this to interact with the NCA brain.
 
+use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
+use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
-use crate::grid::{KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, NUM_BASE_CHANNELS};
+use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, NUM_BASE_CHANNELS};
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
@@ -18,6 +20,8 @@ use std::sync::Arc;
 const N_DREAM_STEPS: usize = 3;
 /// Window half-size for the region fed into the dream predictor.
 const DREAM_WINDOW: usize = 8; // 16×16 region
+/// Number of freerun repair steps after dream cycle.
+const N_FREERUN_STEPS: usize = 3;
 
 /// The core SAGE knowledge loop: encode → retrieve → generate → encode → dream.
 ///
@@ -42,6 +46,12 @@ pub struct KnowledgeLoop {
     nca_predictor: Option<NcaPredictor>,
     /// Whether we've already attempted to load the predictor.
     nca_load_attempted: bool,
+    /// Cross-attention decoder for semantic knowledge retrieval.
+    /// Based on arXiv:2603.10055 (Lee et al.): attention layers are the
+    /// most transferable component when extracting knowledge from NCA states.
+    attention_decoder: AttentionDecoder,
+    /// Encoder config for embedding queries.
+    encoder_config: EncoderConfig,
 }
 
 impl KnowledgeLoop {
@@ -59,6 +69,8 @@ impl KnowledgeLoop {
             response_encode_confidence: 0.8,
             nca_predictor: None,
             nca_load_attempted: false,
+            attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE),
+            encoder_config: EncoderConfig::default(),
         }
     }
 
@@ -94,25 +106,48 @@ impl KnowledgeLoop {
 
     /// Retrieve knowledge context relevant to a query from the NCA brain.
     ///
+    /// Uses cross-attention (arXiv:2603.10055) when semantic embeddings are available,
+    /// falling back to cosine+proximity scoring for hash-based queries.
+    ///
     /// Returns formatted context string, or None if nothing relevant found.
     pub fn retrieve_knowledge(&self, query: &str) -> Option<String> {
-        let results = self.knowledge.query(query, self.max_results);
-        let relevant: Vec<_> = results
-            .iter()
-            .filter(|r| r.text.is_some() && r.relevance > self.relevance_threshold)
-            .collect();
+        // Encode the query to determine if we have semantic embeddings
+        let query_features = encode_text(query, &self.encoder_config);
 
-        if relevant.is_empty() {
+        let relevant_texts: Vec<String> = if query_features.is_semantic {
+            // Use AttentionDecoder for semantic queries (cross-attention readout)
+            let attention_results = self.attention_decoder.attend_with_spatial_gate_and_text(
+                &query_features,
+                &self.knowledge.grid,
+                self.max_results,
+                32, // gate_radius
+                Some(&self.knowledge.text_store),
+            );
+
+            attention_results
+                .into_iter()
+                .filter(|r| r.attention_weight > self.relevance_threshold && r.text.is_some())
+                .filter_map(|r| r.text)
+                .collect()
+        } else {
+            // Fall back to cosine+proximity for hash-based queries
+            let results = self.knowledge.query(query, self.max_results);
+            results
+                .into_iter()
+                .filter(|r| r.relevance > self.relevance_threshold && r.text.is_some())
+                .filter_map(|r| r.text)
+                .collect()
+        };
+
+        if relevant_texts.is_empty() {
             return None;
         }
 
         let mut context = String::from(
             "## Recalled Knowledge\nThe following context from previous conversations may be relevant:\n\n",
         );
-        for r in &relevant {
-            if let Some(ref text) = r.text {
-                context.push_str(&format!("- {}\n", text));
-            }
+        for text in &relevant_texts {
+            context.push_str(&format!("- {}\n", text));
         }
         context.push_str(
             "\nUse the above context naturally if relevant. Do NOT mention relevance scores, \
@@ -277,6 +312,10 @@ impl KnowledgeLoop {
         // 6. Dream cycle: run NCA update steps on recently-written region
         self.step_knowledge(response_pos);
 
+        // 7. Freerun repair: consolidate knowledge via local rules (rNCA paper)
+        // This lets the grid "settle" its activation patterns after the dream cycle
+        self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
+
         // Update history
         self.history.push(ChatMessage {
             role: ChatRole::User,
@@ -351,6 +390,9 @@ impl KnowledgeLoop {
 
         // 6. Dream cycle
         self.step_knowledge(response_pos);
+
+        // 7. Freerun repair: consolidate knowledge via local rules (rNCA paper)
+        self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
 
         // Update history
         self.history.push(ChatMessage {

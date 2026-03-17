@@ -57,6 +57,31 @@
 | `grid` | Low-level 2D grid data structure |
 | `pattern_semantics` | Map NCA patterns to semantic meanings |
 
+### Knowledge Retrieval: Attention vs. Cosine
+
+SAGE supports two knowledge retrieval strategies, selected automatically based on query type:
+
+**Cosine Similarity (Hash-Based Queries)**
+- Fast O(active_cells) scan of grid neighborhood
+- Uses hash-based feature encoding when Ollama embeddings unavailable
+- Combines 70% cosine similarity + 30% spatial proximity
+- Good for exact keyword matching
+
+**Cross-Attention (Semantic Queries)**
+- Based on arXiv:2603.10055 (Lee et al., MIT CSAIL): attention layers are the most transferable mechanism from NCA to LLM
+- Query = task context embedding; Keys/Values = NCA cell embedding slots
+- Scaled dot-product attention: `softmax(QK^T / sqrt(d_k)) V`
+- Spatial gating (thalamic routing): routes attention to most relevant grid quadrant first
+- Complexity: O(active_cells * d_k) where d_k = 6 embedding slots
+- Used when Ollama embeddings are available (semantic understanding)
+
+**Freerun Repair**
+- Based on rNCA (Silbernagel et al., 2025): self-repair dynamics prevent semantic drift
+- After encoding new knowledge, run unconditioned NCA steps (no new input)
+- Smooths hidden channels (4..16) via local neighbor averaging
+- Knowledge channels (26+) are preserved unchanged
+- Consolidates activation patterns before the next read
+
 ### Language & Learning
 
 | Module | Purpose |

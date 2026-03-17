@@ -3,14 +3,16 @@
 //! NCA-based knowledge storage for decentralized AI. The NCA grid IS the knowledge store.
 //! Each node runs locally, learns from interactions, and shares knowledge across a network.
 //!
-//! ## Channel Layout (32 total)
+//! ## Channel Layout (38 total)
 //! - Channels 0-15: Self-organization (existing NCA behavior)
-//! - Channels 16-21: Pattern/Env (existing)
-//! - Channels 22-25: Memory (existing attention/gate/value/recency)
-//! - Channels 26-27: Knowledge (embedding + activation) — NEW
-//! - Channels 28-29: Communication (sync state + node ID) — NEW
-//! - Channels 30-31: Metadata (timestamp + confidence) — NEW
+//! - Channels 16-19: Pattern conditioning (one-hot)
+//! - Channels 20-21: Environment (food, toxin)
+//! - Channels 22-25: Memory (attention/gate/value/recency)
+//! - Channels 26-33: Knowledge (6 embedding slots + activation + confidence)
+//! - Channels 34-35: Communication (sync state + node ID)
+//! - Channels 36-37: Metadata (legacy timestamp + confidence)
 
+pub mod attention_decoder;
 pub mod decoder;
 pub mod encoder;
 pub mod text_store;
@@ -221,6 +223,24 @@ impl NCAKnowledge {
                 // Don't decay embedding or metadata — those persist
             }
         }
+    }
+
+    /// Run freerun repair steps on a region of the grid.
+    ///
+    /// Based on rNCA (Silbernagel et al., 2025): NCA self-repair dynamics
+    /// consolidate knowledge and prevent semantic drift after encoding.
+    ///
+    /// This lets the grid "settle" its activation patterns via local
+    /// communication rules before the next read. Only touches hidden
+    /// channels (4..16); knowledge channels are preserved.
+    ///
+    /// # Arguments
+    /// * `center` - (x, y) coordinates of the repair region center
+    /// * `steps` - Number of freerun repair steps to run
+    pub fn freerun_repair(&mut self, center: (usize, usize), steps: usize) {
+        const DEFAULT_RADIUS: usize = 8;
+        self.grid
+            .freerun_repair(center.0, center.1, DEFAULT_RADIUS, steps);
     }
 }
 

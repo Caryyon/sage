@@ -421,6 +421,114 @@ impl Grid {
             }
         }
     }
+
+    /// Run N unconditioned NCA update steps (no new input signal).
+    ///
+    /// Based on rNCA (Silbernagel et al., 2025): NCA self-repair dynamics
+    /// consolidate knowledge and prevent semantic drift after encoding.
+    ///
+    /// This is called after text encoding to let the grid "settle" its
+    /// activation patterns before the next read. Cells communicate via
+    /// local rules only. No external input changes the grid during repair.
+    ///
+    /// Only touches base hidden channels (4..NUM_BASE_CHANNELS).
+    /// Knowledge channels (KNOWLEDGE_CHANNELS_START..) are left untouched.
+    ///
+    /// # Arguments
+    /// * `cx`, `cy` - Center coordinates of the repair region
+    /// * `radius` - Half-width of the repair window
+    /// * `steps` - Number of freerun repair steps to run
+    pub fn freerun_repair(&mut self, cx: usize, cy: usize, radius: usize, steps: usize) {
+        // Snapshot knowledge channels BEFORE repair to verify they're untouched
+        #[cfg(debug_assertions)]
+        let knowledge_snapshot: Vec<((usize, usize), Vec<f64>)> = {
+            let mut snap = Vec::new();
+            let r = radius as i32;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let nx = ((cx as i32 + dx).rem_euclid(self.width as i32)) as usize;
+                    let ny = ((cy as i32 + dy).rem_euclid(self.height as i32)) as usize;
+                    let k_vals: Vec<f64> = (KNOWLEDGE_CHANNELS_START..NUM_CHANNELS)
+                        .map(|ch| self.cells[ny][nx][ch])
+                        .collect();
+                    snap.push(((nx, ny), k_vals));
+                }
+            }
+            snap
+        };
+
+        let r = radius as i32;
+
+        for _step in 0..steps {
+            // Collect updates: for each cell in window, compute neighbor average of hidden channels
+            let mut updates: Vec<(usize, usize, [f64; NUM_BASE_CHANNELS])> = Vec::new();
+
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let nx = ((cx as i32 + dx).rem_euclid(self.width as i32)) as usize;
+                    let ny = ((cy as i32 + dy).rem_euclid(self.height as i32)) as usize;
+
+                    // Compute neighborhood average of hidden channels (4..16)
+                    let mut neighbor_avg = [0.0f64; NUM_BASE_CHANNELS];
+                    let mut neighbor_count = 0;
+
+                    for ndy in -1i32..=1 {
+                        for ndx in -1i32..=1 {
+                            if ndy == 0 && ndx == 0 {
+                                continue; // Skip self
+                            }
+                            let nnx =
+                                ((nx as i32 + ndx).rem_euclid(self.width as i32)) as usize;
+                            let nny =
+                                ((ny as i32 + ndy).rem_euclid(self.height as i32)) as usize;
+
+                            for ch in 4..NUM_BASE_CHANNELS {
+                                neighbor_avg[ch] += self.cells[nny][nnx][ch];
+                            }
+                            neighbor_count += 1;
+                        }
+                    }
+
+                    if neighbor_count > 0 {
+                        for ch in 4..NUM_BASE_CHANNELS {
+                            neighbor_avg[ch] /= neighbor_count as f64;
+                        }
+                    }
+
+                    updates.push((nx, ny, neighbor_avg));
+                }
+            }
+
+            // Apply smoothing: new_val = 0.7 * current + 0.3 * neighbor_avg
+            for (nx, ny, neighbor_avg) in updates {
+                for ch in 4..NUM_BASE_CHANNELS {
+                    self.cells[ny][nx][ch] =
+                        self.cells[ny][nx][ch] * 0.7 + neighbor_avg[ch] * 0.3;
+                }
+            }
+        }
+
+        // Verify knowledge channels were NOT modified (debug builds only)
+        #[cfg(debug_assertions)]
+        {
+            for ((nx, ny), old_vals) in knowledge_snapshot {
+                for (i, &old_val) in old_vals.iter().enumerate() {
+                    let ch = KNOWLEDGE_CHANNELS_START + i;
+                    let new_val = self.cells[ny][nx][ch];
+                    debug_assert!(
+                        (new_val - old_val).abs() < 1e-10,
+                        "freerun_repair must not modify knowledge channels: \
+                         channel {} at ({},{}) changed from {} to {}",
+                        ch,
+                        nx,
+                        ny,
+                        old_val,
+                        new_val
+                    );
+                }
+            }
+        }
+    }
 }
 
 // Perception function - computes Sobel gradients for each channel
@@ -527,5 +635,92 @@ mod tests {
         assert_eq!(grid.width, 64);
         assert_eq!(grid.height, 64);
         assert_eq!(grid.cells[0][0].len(), NUM_CHANNELS);
+    }
+
+    #[test]
+    fn test_freerun_does_not_touch_knowledge_channels() {
+        let mut grid = Grid::new(64, 64);
+        let cx = 32;
+        let cy = 32;
+
+        // Set some knowledge channel values
+        for ch in KNOWLEDGE_CHANNELS_START..NUM_CHANNELS {
+            grid.cells[cy][cx][ch] = 0.5;
+        }
+
+        // Snapshot before
+        let before: Vec<f64> = (KNOWLEDGE_CHANNELS_START..NUM_CHANNELS)
+            .map(|ch| grid.cells[cy][cx][ch])
+            .collect();
+
+        // Run freerun repair
+        grid.freerun_repair(cx, cy, 4, 5);
+
+        // Verify unchanged
+        for (i, ch) in (KNOWLEDGE_CHANNELS_START..NUM_CHANNELS).enumerate() {
+            assert!(
+                (grid.cells[cy][cx][ch] - before[i]).abs() < 1e-10,
+                "Knowledge channel {} should be unchanged after freerun_repair",
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn test_freerun_smooths_hidden_channels() {
+        let mut grid = Grid::new(64, 64);
+        let cx = 32;
+        let cy = 32;
+
+        // Set center cell hidden channel 5 to 1.0, neighbors to 0.0
+        grid.cells[cy][cx][5] = 1.0;
+
+        // All neighbors at 0.0 (default)
+        // After smoothing: new = 0.7 * 1.0 + 0.3 * 0.0 = 0.7 (first step)
+
+        let before = grid.cells[cy][cx][5];
+        grid.freerun_repair(cx, cy, 2, 3);
+        let after = grid.cells[cy][cx][5];
+
+        assert!(
+            after < before,
+            "Hidden channel should decrease after smoothing: before={}, after={}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn test_freerun_stays_in_bounds() {
+        let mut grid = Grid::new(64, 64);
+
+        // Set some values at the edge
+        grid.cells[0][0][5] = 1.0;
+        grid.cells[0][0][KNOWLEDGE_CHANNELS_START] = 0.9;
+
+        // Should not panic when center is at grid edge
+        grid.freerun_repair(0, 0, 4, 3);
+
+        // Grid should still be valid
+        assert!(grid.cells[0][0][5].is_finite());
+        assert!(grid.cells[0][0][KNOWLEDGE_CHANNELS_START].is_finite());
+    }
+
+    #[test]
+    fn test_freerun_with_large_radius() {
+        let mut grid = Grid::new(32, 32);
+
+        // Set values across the grid
+        for y in 0..32 {
+            for x in 0..32 {
+                grid.cells[y][x][5] = ((x + y) % 10) as f64 / 10.0;
+            }
+        }
+
+        // Radius larger than half grid should wrap correctly
+        grid.freerun_repair(16, 16, 20, 2);
+
+        // Should complete without panic
+        assert!(grid.cells[16][16][5].is_finite());
     }
 }

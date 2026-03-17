@@ -118,6 +118,10 @@ path = "tests/integration/libp2p_sync.rs"
 name = "knowledge_loop"
 path = "tests/integration/knowledge_loop.rs"
 
+[[test]]
+name = "attention_knowledge"
+path = "tests/integration/attention_knowledge.rs"
+
 [[bin]]
 name = "nca-timing"
 path = "src/bin/nca_timing.rs"
