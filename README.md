@@ -45,7 +45,11 @@ Your raw data never leaves your machine. Only encoded neural patterns are shared
 
 ## Architecture
 
-SAGE's core is a **32×32 Neural Cellular Automata grid** with 22 channels per cell. Knowledge is encoded as self-organizing, self-healing grid patterns — not stored as text. These patterns are compact (kilobytes, not gigabytes) and can be shared without revealing the original data.
+SAGE's core is a **256×256 Neural Cellular Automata grid** with 38 channels per cell. Knowledge is encoded as self-organizing, self-healing grid patterns — not stored as text. These patterns are compact (kilobytes, not gigabytes) and can be shared without revealing the original data.
+
+**Knowledge retrieval uses cross-attention** when semantic embeddings are available (via Ollama). The query becomes the attention query; NCA cell states become keys and values. This implements findings from arXiv:2603.10055 (Lee et al.): attention layers are the most transferable mechanism from NCA to LLM.
+
+After encoding new knowledge, **freerun repair steps** let the grid settle via local rules, consolidating patterns and preventing semantic drift (based on rNCA self-repair dynamics).
 
 Nodes discover each other and exchange knowledge via a gossip protocol. Sync is lazy, runs in the background, and never blocks your chat.
 
