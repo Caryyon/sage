@@ -4,9 +4,10 @@
 //! Noise for encryption, and Yamux for multiplexing over TCP.
 //!
 //! ## Persistent Identity
-//! The libp2p keypair is derived from the SAGE node's Ed25519 seed (stored in
-//! `~/.sage/identity.key`). This ensures a stable PeerId across restarts so
-//! Kademlia routing tables stay valid and peers can reliably find each other.
+//! The libp2p keypair is passed in from `NodeIdentity::to_libp2p_keypair()`, which
+//! uses real Ed25519 scalar multiplication to derive the keypair from the node's seed.
+//! This ensures a stable, cryptographically sound PeerId across restarts so Kademlia
+//! routing tables stay valid and peers can reliably find each other.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -21,50 +22,6 @@ use libp2p::{
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 use super::gossip::{GossipError, GossipMessage, GossipTransport, TOPIC_KNOWLEDGE};
-use super::identity::NodeIdentity;
-
-/// Load or generate a stable libp2p `Keypair` derived from the SAGE node's Ed25519 seed.
-///
-/// Reads `~/.sage/identity.key`; generates and saves a new identity if absent.
-/// The seed bytes are passed directly to `Keypair::ed25519_from_bytes` so the
-/// libp2p PeerId is deterministically tied to the SAGE node identity.
-fn load_stable_keypair() -> libp2p::identity::Keypair {
-    let node_identity = NodeIdentity::load_or_generate(None).unwrap_or_else(|e| {
-        eprintln!("[libp2p] Could not load/generate node identity: {e} — using random keypair");
-        NodeIdentity::generate()
-    });
-
-    // The SAGE identity stores a 32-byte seed. Ed25519 secret keys in libp2p-identity
-    // use the raw 32-byte scalar (not the expanded 64-byte PKCS8 form).
-    // We derive a 64-byte key material by doubling the seed so try_from_bytes gets
-    // the expected PKCS8-like layout used by libp2p-identity's ed25519 crate.
-    // Actually libp2p::identity::Keypair::ed25519_from_bytes accepts 32-byte secret.
-    let mut seed_bytes = node_identity.public_key; // 32 bytes unique per node
-    // Use public_key as a proxy for the "seed" since NodeIdentity doesn't expose
-    // its private seed field. Derive from both public key and a hash for uniqueness.
-    // In production this would expose the actual private seed.
-    // For now, we build a deterministic seed from the node's unique identity material.
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    seed_bytes.hash(&mut h);
-    let hash_val = h.finish().to_le_bytes();
-    // XOR first 8 bytes with hash to create a stable but unique 32-byte secret
-    for (i, b) in hash_val.iter().enumerate() {
-        seed_bytes[i] ^= b;
-    }
-
-    match libp2p::identity::Keypair::ed25519_from_bytes(seed_bytes) {
-        Ok(kp) => {
-            println!("[libp2p] Loaded stable identity — PeerId is deterministic across restarts");
-            kp
-        }
-        Err(e) => {
-            eprintln!("[libp2p] Could not derive Ed25519 keypair from node seed: {e} — using random keypair");
-            libp2p::identity::Keypair::generate_ed25519()
-        }
-    }
-}
 
 /// Combined libp2p behaviour: GossipSub + mDNS + Kademlia + Identify.
 #[derive(NetworkBehaviour)]
@@ -76,7 +33,10 @@ pub struct SageBehaviour {
 }
 
 /// Configuration for the libp2p transport.
-#[derive(Debug, Clone)]
+///
+/// Note: does not implement `Clone` because `libp2p::identity::Keypair` is not `Clone`.
+/// This struct is constructed once in main and passed directly to `Libp2pTransport`.
+#[derive(Debug)]
 pub struct Libp2pConfig {
     pub listen_port: u16,
     pub mdns_enabled: bool,
@@ -101,6 +61,9 @@ enum SwarmCommand {
 /// Real libp2p transport implementing GossipTransport.
 pub struct Libp2pTransport {
     config: Libp2pConfig,
+    /// The libp2p keypair for this node, taken out on `start()`.
+    /// `None` after the swarm is running; `Some` before first start.
+    keypair: Mutex<Option<libp2p::identity::Keypair>>,
     cmd_tx: Arc<Mutex<Option<mpsc::Sender<SwarmCommand>>>>,
     incoming_rx: Mutex<Option<mpsc::Receiver<(String, GossipMessage)>>>,
     peers: Arc<RwLock<Vec<String>>>,
@@ -109,9 +72,15 @@ pub struct Libp2pTransport {
 }
 
 impl Libp2pTransport {
-    pub fn new(config: Libp2pConfig) -> Self {
+    /// Create a new transport with the given config and optional keypair.
+    ///
+    /// Pass `identity.to_libp2p_keypair()` as the keypair to get a stable PeerId
+    /// derived from the node's real Ed25519 seed. If `None`, a random keypair is
+    /// generated (useful for tests or ephemeral nodes).
+    pub fn new(config: Libp2pConfig, keypair: Option<libp2p::identity::Keypair>) -> Self {
         Self {
             config,
+            keypair: Mutex::new(keypair),
             cmd_tx: Arc::new(Mutex::new(None)),
             incoming_rx: Mutex::new(None),
             peers: Arc::new(RwLock::new(Vec::new())),
@@ -129,9 +98,17 @@ impl GossipTransport for Libp2pTransport {
             return Ok(());
         }
 
-        // Build swarm with stable identity derived from SAGE node's Ed25519 seed
-        let stable_keypair = load_stable_keypair();
-        let mut swarm = SwarmBuilder::with_existing_identity(stable_keypair)
+        // Take the keypair (passed in from NodeIdentity::to_libp2p_keypair, or random for tests).
+        let keypair = self
+            .keypair
+            .lock()
+            .await
+            .take()
+            .unwrap_or_else(libp2p::identity::Keypair::generate_ed25519);
+        let local_peer_id_display = libp2p::PeerId::from_public_key(&keypair.public());
+        println!("[libp2p] Local PeerId: {local_peer_id_display}");
+
+        let mut swarm = SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -207,9 +184,6 @@ impl GossipTransport for Libp2pTransport {
             }
         }
         let _ = swarm.behaviour_mut().kademlia.bootstrap();
-
-        let local_peer_id = *swarm.local_peer_id();
-        println!("[libp2p] Local peer ID: {local_peer_id}");
 
         // Create channels
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SwarmCommand>(256);

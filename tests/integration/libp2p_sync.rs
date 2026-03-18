@@ -12,13 +12,13 @@ fn make_grid(h: usize, w: usize, ch: usize, fill: f64) -> Vec<Vec<Vec<f64>>> {
 
 #[tokio::test]
 async fn two_nodes_sync_knowledge_diff() {
-    // Node A
+    // Node A — no keypair passed → generates random ephemeral identity (fine for tests)
     let config_a = Libp2pConfig {
         listen_port: 0,
         mdns_enabled: true,
         bootstrap_nodes: vec![],
     };
-    let node_a = Arc::new(Libp2pTransport::new(config_a));
+    let node_a = Arc::new(Libp2pTransport::new(config_a, None));
     node_a.start().await.expect("node A should start");
 
     // Node B
@@ -27,7 +27,7 @@ async fn two_nodes_sync_knowledge_diff() {
         mdns_enabled: true,
         bootstrap_nodes: vec![],
     };
-    let node_b = Arc::new(Libp2pTransport::new(config_b));
+    let node_b = Arc::new(Libp2pTransport::new(config_b, None));
     node_b.start().await.expect("node B should start");
 
     // Wait for mDNS discovery

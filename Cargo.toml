@@ -39,6 +39,8 @@ toml = "0.8"
 
 # libp2p networking for decentralized gossip
 libp2p = { version = "0.54", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "kad", "identify", "tokio", "macros", "dns"] }
+# Real Ed25519 keypair operations for node identity
+ed25519-dalek = { version = "2" }
 tracing = "0.1"
 tokio-stream = "0.1"
 
