@@ -509,6 +509,7 @@ async fn main() {
     ));
 
     println!("🌐 SAGE Node: {}", node_id);
+    println!("   P2P ID:    {}", identity.peer_id());
     println!("   Home:      {}", home.display());
     println!("   Port:      {}", cli.port);
     println!("   Engine:    {}", engine.name());
@@ -526,13 +527,15 @@ async fn main() {
         mdns_enabled: !cli.no_mdns,
         ..Default::default()
     };
-    let manager = Arc::new(NetworkManager::new(identity, net_config));
+    let manager = Arc::new(NetworkManager::new(identity.clone(), net_config));
     if let Err(e) = manager.start().await {
         eprintln!("Failed to start networking: {e}");
         std::process::exit(1);
     }
 
-    // Start libp2p transport
+    // Start libp2p transport with the node's persistent Ed25519 keypair.
+    // This ensures the libp2p PeerId is stable across restarts and cryptographically
+    // tied to the SAGE node identity (same seed → same PeerId, always).
     let bootstrap_nodes = load_bootstrap_nodes();
     let has_bootstrap = !bootstrap_nodes.is_empty();
     let libp2p_config = Libp2pConfig {
@@ -540,7 +543,8 @@ async fn main() {
         mdns_enabled: !cli.no_mdns,
         bootstrap_nodes,
     };
-    let transport = Arc::new(Libp2pTransport::new(libp2p_config));
+    let libp2p_keypair = identity.to_libp2p_keypair();
+    let transport = Arc::new(Libp2pTransport::new(libp2p_config, Some(libp2p_keypair)));
     if let Err(e) = transport.start().await {
         eprintln!("Failed to start libp2p transport: {e}");
         std::process::exit(1);
