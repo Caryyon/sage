@@ -397,8 +397,8 @@ fn render_chat(f: &mut Frame, area: Rect, state: &AppState) {
     let inner_width = inner.width as usize;
     let chat_height = inner.height as usize;
 
-    let brain_w: usize = 34;
-    let brain_h: usize = 18;
+    let brain_w: usize = 52;
+    let brain_h: usize = 28;
     let has_brain = area.width >= brain_w as u16 + 2 && area.height >= brain_h as u16;
 
     let mut raw_lines: Vec<Line> = Vec::new();
@@ -597,8 +597,8 @@ fn ui(f: &mut Frame, state: &AppState) {
     render_chat(f, chunks[2], state);
 
     // Brain overlay
-    let brain_w: u16 = 34;
-    let brain_h: u16 = 18;
+    let brain_w: u16 = 52;
+    let brain_h: u16 = 28;
     let chat_area = chunks[2];
     if chat_area.width >= brain_w + 2 && chat_area.height >= brain_h {
         let brain_rect = Rect::new(
