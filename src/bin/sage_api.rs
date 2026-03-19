@@ -579,6 +579,48 @@ async fn sage_knowledge(
     })))
 }
 
+async fn sage_brain(
+    State(state): State<SharedState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let port = state.node_port;
+    let lines = tokio::task::spawn_blocking(move || node_request(port, "BRAIN"))
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e})),
+            )
+        })?;
+
+    // Parse "ROW y: v0 v1 v2 ..." lines into a 2D grid
+    let mut grid: Vec<Vec<f64>> = Vec::new();
+    for line in &lines {
+        if let Some(rest) = line.strip_prefix("ROW ") {
+            // format: "0: 0.12 0.34 ..."
+            if let Some(colon) = rest.find(':') {
+                let vals: Vec<f64> = rest[colon + 1..]
+                    .split_whitespace()
+                    .filter_map(|v| v.parse().ok())
+                    .collect();
+                if !vals.is_empty() {
+                    grid.push(vals);
+                }
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "grid": grid,
+        "rows": grid.len(),
+    })))
+}
+
 async fn health() -> &'static str {
     "ok"
 }
@@ -606,6 +648,7 @@ async fn main() {
         .route("/v1/sage/status", get(sage_status))
         .route("/v1/sage/peers", get(sage_peers))
         .route("/v1/sage/knowledge", post(sage_knowledge))
+        .route("/v1/sage/brain", get(sage_brain))
         .layer(cors)
         .with_state(state);
 
