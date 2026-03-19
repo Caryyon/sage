@@ -598,19 +598,16 @@ async fn sage_brain(
             )
         })?;
 
-    // Parse "ROW y: v0 v1 v2 ..." lines into a 2D grid
+    // Parse "ROW v0 v1 v2 ..." lines into a 2D grid
     let mut grid: Vec<Vec<f64>> = Vec::new();
     for line in &lines {
         if let Some(rest) = line.strip_prefix("ROW ") {
-            // format: "0: 0.12 0.34 ..."
-            if let Some(colon) = rest.find(':') {
-                let vals: Vec<f64> = rest[colon + 1..]
-                    .split_whitespace()
-                    .filter_map(|v| v.parse().ok())
-                    .collect();
-                if !vals.is_empty() {
-                    grid.push(vals);
-                }
+            let vals: Vec<f64> = rest
+                .split_whitespace()
+                .filter_map(|v| v.parse().ok())
+                .collect();
+            if !vals.is_empty() {
+                grid.push(vals);
             }
         }
     }
