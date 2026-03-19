@@ -1,7 +1,7 @@
 # SAGE — Decentralized AI Node
 # docker run -v ~/.sage:/root/.sage ghcr.io/caryyon/sage
 
-FROM rust:1.83-slim AS builder
+FROM rust:latest AS builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev libasound2-dev libv4l-dev && rm -rf /var/lib/apt/lists/*
 

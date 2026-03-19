@@ -202,12 +202,19 @@ impl KnowledgeLoop {
     /// back to the main grid. Knowledge channels are left untouched.
     pub fn step_knowledge(&mut self, center: (usize, usize)) {
         self.ensure_nca_predictor();
+        let (cx, cy) = center;
         let predictor = match self.nca_predictor.as_mut() {
             Some(p) => p,
-            None => return, // No predictor — skip silently
+            None => {
+                // No trained predictor weights — fall back to pure freerun diffusion.
+                // This gives the hidden channels meaningful dynamics even without
+                // trained NCA weights, rather than silently doing nothing.
+                self.knowledge
+                    .grid
+                    .freerun_repair(cx, cy, DREAM_WINDOW, N_DREAM_STEPS);
+                return;
+            }
         };
-
-        let (cx, cy) = center;
         let w = self.knowledge.grid.width;
         let h = self.knowledge.grid.height;
         let win = DREAM_WINDOW;

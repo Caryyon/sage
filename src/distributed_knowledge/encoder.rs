@@ -7,10 +7,56 @@
 
 use crate::grid::{
     Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
-    NUM_KNOWLEDGE_CHANNELS,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::OnceLock;
+
+/// Fixed random projection matrix (64 input features × NUM_EMBED_SLOTS output slots).
+///
+/// Generated with a deterministic LCG seeded at 0x5A4745_5361676500 ("ZGESage").
+/// Each column is L2-normalized so dot products behave like cosine projections.
+/// Using a random projection preserves semantic structure much better than strided
+/// sampling, because it spreads information across all 64 input dimensions rather
+/// than picking 6 evenly-spaced indices.
+static PROJ_MATRIX_CELL: OnceLock<[[f64; NUM_EMBED_SLOTS]; 64]> = OnceLock::new();
+
+fn get_proj_matrix() -> &'static [[f64; NUM_EMBED_SLOTS]; 64] {
+    PROJ_MATRIX_CELL.get_or_init(|| {
+    // Deterministic LCG: x_{n+1} = (a * x_n + c) mod m  (Knuth params for 64-bit)
+    const A: u64 = 6364136223846793005;
+    const C: u64 = 1442695040888963407;
+    let mut state: u64 = 0x5A4745_5361676500; // "ZGESage\0" — unique seed
+
+    let lcg = |s: &mut u64| -> f64 {
+        *s = s.wrapping_mul(A).wrapping_add(C);
+        // Map to [-1, 1] via top 53 bits
+        let bits = (*s >> 11) as f64;
+        bits / (1u64 << 53) as f64 * 2.0 - 1.0
+    };
+
+    // Fill 64×NUM_EMBED_SLOTS matrix
+    let mut mat = [[0.0f64; NUM_EMBED_SLOTS]; 64];
+    for row in &mut mat {
+        for val in row.iter_mut() {
+            *val = lcg(&mut state);
+        }
+    }
+
+    // Column-normalize: each slot's projection should have unit L2 norm
+    // so that the projected dot products are on a comparable scale.
+    for slot in 0..NUM_EMBED_SLOTS {
+        let norm: f64 = mat.iter().map(|row| row[slot] * row[slot]).sum::<f64>().sqrt();
+        if norm > 1e-10 {
+            for row in &mut mat {
+                row[slot] /= norm;
+            }
+        }
+    }
+
+    mat
+    })
+}
 
 /// Configuration for the knowledge encoder
 #[derive(Clone, Debug)]
@@ -270,8 +316,9 @@ pub fn write_knowledge(
     let _ = timestamp; // Kept in signature for API compat; activation encodes recency
     let (cx, cy) = feature_to_position(features, grid.width, grid.height);
     let radius = config.spread_radius as i32;
-
-    let feat_len = features.values.len().max(1);
+    // Fetch the projection matrix once — OnceLock means this is a single atomic load
+    // after first initialization.
+    let proj = get_proj_matrix();
 
     for dy in -radius..=radius {
         for dx in -radius..=radius {
@@ -285,14 +332,23 @@ pub fn write_knowledge(
 
             let decay = config.spatial_decay.powf(dist);
 
-            // Write 6 embedding slots: evenly spaced strides through the feature vec
+            // Write 6 embedding slots via random projection of the full feature vector.
+            // proj[feat_dim][slot] is a deterministic random projection that distributes
+            // information across all 64 input dimensions into each slot, preserving
+            // semantic structure far better than strided index sampling.
             for slot in 0..NUM_EMBED_SLOTS {
-                let feat_idx = (slot * feat_len / NUM_EMBED_SLOTS) % feat_len;
-                let embedding_val = features.values[feat_idx];
+                let proj_val: f64 = features
+                    .values
+                    .iter()
+                    .zip(proj.iter())
+                    .map(|(&f, row)| f * row[slot])
+                    .sum();
+                // Clamp to [-1, 1] before blending (projection may exceed unit sphere slightly)
+                let proj_val = proj_val.clamp(-1.0, 1.0);
                 let ch = KNOWLEDGE_CHANNELS_START + slot;
                 let existing = grid.cells[ny][nx][ch];
                 grid.cells[ny][nx][ch] =
-                    (existing * (1.0 - decay * 0.5) + embedding_val * decay * 0.5).clamp(-1.0, 1.0);
+                    (existing * (1.0 - decay * 0.5) + proj_val * decay * 0.5).clamp(-1.0, 1.0);
             }
 
             // Write activation

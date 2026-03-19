@@ -1,0 +1,11 @@
+FROM rust:latest AS builder
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY . .
+RUN cargo build --release --bin sage-node --bin sage-api 2>&1
+
+FROM debian:sid-slim
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/sage-node /usr/local/bin/sage-node
+COPY --from=builder /build/target/release/sage-api /usr/local/bin/sage-api
+EXPOSE 19175 19176
