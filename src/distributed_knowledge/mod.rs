@@ -148,22 +148,43 @@ pub trait KnowledgeStore {
     fn load(&mut self, path: &str) -> Result<(), String>;
 }
 
-/// Delta between two grid states, for efficient network sync
+/// Wire format version for GridDelta.
+/// v1 (implicit): snapshot values — apply_delta uses max-wins logic
+/// v2: true deltas (new - old) — apply_delta uses weighted merge
+pub const GRID_DELTA_VERSION: u8 = 2;
+
+/// Delta between two grid states, for efficient network sync.
+///
+/// As of v2, `CellDelta.values` stores **true deltas** (new - old), not snapshots.
+/// `apply_delta()` uses weighted averaging: `local + incoming_delta * weight`.
+/// This enables proper Delta Sum Learning (arXiv:2512.01549) at scale — multiple
+/// nodes' deltas can be summed or weighted-averaged without max-wins information loss.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GridDelta {
-    /// Changed cells: (x, y, channel_values for knowledge/comm/meta channels only)
+    /// Changed cells. `values` are true deltas (new - old) as of format_version >= 2.
     pub changes: Vec<CellDelta>,
     /// Source node identifier
     pub source_node: f64,
     /// Timestamp of this delta
     pub timestamp: f64,
+    /// Wire format version. 1 = snapshot (legacy), 2 = true delta. Default: 2.
+    #[serde(default = "GridDelta::default_format_version")]
+    pub format_version: u8,
+}
+
+impl GridDelta {
+    fn default_format_version() -> u8 {
+        GRID_DELTA_VERSION
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CellDelta {
     pub x: usize,
     pub y: usize,
-    /// Values for knowledge channels (26-33) + comm channels (34-35) = 10 total
+    /// Knowledge channels (26-33) + comm channels (34-35) = 10 values.
+    /// In format_version >= 2: stores (new - old) for each channel.
+    /// In format_version 1 (legacy): stores snapshot values.
     pub values: [f64; 10],
 }
 
@@ -306,17 +327,22 @@ impl KnowledgeStore for NCAKnowledge {
         for y in 0..self.grid.height.min(other.height) {
             for x in 0..self.grid.width.min(other.width) {
                 let mut has_diff = false;
-                let mut values = [0.0f64; 10];
+                let mut deltas = [0.0f64; 10];
                 for (i, &ch) in channels.iter().enumerate() {
-                    let diff = self.grid.cells[y][x][ch] - other.cells[y][x][ch];
-                    if diff.abs() > threshold {
+                    // True delta: self (newer state) minus other (baseline/remote state)
+                    let d = self.grid.cells[y][x][ch] - other.cells[y][x][ch];
+                    deltas[i] = d;
+                    if d.abs() > threshold {
                         has_diff = true;
                     }
-                    values[i] = self.grid.cells[y][x][ch];
                 }
 
                 if has_diff {
-                    changes.push(CellDelta { x, y, values });
+                    changes.push(CellDelta {
+                        x,
+                        y,
+                        values: deltas,
+                    });
                 }
             }
         }
@@ -325,6 +351,7 @@ impl KnowledgeStore for NCAKnowledge {
             changes,
             source_node: self.node_id,
             timestamp: self.timestamp_counter,
+            format_version: GRID_DELTA_VERSION,
         }
     }
 
@@ -339,23 +366,55 @@ impl KnowledgeStore for NCAKnowledge {
         // Index of KNOWLEDGE_ACTIVATION within our channels array
         let act_idx = KNOWLEDGE_ACTIVATION - KNOWLEDGE_CHANNELS_START;
 
-        for change in &delta.changes {
-            if change.x < self.grid.width && change.y < self.grid.height {
-                for (i, &ch) in channels.iter().enumerate() {
-                    let incoming = change.values[i];
-                    let current = self.grid.cells[change.y][change.x][ch];
-
-                    // For activation: take max; for others: take incoming if activation is higher
-                    if ch == KNOWLEDGE_ACTIVATION {
-                        self.grid.cells[change.y][change.x][ch] = current.max(incoming);
-                    } else if change.values[act_idx]
-                        > self.grid.cells[change.y][change.x][KNOWLEDGE_ACTIVATION]
-                    {
-                        self.grid.cells[change.y][change.x][ch] = incoming;
-                    }
+        if delta.format_version >= 2 {
+            // v2: values are true deltas (new - old). Apply via weighted averaging.
+            // Weight by incoming activation delta — cells with more activation change
+            // carry more signal and should contribute more to the merge.
+            // Formula (Delta Sum Learning): local = local + delta * merge_weight
+            // merge_weight is proportional to the activation delta, clamped to [0, 1].
+            for change in &delta.changes {
+                if change.x >= self.grid.width || change.y >= self.grid.height {
+                    continue;
                 }
-                // Mark the source node
+                let act_delta = change.values[act_idx];
+                // Only apply if the remote cell had meaningful activation growth.
+                // A negative or near-zero activation delta means the remote cell was
+                // less activated than the baseline — skip to avoid erasing local knowledge.
+                if act_delta <= 0.0 {
+                    continue;
+                }
+                // merge_weight: how strongly to blend incoming delta. Stronger activation
+                // change = higher weight. Cap at 0.5 so local knowledge is never fully
+                // overwritten by a single incoming delta.
+                let merge_weight = act_delta.min(0.5);
+                for (i, &ch) in channels.iter().enumerate() {
+                    let d = change.values[i];
+                    let current = self.grid.cells[change.y][change.x][ch];
+                    // new_local = local + delta * weight, clamped to [-1, 1]
+                    self.grid.cells[change.y][change.x][ch] =
+                        (current + d * merge_weight).clamp(-1.0, 1.0);
+                }
                 self.grid.cells[change.y][change.x][COMM_NODE_ID] = delta.source_node;
+            }
+        } else {
+            // v1 legacy: values are snapshots. Fall back to the original max-wins logic
+            // so old peers' diffs still apply correctly.
+            for change in &delta.changes {
+                if change.x < self.grid.width && change.y < self.grid.height {
+                    for (i, &ch) in channels.iter().enumerate() {
+                        let incoming = change.values[i];
+                        let current = self.grid.cells[change.y][change.x][ch];
+
+                        if ch == KNOWLEDGE_ACTIVATION {
+                            self.grid.cells[change.y][change.x][ch] = current.max(incoming);
+                        } else if change.values[act_idx]
+                            > self.grid.cells[change.y][change.x][KNOWLEDGE_ACTIVATION]
+                        {
+                            self.grid.cells[change.y][change.x][ch] = incoming;
+                        }
+                    }
+                    self.grid.cells[change.y][change.x][COMM_NODE_ID] = delta.source_node;
+                }
             }
         }
     }
@@ -538,6 +597,17 @@ mod tests {
             "Should have changes after encoding"
         );
 
+        // v2 format: values are true deltas, not snapshots
+        assert_eq!(
+            delta.format_version,
+            GRID_DELTA_VERSION,
+            "diff() must emit format_version == GRID_DELTA_VERSION"
+        );
+
+        // Spot-check: at least one delta value should be non-zero (since store_a encoded)
+        let has_nonzero = delta.changes.iter().any(|c| c.values.iter().any(|&v| v.abs() > 0.001));
+        assert!(has_nonzero, "delta values should be non-zero after encoding");
+
         let mut store_c = NCAKnowledge::new().with_node_id(3.0);
         store_c.apply_delta(&delta);
 
@@ -545,6 +615,106 @@ mod tests {
         assert!(
             !active.is_empty(),
             "Applied delta should create active knowledge"
+        );
+    }
+
+    #[test]
+    fn test_diff_values_are_true_deltas_not_snapshots() {
+        let mut store_a = NCAKnowledge::new().with_node_id(1.0);
+        let mut store_b = NCAKnowledge::new().with_node_id(2.0);
+
+        // Encode the same text into both stores so they have identical knowledge channels
+        store_a.encode("shared knowledge text", 0.9);
+        store_b.encode("shared knowledge text", 0.9);
+
+        // Diff against a store with the same content — deltas should be near zero
+        let delta = store_a.diff(&store_b.grid);
+        let max_abs: f64 = delta
+            .changes
+            .iter()
+            .flat_map(|c| c.values.iter())
+            .map(|&v| v.abs())
+            .fold(0.0_f64, f64::max);
+        // Since both stores encoded identically, deltas should be small (spatial spread means
+        // not perfectly identical, but significantly smaller than the encoded values themselves)
+        assert!(
+            max_abs < 0.5,
+            "diff between near-identical stores should produce small deltas, got max {max_abs}"
+        );
+    }
+
+    #[test]
+    fn test_apply_delta_weighted_merge_not_overwrite() {
+        let mut base = NCAKnowledge::new().with_node_id(1.0);
+        let mut remote = NCAKnowledge::new().with_node_id(2.0);
+        let empty = NCAKnowledge::new();
+
+        // Base has one piece of knowledge
+        base.encode("base node knowledge", 0.9);
+        // Remote has different knowledge
+        remote.encode("remote node knowledge", 0.9);
+
+        // Get delta of remote vs empty baseline
+        let delta = remote.diff(&empty.grid);
+        assert_eq!(delta.format_version, GRID_DELTA_VERSION);
+
+        // Record base activation before apply
+        let base_active_before = base.active_knowledge(0.001).len();
+
+        base.apply_delta(&delta);
+
+        // After applying remote delta, base should have at least as much active knowledge
+        // (weighted merge should not erase existing knowledge)
+        let base_active_after = base.active_knowledge(0.001).len();
+        assert!(
+            base_active_after >= base_active_before,
+            "weighted merge must not reduce local active knowledge: before={base_active_before} after={base_active_after}"
+        );
+    }
+
+    #[test]
+    fn test_v1_legacy_delta_still_applies() {
+        // Simulate receiving a v1 snapshot-format delta from an old peer
+        let mut store_a = NCAKnowledge::new().with_node_id(1.0);
+        store_a.encode("legacy knowledge", 0.9);
+
+        // Build a v1-style delta manually (snapshot values)
+        let channels = {
+            let mut ch = [0usize; 10];
+            for i in 0..NUM_KNOWLEDGE_CHANNELS {
+                ch[i] = KNOWLEDGE_CHANNELS_START + i;
+            }
+            ch[NUM_KNOWLEDGE_CHANNELS] = COMM_SYNC_STATE;
+            ch[NUM_KNOWLEDGE_CHANNELS + 1] = COMM_NODE_ID;
+            ch
+        };
+
+        // Find an active cell in store_a
+        let active = store_a.active_knowledge(0.01);
+        assert!(!active.is_empty(), "need at least one active cell for this test");
+        let cell = &active[0];
+        let (cx, cy) = cell.position;
+
+        // Snapshot values from store_a
+        let mut values = [0.0f64; 10];
+        for (i, &ch) in channels.iter().enumerate() {
+            values[i] = store_a.grid.cells[cy][cx][ch];
+        }
+
+        let legacy_delta = GridDelta {
+            changes: vec![CellDelta { x: cx, y: cy, values }],
+            source_node: 99.0,
+            timestamp: 0.5,
+            format_version: 1, // legacy snapshot format
+        };
+
+        let mut store_b = NCAKnowledge::new().with_node_id(3.0);
+        store_b.apply_delta(&legacy_delta);
+
+        let b_active = store_b.active_knowledge(0.01);
+        assert!(
+            !b_active.is_empty(),
+            "v1 legacy delta should still create active knowledge"
         );
     }
 
