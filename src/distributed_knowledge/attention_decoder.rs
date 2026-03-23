@@ -150,19 +150,30 @@ impl AttentionDecoder {
         let sum_exp: f64 = exp_scores.iter().sum();
         let weights: Vec<f64> = exp_scores.iter().map(|e| e / sum_exp).collect();
 
-        // Create results with attention weights
+        // Create results with attention weights.
+        // Each cell may have multiple texts (multi-text TextStore); emit one
+        // AttentionResult per text so every stored item is reachable.
         let mut results: Vec<AttentionResult> = candidates
             .iter()
             .zip(weights.iter())
-            .map(|((x, y, _, embed, act), &weight)| {
-                let text = text_store.and_then(|ts| ts.peek(*x, *y).map(|s| s.to_string()));
-                AttentionResult {
+            .flat_map(|((x, y, _, embed, act), &weight)| {
+                let texts: Vec<Option<String>> = if let Some(ts) = text_store {
+                    let all = ts.peek_all(*x, *y);
+                    if all.is_empty() {
+                        vec![None]
+                    } else {
+                        all.iter().map(|t| Some(t.clone())).collect()
+                    }
+                } else {
+                    vec![None]
+                };
+                texts.into_iter().map(move |text| AttentionResult {
                     position: (*x, *y),
                     attention_weight: weight,
                     cell_embedding: *embed,
                     activation: *act,
                     text,
-                }
+                })
             })
             .collect();
 
@@ -321,15 +332,24 @@ impl AttentionDecoder {
         let mut results: Vec<AttentionResult> = candidates
             .iter()
             .zip(weights.iter())
-            .map(|((x, y, _, embed, act), &weight)| {
-                let text = text_store.and_then(|ts| ts.peek(*x, *y).map(|s| s.to_string()));
-                AttentionResult {
+            .flat_map(|((x, y, _, embed, act), &weight)| {
+                let texts: Vec<Option<String>> = if let Some(ts) = text_store {
+                    let all = ts.peek_all(*x, *y);
+                    if all.is_empty() {
+                        vec![None]
+                    } else {
+                        all.iter().map(|t| Some(t.clone())).collect()
+                    }
+                } else {
+                    vec![None]
+                };
+                texts.into_iter().map(move |text| AttentionResult {
                     position: (*x, *y),
                     attention_weight: weight,
                     cell_embedding: *embed,
                     activation: *act,
                     text,
-                }
+                })
             })
             .collect();
 

@@ -181,26 +181,52 @@ pub fn query_knowledge_by_features_with_text(
             // Also factor in activation as a multiplier so empty cells don't score
             let relevance = activation * (0.3 * proximity + 0.7 * cos_sim_pos + 0.1 * confidence);
 
-            // Look up original text
-            let text = text_store.and_then(|ts| ts.peek(nx, ny).map(|s| s.to_string()));
-
-            // Deduplicate by text content
-            if let Some(ref t) = text {
-                if seen_texts.contains(t) {
-                    continue;
+            // Look up ALL original texts at this cell (multi-text support).
+            // A single grid cell may hold several distinct knowledge items that
+            // hashed to the same or overlapping positions. We emit one
+            // KnowledgeActivation per text so every stored item is reachable.
+            let cell_texts: Vec<String> = if let Some(ts) = text_store {
+                let all = ts.peek_all(nx, ny);
+                if all.is_empty() {
+                    // No text stored; emit a text-free activation entry
+                    vec![]
+                } else {
+                    all.iter()
+                        .filter(|t| !seen_texts.contains(*t))
+                        .cloned()
+                        .collect()
                 }
-                seen_texts.insert(t.clone());
-            }
+            } else {
+                vec![]
+            };
 
-            results.push(KnowledgeActivation {
-                position: (nx, ny),
-                activation,
-                confidence,
-                timestamp: 0.0,
-                embedding: cell_embedding(grid, ny, nx),
-                relevance,
-                text,
-            });
+            if cell_texts.is_empty() {
+                // Emit one text-free entry so position-only callers still get results
+                if text_store.is_none() {
+                    results.push(KnowledgeActivation {
+                        position: (nx, ny),
+                        activation,
+                        confidence,
+                        timestamp: 0.0,
+                        embedding: cell_embedding(grid, ny, nx),
+                        relevance,
+                        text: None,
+                    });
+                }
+            } else {
+                for t in cell_texts {
+                    seen_texts.insert(t.clone());
+                    results.push(KnowledgeActivation {
+                        position: (nx, ny),
+                        activation,
+                        confidence,
+                        timestamp: 0.0,
+                        embedding: cell_embedding(grid, ny, nx),
+                        relevance,
+                        text: Some(t),
+                    });
+                }
+            }
         }
     }
 
