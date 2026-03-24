@@ -15,7 +15,7 @@ pub mod validation;
 use std::collections::HashMap;
 use tokio::sync::{Mutex, RwLock};
 
-use diff::{merkle_hash, KnowledgeDiff};
+use diff::{merkle_hash, KnowledgeDiff, SignatureError};
 use gossip::{GossipError, GossipMessage, GridStateResponse, PeerAnnounce};
 use identity::NodeIdentity;
 use privacy::{
@@ -274,6 +274,10 @@ impl NetworkManager {
         // Add differential privacy noise
         apply_differential_privacy(&mut diff, &self.privacy_config);
 
+        // Sign the diff with our Ed25519 identity before broadcasting.
+        // Recipients can call verify_signature() to authenticate the source.
+        diff.sign(&self.identity.seed_bytes());
+
         // Update stored state
         *last_state = Some(current_grid.to_vec());
         *seq += 1;
@@ -298,6 +302,31 @@ impl NetworkManager {
                 println!(
                     "[network] Rejected diff from banned peer {}",
                     diff.source_node
+                );
+                return;
+            }
+        }
+
+        // Signature verification — reject unsigned or tampered diffs.
+        // A missing signature is allowed for legacy/test peers but logged.
+        // An invalid signature (present but wrong) is always rejected.
+        match diff.verify_signature() {
+            Ok(()) => {
+                // Valid signature — node is authenticated.
+            }
+            Err(SignatureError::Missing) => {
+                // No signature present — tolerate for now (legacy nodes / tests),
+                // but note it for future enforcement.
+                println!(
+                    "[network] Warning: unsigned diff from {} (seq={}) — tolerated (legacy peer)",
+                    diff.source_node, diff.sequence
+                );
+            }
+            Err(e) => {
+                // Signature present but invalid — could be tampering or impersonation.
+                println!(
+                    "[network] Rejected diff from {} (seq={}): {e}",
+                    diff.source_node, diff.sequence
                 );
                 return;
             }

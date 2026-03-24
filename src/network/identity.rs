@@ -148,6 +148,14 @@ impl NodeIdentity {
         Ok(())
     }
 
+    /// Return the 32-byte seed for this identity.
+    ///
+    /// Used internally for signing KnowledgeDiffs. The seed is the secret scalar;
+    /// do not expose this value over the network.
+    pub fn seed_bytes(&self) -> [u8; 32] {
+        self.seed
+    }
+
     /// Sign a message with this node's Ed25519 private key.
     ///
     /// Returns a 64-byte Ed25519 signature. Verify against `self.public_key`.

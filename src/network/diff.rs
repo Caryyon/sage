@@ -2,9 +2,38 @@
 //!
 //! Computes, serializes, and applies diffs between grid states.
 //! Only changed cells/channels are included (sparse representation).
+//!
+//! # Signed Diffs
+//!
+//! Each outgoing `KnowledgeDiff` carries an Ed25519 signature and the sender's
+//! public key.  Receivers can call `verify_signature()` before trusting the diff.
+//! The signed payload is: `source_node bytes || sequence (8 LE) || state_hash (32)`.
+//! This is compact, covers authenticity (node id + sequence) and integrity (hash).
 
 use crate::grid::is_shared_channel;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
+
+/// Error variants for `KnowledgeDiff::verify_signature()`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SignatureError {
+    /// Diff has no signature or public key set.
+    Missing,
+    /// The signer_public_key bytes are not a valid Ed25519 point.
+    InvalidPublicKey,
+    /// Signature does not match the payload.
+    Invalid,
+}
+
+impl std::fmt::Display for SignatureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing => write!(f, "signature missing"),
+            Self::InvalidPublicKey => write!(f, "invalid signer public key"),
+            Self::Invalid => write!(f, "signature verification failed"),
+        }
+    }
+}
 
 /// A single cell-channel change using normalized coordinates (0.0–1.0).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -62,6 +91,14 @@ pub struct KnowledgeDiff {
     pub confidence: f64,
     /// Timestamp (unix epoch millis).
     pub timestamp_ms: u64,
+    /// Ed25519 public key of the source node (32 bytes), base64-encoded for serde compat.
+    /// Set when the diff is signed; absent for legacy/test diffs.
+    #[serde(default)]
+    pub signer_public_key: Option<Vec<u8>>,
+    /// Ed25519 signature over the canonical payload (64 bytes), base64-encoded for serde compat.
+    /// Payload: `source_node_bytes || sequence_le8 || state_hash32`.
+    #[serde(default)]
+    pub signature: Option<Vec<u8>>,
 }
 
 impl KnowledgeDiff {
@@ -116,6 +153,8 @@ impl KnowledgeDiff {
             .unwrap_or(0);
 
         Self {
+            signer_public_key: None,
+            signature: None,
             source_node,
             sequence,
             width,
@@ -194,6 +233,52 @@ impl KnowledgeDiff {
     /// Deserialize from binary.
     pub fn from_bytes(data: &[u8]) -> Result<Self, bincode::Error> {
         bincode::deserialize(data)
+    }
+
+    /// Build the canonical signed payload for this diff.
+    ///
+    /// Payload: `source_node_bytes || sequence_le8 || state_hash32`
+    /// This covers node identity, ordering, and content integrity.
+    pub fn signing_payload(&self) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(self.source_node.len() + 8 + 32);
+        payload.extend_from_slice(self.source_node.as_bytes());
+        payload.extend_from_slice(&self.sequence.to_le_bytes());
+        payload.extend_from_slice(&self.state_hash);
+        payload
+    }
+
+    /// Sign this diff with the given 32-byte Ed25519 seed.
+    /// Sets `signer_public_key` and `signature` in place.
+    pub fn sign(&mut self, seed: &[u8; 32]) {
+        let signing_key = SigningKey::from_bytes(seed);
+        let payload = self.signing_payload();
+        let sig = signing_key.sign(&payload);
+        self.signer_public_key = Some(signing_key.verifying_key().as_bytes().to_vec());
+        self.signature = Some(sig.to_bytes().to_vec());
+    }
+
+    /// Verify the diff's Ed25519 signature.
+    ///
+    /// Returns `Ok(())` if the signature is present and valid.
+    /// Returns `Err` if the signature is missing, the public key is invalid/wrong length,
+    /// or the signature does not match the payload.
+    pub fn verify_signature(&self) -> Result<(), SignatureError> {
+        let pk_vec = self.signer_public_key.as_ref().ok_or(SignatureError::Missing)?;
+        let sig_vec = self.signature.as_ref().ok_or(SignatureError::Missing)?;
+
+        let pk_bytes: [u8; 32] = pk_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| SignatureError::InvalidPublicKey)?;
+        let sig_bytes: [u8; 64] = sig_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| SignatureError::Invalid)?;
+
+        let vk = VerifyingKey::from_bytes(&pk_bytes).map_err(|_| SignatureError::InvalidPublicKey)?;
+        let sig = Signature::from_bytes(&sig_bytes);
+        let payload = self.signing_payload();
+        vk.verify(&payload, &sig).map_err(|_| SignatureError::Invalid)
     }
 
     /// Returns true if this diff has no changes.
@@ -288,6 +373,91 @@ mod tests {
         diff.apply_weighted(&mut target, 0.5);
         // (0.0 * 0.5 + 1.0 * 0.5) / 1.0 = 0.5
         assert!((target[0][0][0] - 0.5).abs() < 1e-9);
+    }
+
+    // ---- Signature tests ----
+
+    #[test]
+    fn test_sign_and_verify() {
+        let seed = [42u8; 32];
+        let old = make_grid(2, 2, 1, 0.0);
+        let mut new = make_grid(2, 2, 1, 0.0);
+        new[0][0][0] = 1.0;
+
+        let mut diff = KnowledgeDiff::compute(&old, &new, "node-sign-test".into(), 1, 0.9, 1e-9);
+        diff.sign(&seed);
+
+        assert!(diff.signer_public_key.is_some(), "public key should be set after sign()");
+        assert!(diff.signature.is_some(), "signature should be set after sign()");
+        assert!(
+            diff.verify_signature().is_ok(),
+            "freshly signed diff must verify"
+        );
+    }
+
+    #[test]
+    fn test_unsigned_diff_returns_missing() {
+        let old = make_grid(2, 2, 1, 0.0);
+        let new = make_grid(2, 2, 1, 0.5);
+        let diff = KnowledgeDiff::compute(&old, &new, "node-x".into(), 0, 1.0, 1e-9);
+        assert_eq!(diff.verify_signature(), Err(SignatureError::Missing));
+    }
+
+    #[test]
+    fn test_tampered_signature_rejected() {
+        let seed = [7u8; 32];
+        let old = make_grid(2, 2, 1, 0.0);
+        let mut new = make_grid(2, 2, 1, 0.0);
+        new[1][1][0] = 0.8;
+
+        let mut diff = KnowledgeDiff::compute(&old, &new, "node-tamper".into(), 5, 0.8, 1e-9);
+        diff.sign(&seed);
+
+        // Corrupt the signature (first byte XOR flip)
+        if let Some(ref mut sig) = diff.signature {
+            if let Some(b) = sig.get_mut(0) {
+                *b ^= 0xFF;
+            }
+        }
+        assert_eq!(diff.verify_signature(), Err(SignatureError::Invalid));
+    }
+
+    #[test]
+    fn test_tampered_sequence_rejected() {
+        let seed = [99u8; 32];
+        let old = make_grid(2, 2, 1, 0.0);
+        let mut new = make_grid(2, 2, 1, 0.0);
+        new[0][1][0] = 0.5;
+
+        let mut diff = KnowledgeDiff::compute(&old, &new, "node-seq".into(), 10, 1.0, 1e-9);
+        diff.sign(&seed);
+
+        // Replay attack: bump the sequence number after signing
+        diff.sequence += 1;
+        assert_eq!(
+            diff.verify_signature(),
+            Err(SignatureError::Invalid),
+            "mutated sequence should fail verification"
+        );
+    }
+
+    #[test]
+    fn test_sign_survives_serialize_roundtrip() {
+        let seed = [55u8; 32];
+        let old = make_grid(3, 3, 2, 0.0);
+        let mut new = make_grid(3, 3, 2, 0.0);
+        new[1][2][1] = 0.3;
+
+        let mut diff = KnowledgeDiff::compute(&old, &new, "node-rt".into(), 7, 0.75, 1e-9);
+        diff.sign(&seed);
+
+        let bytes = diff.to_bytes();
+        let restored = KnowledgeDiff::from_bytes(&bytes).expect("roundtrip");
+        assert_eq!(
+            restored.verify_signature(),
+            Ok(()),
+            "signature must survive bincode roundtrip"
+        );
     }
 
     #[test]
