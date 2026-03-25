@@ -4,7 +4,7 @@
 //! Uses cosine similarity for semantic matching when embeddings are available.
 //! Returns actual text snippets via the TextStore.
 
-use super::encoder::{encode_text, feature_to_position, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
+use super::encoder::{encode_text, feature_to_position, get_proj_matrix, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{
     Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
@@ -44,13 +44,26 @@ pub fn cell_embedding_vec(grid: &Grid, y: usize, x: usize) -> [f64; NUM_EMBED_SL
 }
 
 /// Cosine similarity between a feature vector and a cell's 6 embedding slots.
+///
+/// Uses the same random projection matrix as `write_knowledge` in `encoder.rs` so that
+/// query slots and stored cell slots live in the same geometric space. The previous
+/// strided-index approach was mathematically inconsistent with the encoder's random
+/// projection, causing cosine similarity to measure hash noise instead of semantic
+/// similarity in the hash-fallback path.
 fn cosine_sim_query_cell(query_features: &FeatureVector, cell_embed: &[f64; NUM_EMBED_SLOTS]) -> f64 {
-    // Extract the first NUM_EMBED_SLOTS values from the query feature vector
-    let feat_len = query_features.values.len().max(1);
+    // Project the query feature vector into the 6-slot embedding space using the
+    // same deterministic random projection matrix used by the encoder. This ensures
+    // that dot(proj(query), proj(stored_text)) is geometrically meaningful.
+    let proj = get_proj_matrix();
     let mut query_slots = [0.0f64; NUM_EMBED_SLOTS];
-    for (i, slot) in query_slots.iter_mut().enumerate() {
-        let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
-        *slot = query_features.values[feat_idx];
+    for slot in 0..NUM_EMBED_SLOTS {
+        query_slots[slot] = query_features
+            .values
+            .iter()
+            .zip(proj.iter())
+            .map(|(&f, row)| f * row[slot])
+            .sum::<f64>()
+            .clamp(-1.0, 1.0);
     }
 
     let dot: f64 = query_slots.iter().zip(cell_embed.iter()).map(|(a, b)| a * b).sum();

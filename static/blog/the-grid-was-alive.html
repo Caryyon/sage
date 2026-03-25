@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Grid Was Alive. Then We Ran It. — SAGE Blog</title>
+    <meta name="description" content="SAGE's NCA knowledge grid was sitting idle — a static lookup table pretending to be a brain. Here's how we fixed that, wired in the AttentionDecoder, and made the grid actually compute during every conversation.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* NAV */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo a { -webkit-text-fill-color: inherit; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* ARTICLE */
+        .container { max-width: 760px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        .article-header {
+            padding: 120px 24px 40px;
+            max-width: 760px;
+            margin: 0 auto;
+            position: relative; z-index: 1;
+        }
+        .article-meta { font-size: 0.7rem; color: var(--purple); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+        .article-header h1 {
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+            font-weight: 700;
+            line-height: 1.3;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 16px;
+        }
+        .article-subtitle {
+            font-size: 1rem;
+            color: var(--text-dim);
+            font-weight: 300;
+            line-height: 1.6;
+        }
+
+        .article-body { padding-bottom: 80px; }
+        .article-body h2 {
+            font-size: 1.2rem;
+            margin: 48px 0 16px;
+            color: var(--cyan);
+        }
+        .article-body h3 {
+            font-size: 1rem;
+            margin: 32px 0 12px;
+            color: var(--green);
+        }
+        .article-body p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.8;
+        }
+        .article-body p strong { color: var(--text); }
+        .article-body p em { color: var(--purple); }
+
+        .article-body ul, .article-body ol {
+            margin: 0 0 16px 24px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .article-body li { margin-bottom: 8px; line-height: 1.7; }
+        .article-body li strong { color: var(--text); }
+
+        /* HIGHLIGHT BOX */
+        .highlight-box {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 0 20px rgba(0,255,213,0.05);
+        }
+        .highlight-box p { margin-bottom: 8px; }
+        .highlight-box p:last-child { margin-bottom: 0; }
+
+        /* CODE */
+        .code-block {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 0;
+            overflow-x: auto;
+        }
+        .code-block code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--cyan);
+            white-space: pre;
+        }
+
+        /* CALLOUT */
+        .callout {
+            border-left: 3px solid var(--purple);
+            padding: 16px 24px;
+            margin: 24px 0;
+            background: rgba(168,85,247,0.05);
+            border-radius: 0 8px 8px 0;
+        }
+        .callout p { font-size: 0.85rem; color: var(--text); font-style: italic; margin: 0; }
+
+        /* DIAGRAM */
+        .diagram {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-align: center;
+            line-height: 2;
+        }
+        .diagram .flow { color: var(--cyan); font-weight: 700; }
+        .diagram .arrow { color: var(--purple); }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+        }
+        .footer-brand { font-size: 0.75rem; color: var(--text-dim); }
+        .footer-links { display: flex; gap: 24px; }
+        .footer-links a { color: var(--text-dim); font-size: 0.72rem; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="logo">🌿 SAGE</a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/blog">Blog</a>
+            <a href="/docs">Docs</a>
+            <a href="/research">Research</a>
+            <a href="/whitepaper">Whitepaper</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div style="position:relative;z-index:99;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.25);padding:10px 24px;text-align:center;font-size:0.78rem;color:#e8d48b;font-family:'JetBrains Mono',monospace;">
+    🚧 Early Alpha — SAGE is under active development. Expect rough edges. <a href="https://discord.gg/U999zZUuUV" target="_blank" style="color:#fbbf24;text-decoration:underline;">Join Discord</a> to follow progress.
+</div>
+
+<div class="article-header">
+    <div class="article-meta">March 17, 2026 · Engineering</div>
+    <h1>The Grid Was Alive. Then We Ran It.</h1>
+    <p class="article-subtitle">SAGE's NCA knowledge grid was sitting idle during every conversation — a static hash map pretending to be a brain. Here's how we fixed that, and what changes when the cellular automata actually run.</p>
+</div>
+
+<div class="container article-body">
+
+    <h2>The Embarrassing Truth</h2>
+
+    <p>We had a problem we weren't fully admitting to ourselves. <strong>The NCA grid wasn't computing anything during chat.</strong></p>
+
+    <p>The architecture looked right on paper: text encodes into a 32×32 cellular automata grid, the grid stores knowledge as emergent patterns, knowledge retrieves back out to inform LLM responses. We'd written the <a href="/blog/reservoir-computing.html">reservoir computing proof</a> showing a linear readout can decode token predictions from NCA dynamics with 100% top-5 accuracy. The math checked out.</p>
+
+    <p>But in the actual running system? The grid was static. You'd encode a message, the cell states would get written, and then... nothing. The cellular automata rules sat dormant. No update steps. No emergent dynamics. When retrieval happened, we were doing a lookup against a frozen snapshot, not reading from a living computational substrate.</p>
+
+    <p>A brain that doesn't fire isn't a brain. It's RAM.</p>
+
+    <h2>What "Running" the Grid Actually Means</h2>
+
+    <p>In cellular automata, each cell updates its state based on its neighbors according to a local rule. The interesting part is what happens when you iterate: <strong>local rules create global behavior</strong>. Patterns propagate, interfere, stabilize, and reorganize across the grid without any central coordination. This is the computational property we're trying to harness — and it only exists when the automata are actually running.</p>
+
+    <p>The fix sounds obvious in hindsight: run update steps. But the question was <em>when</em>, and <em>how many</em>, and <em>what do you do between updates?</em></p>
+
+    <p>We landed on a three-phase cycle that runs on every chat turn:</p>
+
+    <div class="diagram">
+        <span class="flow">USER MESSAGE</span>
+        <span class="arrow"> → </span>
+        <span class="flow">ENCODE INTO GRID</span>
+        <span class="arrow"> → </span>
+        <br>
+        <span class="flow">3× NCA UPDATE STEPS</span>
+        <span class="arrow"> (react to new input)</span>
+        <br>
+        <span class="arrow">↓</span>
+        <br>
+        <span class="flow">ATTENTION RETRIEVAL</span>
+        <span class="arrow"> (read relevant patterns)</span>
+        <br>
+        <span class="arrow">↓</span>
+        <br>
+        <span class="flow">LLM GENERATES RESPONSE</span>
+        <br>
+        <span class="arrow">↓</span>
+        <br>
+        <span class="flow">DREAM STEPS</span>
+        <span class="arrow"> (consolidate, self-heal)</span>
+    </div>
+
+    <p>Three update steps before retrieval gives the grid time to react to what just came in — letting the new information propagate through neighboring cells and settle into a stable attractor. Then we retrieve. Then, after the LLM has responded, we run additional <em>dream steps</em> to consolidate the new knowledge into longer-term patterns.</p>
+
+    <h2>Dream Steps and Freerun Repair</h2>
+
+    <p>The dream step concept came from neuroscience, specifically sleep consolidation theory: memories don't stabilize during waking, they stabilize during downtime when the brain replays and integrates experience.</p>
+
+    <p>For SAGE, dream steps are NCA update iterations that run <em>without any input injection</em>. The grid evolves freely, driven only by its internal dynamics. This does two things:</p>
+
+    <ul>
+        <li><strong>Consolidation:</strong> Patterns that were freshly encoded get a chance to settle. Weak activations that don't fit into the existing grid structure naturally decay. Strong signals that align with existing patterns get reinforced.</li>
+        <li><strong>Repair:</strong> The grid can drift over many conversations — cells that should be quiet start accumulating noise, hot spots cluster in ways that interfere with retrieval. Freerun repair steps push the grid back toward its learned stability attractor, preventing degradation over time.</li>
+    </ul>
+
+    <div class="callout">
+        <p>Without freerun repair, we were seeing grid saturation after roughly 50 conversation turns — all cells converging to similar activation levels, destroying the pattern differentiation that makes retrieval meaningful. Repair keeps the grid healthy indefinitely.</p>
+    </div>
+
+    <h2>The AttentionDecoder: From Grid State to Context Vector</h2>
+
+    <p>Running the grid was step one. Getting useful information <em>out</em> of it required a different kind of work.</p>
+
+    <p>The naive approach to retrieval — hash the query, look up a cell, return the stored text — breaks down once the grid is actually computing. Cell states don't map cleanly to discrete memories anymore. They're continuous activations shaped by the interference patterns of everything the grid has processed. You can't just ask "what's in cell (14, 22)?"</p>
+
+    <p>We needed something that could attend across the full grid and pull out the information most relevant to the current query. Enter the AttentionDecoder.</p>
+
+    <p>The architecture is cross-attention with a thalamic spatial gating twist. The query comes from the current input embedding. Keys and values come from all 1,024 cells of the 32×32 grid. A spatial gate — learned weights that vary by grid position — modulates how much each region contributes. The output is a context vector that captures what the grid knows about the current topic.</p>
+
+    <div class="highlight-box">
+        <p><strong>Why "thalamic"?</strong> The thalamus in the brain acts as a relay station and gating mechanism — it doesn't process information so much as it controls what gets routed to the cortex at any given moment. Our spatial gate plays the same role: it learns which grid regions are informationally relevant for different types of queries, and suppresses the rest. Less noise, better signal.</p>
+    </div>
+
+    <p>When Ollama embeddings are available, the retrieval path uses cosine similarity between the query embedding and cell embeddings to identify the most relevant grid regions before the attention pass. When embeddings aren't available, we fall back to pure spatial attention across the full grid. Both paths produce a context vector that gets prepended to the LLM prompt.</p>
+
+    <h2>The Difference in Practice</h2>
+
+    <p>Before this update, SAGE's NCA "knowledge" was decorative. The grid would get written, the retrieval call would happen, and whatever came back was vaguely related to recent conversations at best — basically a noisy recency buffer.</p>
+
+    <p>With live updates and the AttentionDecoder wired in, the character of the knowledge retrieval changed. The grid reacts to context. A question about a topic you discussed three sessions ago activates different grid regions than one about a topic from an hour ago. Related concepts cluster. The dynamics are doing something that looks, from the outside, like thinking.</p>
+
+    <p>That's not a small thing. It's the difference between a system that <em>stores</em> conversations and one that <em>processes</em> them.</p>
+
+    <h2>What's Still Hard</h2>
+
+    <p>We want to be honest about the current state. The update steps add latency — not catastrophic, but measurable. On a modern CPU, three NCA update steps on a 32×32 grid take around 2ms. Dream steps add a few more. It's fast enough that users won't notice, but it's time we're spending on every turn.</p>
+
+    <p>The bigger open question is retrieval quality at scale. Our experiments show strong results over short to medium conversations. Longer sessions — hundreds of turns, weeks of use — are still being characterized. We know freerun repair helps. We don't know yet whether it's sufficient to maintain retrieval quality indefinitely, or whether we'll need a more aggressive consolidation strategy.</p>
+
+    <p>We're also still learning how the grid organizes itself. The emergent structure isn't something we control directly — it's a property of the update dynamics. Sometimes related topics cluster in ways that improve retrieval. Sometimes they don't. Understanding and nudging that organization without destroying it is an active area of work.</p>
+
+    <h2>The Persistent Identity Fix</h2>
+
+    <p>One more thing landed in this release: persistent libp2p identity for testnet nodes.</p>
+
+    <p>Previously, every time a SAGE node restarted, it generated a fresh Ed25519 keypair and appeared as a new peer to the network. This made it impossible to build reputation, persistent connections, or meaningful peer history — the fundamental building blocks of the decentralized network we're working toward.</p>
+
+    <p>Now node identity is derived from a seed stored locally. Restart the node, same PeerId. The network recognizes you as the same peer across sessions. This sounds minor but it's a prerequisite for everything that depends on trust and continuity in the peer mesh.</p>
+
+    <h2>Version 0.2.4</h2>
+
+    <p>All of this shipped as v0.2.4. The grid is alive now — actually running, actually computing, actually contributing to the responses you get. The architecture we described in the whitepaper is finally the architecture that's running.</p>
+
+    <p>There's still a long way to go. But this was the step that made SAGE's core claim true in practice, not just on paper.</p>
+
+    <div class="highlight-box">
+        <p><strong>🌿 SAGE is open source and free forever.</strong> Read the <a href="https://github.com/Caryyon/sage">source on GitHub</a>, join the <a href="https://discord.gg/U999zZUuUV">Discord</a>, or <a href="/">install SAGE</a> and watch the grid think.</p>
+    </div>
+
+</div>
+
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="/">Home</a>
+            <a href="/blog">← All Posts</a>
+            <a href="/docs">Docs</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

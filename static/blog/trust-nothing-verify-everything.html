@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trust Nothing, Verify Everything: How We Closed SAGE's Poisoning Hole — SAGE Blog</title>
+    <meta name="description" content="A decentralized AI network that accepts knowledge from strangers is a target. Here's how we added Ed25519-signed KnowledgeDiffs, real delta learning, and multi-text cell storage to make SAGE's network trustworthy — and efficient — at scale.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-mid: #0f0f1a;
+            --bg-card: #141428;
+            --bg-card-hover: #1a1a35;
+            --cyan: #00ffd5;
+            --green: #39ff14;
+            --purple: #a855f7;
+            --text: #e0e0e8;
+            --text-dim: #6b6b80;
+            --border: #1e1e3a;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-deep);
+            color: var(--text);
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,255,213,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,255,213,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        a { color: var(--cyan); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* NAV */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(10,10,15,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 24px;
+        }
+        nav .nav-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 56px;
+        }
+        nav .logo {
+            font-weight: 700; font-size: 1rem;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        nav .logo a { -webkit-text-fill-color: inherit; }
+        nav .nav-links { display: flex; gap: 24px; }
+        nav .nav-links a { color: var(--text-dim); font-size: 0.75rem; transition: color 0.2s; }
+        nav .nav-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        /* ARTICLE */
+        .container { max-width: 760px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        .article-header {
+            padding: 120px 24px 40px;
+            max-width: 760px;
+            margin: 0 auto;
+            position: relative; z-index: 1;
+        }
+        .article-meta { font-size: 0.7rem; color: var(--purple); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+        .article-header h1 {
+            font-size: clamp(1.6rem, 4vw, 2.4rem);
+            font-weight: 700;
+            line-height: 1.3;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            margin-bottom: 16px;
+        }
+        .article-subtitle {
+            font-size: 1rem;
+            color: var(--text-dim);
+            font-weight: 300;
+            line-height: 1.6;
+        }
+
+        .article-body { padding-bottom: 80px; }
+        .article-body h2 {
+            font-size: 1.2rem;
+            margin: 48px 0 16px;
+            color: var(--cyan);
+        }
+        .article-body h3 {
+            font-size: 1rem;
+            margin: 32px 0 12px;
+            color: var(--green);
+        }
+        .article-body p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            line-height: 1.8;
+        }
+        .article-body p strong { color: var(--text); }
+        .article-body p em { color: var(--purple); }
+
+        .article-body ul, .article-body ol {
+            margin: 0 0 16px 24px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+        .article-body li { margin-bottom: 8px; line-height: 1.7; }
+        .article-body li strong { color: var(--text); }
+
+        /* HIGHLIGHT BOX */
+        .highlight-box {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 0 20px rgba(0,255,213,0.05);
+        }
+        .highlight-box p { margin-bottom: 8px; }
+        .highlight-box p:last-child { margin-bottom: 0; }
+
+        /* WARNING BOX */
+        .warning-box {
+            background: rgba(184,84,80,0.08);
+            border: 1px solid rgba(184,84,80,0.4);
+            border-radius: 8px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .warning-box p { margin-bottom: 8px; font-size: 0.85rem; color: var(--text-dim); }
+        .warning-box p:last-child { margin-bottom: 0; }
+        .warning-box strong { color: #e07070; }
+
+        /* CODE */
+        .code-block {
+            background: var(--bg-mid);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 24px 0;
+            overflow-x: auto;
+        }
+        .code-block code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--cyan);
+            white-space: pre;
+        }
+
+        /* CALLOUT */
+        .callout {
+            border-left: 3px solid var(--purple);
+            padding: 16px 24px;
+            margin: 24px 0;
+            background: rgba(168,85,247,0.05);
+            border-radius: 0 8px 8px 0;
+        }
+        .callout p { font-size: 0.85rem; color: var(--text); font-style: italic; margin: 0; }
+
+        /* COMPARISON TABLE */
+        .compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 0.78rem;
+        }
+        .compare-table th, .compare-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .compare-table th {
+            color: var(--text-dim);
+            font-weight: 400;
+            font-size: 0.65rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .compare-table .bad { color: #e07070; }
+        .compare-table .good { color: var(--green); }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            position: relative; z-index: 1;
+        }
+        .footer-inner {
+            max-width: 1100px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;
+        }
+        .footer-brand { font-size: 0.75rem; color: var(--text-dim); }
+        .footer-links { display: flex; gap: 24px; }
+        .footer-links a { color: var(--text-dim); font-size: 0.72rem; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--cyan); text-decoration: none; }
+
+        @media (max-width: 768px) {
+            nav .nav-links { gap: 12px; }
+            nav .nav-links a { font-size: 0.65rem; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="nav-inner">
+        <a href="/" class="logo">🌿 SAGE</a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/blog">Blog</a>
+            <a href="/docs">Docs</a>
+            <a href="/research">Research</a>
+            <a href="/whitepaper">Whitepaper</a>
+            <a href="https://github.com/Caryyon/sage" target="_blank">GitHub</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</nav>
+
+<div style="position:relative;z-index:99;background:rgba(251,191,36,0.1);border-bottom:1px solid rgba(251,191,36,0.25);padding:10px 24px;text-align:center;font-size:0.78rem;color:#e8d48b;font-family:'JetBrains Mono',monospace;">
+    🚧 Early Alpha — SAGE is under active development. Expect rough edges. <a href="https://discord.gg/U999zZUuUV" target="_blank" style="color:#fbbf24;text-decoration:underline;">Join Discord</a> to follow progress.
+</div>
+
+<div class="article-header">
+    <div class="article-meta">March 10, 2026 · Engineering · Security</div>
+    <h1>Trust Nothing, Verify Everything</h1>
+    <p class="article-subtitle">A decentralized AI network that accepts knowledge from anonymous peers is a target. Here's how we closed SAGE's poisoning hole, made knowledge sync actually efficient, and fixed a capacity collapse bug that would have silently killed the grid at scale.</p>
+</div>
+
+<div class="container article-body">
+
+    <h2>The Attack We Had to Fix</h2>
+
+    <p>SAGE's core proposition is that nodes share knowledge with each other. You learn something, your grid encodes it, a diff propagates to nearby peers, they integrate it. The network gets smarter collectively, not just individually.</p>
+
+    <p>That's a compelling story. It's also an obvious attack surface.</p>
+
+    <p>Before this update, there was nothing stopping a malicious peer from broadcasting arbitrary KnowledgeDiffs to the network. No authentication. No signatures. A node would receive a diff, run a basic sanity check on the magnitude and stability values, and integrate it if it passed. A motivated attacker could craft diffs that passed the magnitude check while injecting adversarial patterns — slowly steering the grid of every node that synced with them toward a poisoned state.</p>
+
+    <div class="warning-box">
+        <p><strong>The threat model:</strong> An attacker runs one or more nodes, generates plausible-looking KnowledgeDiffs, and broadcasts them to the gossip network. Every node that integrates these diffs gets poisoned. Because NCA grids are self-organizing, the poisoned patterns can spread through the grid's own update dynamics even after the malicious peer disconnects.</p>
+    </div>
+
+    <p>We knew this was a problem before we built the gossip protocol. We just needed to get there.</p>
+
+    <h2>Ed25519 Signatures on Every Diff</h2>
+
+    <p>The fix is mandatory cryptographic authentication: every KnowledgeDiff is now signed with the originating node's Ed25519 private key, and every receiving node verifies the signature before processing.</p>
+
+    <p>Ed25519 is the right choice here for several reasons:</p>
+    <ul>
+        <li><strong>Speed:</strong> Signing and verification are fast — relevant when you're processing gossip at scale. Ed25519 verification runs in microseconds on modern hardware.</li>
+        <li><strong>Small signatures:</strong> 64 bytes per diff. At the volume of gossip we're targeting, that's negligible overhead.</li>
+        <li><strong>Deterministic:</strong> No randomness in signing means no possibility of catastrophic key leakage through bad RNG (unlike older ECDSA schemes).</li>
+        <li><strong>Tie-in with libp2p identity:</strong> SAGE nodes already generate Ed25519 keypairs for their libp2p PeerId. We can reuse the same key material for diff signing — no extra key management for node operators.</li>
+    </ul>
+
+    <p>The signature covers the full diff payload: the grid delta values, the originating node identity, and a timestamp. A receiver that can't verify the signature against a known peer key rejects the diff outright. Unknown senders are held in a quarantine queue until enough reputation data accumulates to make a trust decision.</p>
+
+    <div class="callout">
+        <p>Signatures don't stop everything. A compromised key, a colluding cluster of peers, or a Sybil attack can still inject bad data. But they dramatically raise the cost of poisoning and make attacks attributable. You can revoke a key. You can't revoke anonymous bytes.</p>
+    </div>
+
+    <h2>GridDelta v2: Real Deltas for Real Learning</h2>
+
+    <p>Authentication was the security fix. GridDelta v2 was the efficiency fix — and it turned out to be equally important.</p>
+
+    <p>The original GridDelta format sent the full grid state as the "diff." Not a delta between two states — the entire 32×32×N channel grid, serialized and broadcast. We called it a diff. It wasn't.</p>
+
+    <p>This had two problems:</p>
+
+    <ol>
+        <li><strong>Bandwidth:</strong> Full grid snapshots are large. On a 32×32 grid with 26 channels of f32 values, each "diff" was around 100KB. Gossip at any meaningful node count would saturate the network.</li>
+        <li><strong>Semantics:</strong> Full state snapshots mean the receiving node <em>replaces</em> its grid with the sender's. That's not learning from a peer — that's being overwritten by them. The receiver loses everything it learned locally that isn't reflected in the sender's grid.</li>
+    </ol>
+
+    <p>v2 sends true deltas: the signed difference between a node's grid state before and after processing a message. Receiving nodes apply the delta to their own grid using a weighted sum — the Delta Sum Learning rule. Their local knowledge is preserved and the peer's learning is integrated proportionally.</p>
+
+    <table class="compare-table">
+        <thead>
+            <tr>
+                <th>Property</th>
+                <th>GridDelta v1</th>
+                <th>GridDelta v2</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>What's transmitted</td>
+                <td class="bad">Full grid state (~100KB)</td>
+                <td class="good">True delta (typically &lt;5KB)</td>
+            </tr>
+            <tr>
+                <td>Integration method</td>
+                <td class="bad">Replace receiver's grid</td>
+                <td class="good">Weighted sum (local + peer)</td>
+            </tr>
+            <tr>
+                <td>Local knowledge preserved</td>
+                <td class="bad">No</td>
+                <td class="good">Yes</td>
+            </tr>
+            <tr>
+                <td>Symmetric learning</td>
+                <td class="bad">No (sender dominates)</td>
+                <td class="good">Yes (both contribute)</td>
+            </tr>
+            <tr>
+                <td>Bandwidth at 100 nodes</td>
+                <td class="bad">10MB/sync</td>
+                <td class="good">&lt;500KB/sync</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p>The bandwidth improvement is obvious. The semantic improvement is more subtle but more important. Delta Sum Learning means every node in the network is an independent learner that benefits from peer knowledge without surrendering its own. The network converges toward shared understanding through many small adjustments, not through any single node imposing its state.</p>
+
+    <h2>The Capacity Collapse Bug</h2>
+
+    <p>While we were working on deltas, we found a bug that would have quietly destroyed the grid's knowledge capacity as it grew.</p>
+
+    <p>The text-to-grid encoder worked by projecting input tokens into cell positions via a strided slot assignment — basically dividing the grid into buckets and hashing each token into a bucket. The problem: <strong>each cell had a capacity of one text slot</strong>. Once a cell was written to, subsequent tokens that hashed to the same position would overwrite the previous value.</p>
+
+    <p>On a fresh grid with sparse usage, this is fine. You've got 1,024 cells and not many tokens competing for the same positions. But as the grid fills up — as you have longer conversations, more sessions, more diverse topics — collisions accumulate. Not gracefully degrading, but silently collapsing. Older, less recently-used knowledge gets evicted to make room for newer encodings, with no trace left behind.</p>
+
+    <p>We found this while characterizing grid behavior at scale. After a few hundred encoding events, the grid was essentially a rolling window of recent inputs, not a long-term knowledge store. Everything we'd built on top of that assumption — the dream steps, the consolidation, the retrieval — was operating on data that was already stale.</p>
+
+    <p>The fix was multi-text storage per cell: each cell now maintains a small buffer of recent encodings, with a soft capacity limit and an LRU eviction policy when the buffer is full. Collisions still happen, but older knowledge degrades gracefully rather than getting stomped. Grid capacity scales with conversation length instead of collapsing past a threshold.</p>
+
+    <div class="highlight-box">
+        <p><strong>Lesson learned:</strong> Test your assumptions at scale, not just on happy-path examples. The capacity collapse only manifested at around 150-200 encoding events — well past what we'd been testing interactively. We needed load tests, not just smoke tests.</p>
+    </div>
+
+    <h2>The Random Projection Encoder</h2>
+
+    <p>While we were in the encoder, we replaced the strided slot projection with a seeded random projection matrix. This sounds like a minor implementation detail. The results weren't.</p>
+
+    <p>Strided slot assignment creates systematic patterns in how tokens map to grid positions — tokens with similar hash values end up in adjacent cells, creating clustering that's an artifact of the hash function, not the semantics of the input. A random projection matrix breaks this up. Each token gets projected into a random-but-deterministic position in the grid's high-dimensional state space, based on a seeded RNG tied to the token value.</p>
+
+    <p>The practical effect: <strong>related concepts spread across the grid instead of clustering by hash proximity</strong>. This is better for the NCA dynamics because information about a topic is now distributed through the whole grid, not localized in one region. The cellular automata have more surface area to work with when propagating and associating knowledge.</p>
+
+    <h2>What This All Adds Up To</h2>
+
+    <p>Authentication closes the most obvious attack vector on the network. True delta learning makes sync efficient and semantically correct. Multi-text cell storage prevents silent capacity collapse. Random projection encoding improves how knowledge distributes across the grid.</p>
+
+    <p>None of these fixes are glamorous. There's no benchmark to put in a headline. But they're the difference between a network that works reliably at scale and one that looks good in a demo and falls apart in production.</p>
+
+    <p>SAGE is still early alpha. There are more edge cases to find, more attack surfaces to characterize, more scaling behavior to understand. But the foundation is getting solid. These are the kinds of problems you have to solve before you can build the things that actually matter on top.</p>
+
+    <div class="highlight-box">
+        <p><strong>🌿 SAGE is open source and free forever.</strong> If you're interested in the security model, the full key management and signature verification code is in <code>src/network/</code> on <a href="https://github.com/Caryyon/sage">GitHub</a>. Come poke holes in it — that's how it gets stronger.</p>
+    </div>
+
+</div>
+
+<footer>
+    <div class="footer-inner">
+        <div class="footer-brand">Built with 🐺 by the SAGE community</div>
+        <div class="footer-links">
+            <a href="/">Home</a>
+            <a href="/blog">← All Posts</a>
+            <a href="/docs">Docs</a>
+            <a href="https://discord.gg/U999zZUuUV" target="_blank">Discord</a>
+        </div>
+    </div>
+</footer>
+
+</body>
+</html>

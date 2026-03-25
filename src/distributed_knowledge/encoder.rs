@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 /// than picking 6 evenly-spaced indices.
 static PROJ_MATRIX_CELL: OnceLock<[[f64; NUM_EMBED_SLOTS]; 64]> = OnceLock::new();
 
-fn get_proj_matrix() -> &'static [[f64; NUM_EMBED_SLOTS]; 64] {
+pub fn get_proj_matrix() -> &'static [[f64; NUM_EMBED_SLOTS]; 64] {
     PROJ_MATRIX_CELL.get_or_init(|| {
     // Deterministic LCG: x_{n+1} = (a * x_n + c) mod m  (Knuth params for 64-bit)
     const A: u64 = 6364136223846793005;
