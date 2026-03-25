@@ -13,10 +13,11 @@ pub mod security;
 pub mod validation;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
 use diff::{merkle_hash, KnowledgeDiff, SignatureError};
-use gossip::{GossipError, GossipMessage, GridStateResponse, PeerAnnounce};
+use gossip::{GossipError, GossipMessage, GridStateRequest, GridStateResponse, GossipTransport, PeerAnnounce};
 use identity::NodeIdentity;
 use privacy::{
     apply_differential_privacy, filter_local_only_channels, AggregationTracker, PiiFilter,
@@ -98,6 +99,8 @@ pub struct NetworkManager {
     ban_list: Mutex<BanList>,
     /// Rate limiter.
     rate_limiter: Mutex<RateLimiter>,
+    /// Optional gossip transport for sending responses (e.g. to GridStateRequest).
+    transport: Option<Arc<dyn GossipTransport>>,
 }
 
 /// Network statistics.
@@ -131,7 +134,23 @@ impl NetworkManager {
             pii_filter: Mutex::new(PiiFilter::new()),
             ban_list: Mutex::new(BanList::load()),
             rate_limiter: Mutex::new(RateLimiter::new(RateLimitConfig::default())),
+            transport: None,
         }
+    }
+
+    /// Create a NetworkManager with a wired gossip transport.
+    ///
+    /// Use this constructor when you want `NetworkManager` to be able to *send*
+    /// responses (e.g. reply to `GridStateRequest`).  The transport is stored as
+    /// an `Arc<dyn GossipTransport>` so it can be shared with the swarm loop.
+    pub fn with_transport(
+        identity: NodeIdentity,
+        config: NetworkConfig,
+        transport: Arc<dyn GossipTransport>,
+    ) -> Self {
+        let mut mgr = Self::new(identity, config);
+        mgr.transport = Some(transport);
+        mgr
     }
 
     /// Create with default config, loading or generating identity.
@@ -509,7 +528,7 @@ impl NetworkManager {
                     "[network] Grid state request from {} (full={})",
                     req.requesting_node, req.full_state
                 );
-                // Response would be sent via transport — placeholder
+                self.handle_grid_state_request(req, local_grid).await;
             }
             GossipMessage::GridStateResponse(resp) => {
                 match resp {
@@ -521,16 +540,139 @@ impl NetworkManager {
                     }
                     GridStateResponse::FullState {
                         node_id,
-                        grid: _,
-                        confidence: _,
+                        grid,
+                        confidence,
                         ..
                     } => {
-                        println!("[network] Received full state from {node_id}");
-                        // For full state, we'd do a weighted merge of the entire grid
+                        println!(
+                            "[network] Received full state from {node_id} ({} rows)",
+                            grid.len()
+                        );
+                        self.merge_full_state(&node_id, &grid, confidence, local_grid).await;
                     }
                 }
             }
         }
+    }
+
+    /// Respond to a `GridStateRequest` from a peer.
+    ///
+    /// Sends one of three responses via the wired transport:
+    /// - `InSync`        — Merkle hashes already match, nothing to send.
+    /// - `Diff`          — Hash mismatch; send a diff from the zero-baseline so the
+    ///                     peer can apply it.  (A future improvement would cache each
+    ///                     peer's last-known grid and diff from that instead.)
+    /// - `FullState`     — Peer explicitly requested the full grid (e.g. first join).
+    ///
+    /// If no transport is wired, logs a warning and returns without sending.
+    pub async fn handle_grid_state_request(
+        &self,
+        req: GridStateRequest,
+        local_grid: &[Vec<Vec<f64>>],
+    ) {
+        let Some(ref transport) = self.transport else {
+            eprintln!(
+                "[network] No transport wired — cannot respond to GridStateRequest from {}",
+                req.requesting_node
+            );
+            return;
+        };
+
+        let local_hash = merkle_hash(local_grid);
+
+        let response = if local_hash == req.current_hash {
+            // Hashes match — nothing to do.
+            GossipMessage::GridStateResponse(GridStateResponse::InSync)
+        } else if req.full_state {
+            // Peer wants the complete grid (initial sync / large divergence).
+            GossipMessage::GridStateResponse(GridStateResponse::FullState {
+                node_id: self.identity.node_id.clone(),
+                grid: local_grid.to_vec(),
+                state_hash: local_hash,
+                confidence: self.config.local_confidence,
+            })
+        } else {
+            // Compute a diff from the zero-baseline so the peer can catch up.
+            // This is a conservative approach: we send everything rather than
+            // computing from the peer's actual state (which we don't have cached).
+            let height = local_grid.len();
+            let width = if height > 0 { local_grid[0].len() } else { 0 };
+            let channels = if height > 0 && width > 0 {
+                local_grid[0][0].len()
+            } else {
+                0
+            };
+            let zeros = vec![vec![vec![0.0_f64; channels]; width]; height];
+            let seq = *self.sequence.lock().await;
+            let mut diff = KnowledgeDiff::compute(
+                &zeros,
+                local_grid,
+                self.identity.node_id.clone(),
+                seq,
+                self.config.local_confidence,
+                self.config.diff_threshold,
+            );
+            diff.sign(&self.identity.seed_bytes());
+            GossipMessage::GridStateResponse(GridStateResponse::Diff(diff))
+        };
+
+        if let Err(e) = transport
+            .send_to(&req.requesting_node, response)
+            .await
+        {
+            eprintln!(
+                "[network] Failed to send GridStateResponse to {}: {e}",
+                req.requesting_node
+            );
+        }
+    }
+
+    /// Merge a `FullState` response from a peer into the local grid.
+    ///
+    /// Treats the peer's entire grid as a single diff from zeros and applies it
+    /// with the configured `local_confidence` weight.  This ensures the local
+    /// node's own knowledge is never completely overwritten by a remote state.
+    async fn merge_full_state(
+        &self,
+        node_id: &str,
+        remote_grid: &[Vec<Vec<f64>>],
+        remote_confidence: f64,
+        local_grid: &mut [Vec<Vec<f64>>],
+    ) {
+        let height = local_grid.len();
+        let width = if height > 0 { local_grid[0].len() } else { 0 };
+        let channels = if height > 0 && width > 0 {
+            local_grid[0][0].len()
+        } else {
+            0
+        };
+
+        if height == 0 || width == 0 || channels == 0 {
+            eprintln!("[network] merge_full_state: local grid is empty, skipping");
+            return;
+        }
+
+        // Build a diff from zeros → remote grid so we can apply it with weighting.
+        let zeros = vec![vec![vec![0.0_f64; channels]; width]; height];
+        let diff = KnowledgeDiff::compute(
+            &zeros,
+            remote_grid,
+            node_id.to_string(),
+            0,
+            remote_confidence,
+            self.config.diff_threshold,
+        );
+
+        let change_count = diff.changes.len();
+        diff.apply_weighted(local_grid, self.config.local_confidence);
+
+        println!(
+            "[network] Merged full state from {node_id} ({change_count} changes, weight={:.2})",
+            self.config.local_confidence
+        );
+
+        let mut stats = self.stats.write().await;
+        stats.diffs_received += 1;
     }
 }
 
@@ -539,4 +681,191 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gossip::{GossipError, GossipMessage, GossipTransport};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    /// A mock transport that captures all outgoing messages.
+    struct MockTransport {
+        sent: Arc<Mutex<Vec<(String, GossipMessage)>>>,
+    }
+
+    impl MockTransport {
+        fn new() -> (Self, Arc<Mutex<Vec<(String, GossipMessage)>>>) {
+            let sent = Arc::new(Mutex::new(Vec::new()));
+            (Self { sent: Arc::clone(&sent) }, sent)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl GossipTransport for MockTransport {
+        async fn broadcast(&self, _msg: GossipMessage) -> Result<(), GossipError> {
+            Ok(())
+        }
+        async fn send_to(&self, peer_id: &str, msg: GossipMessage) -> Result<(), GossipError> {
+            self.sent.lock().await.push((peer_id.to_string(), msg));
+            Ok(())
+        }
+        async fn recv(&self) -> Result<(String, GossipMessage), GossipError> {
+            Err(GossipError::NotStarted)
+        }
+        async fn connected_peers(&self) -> Vec<String> {
+            Vec::new()
+        }
+        async fn start(&self) -> Result<(), GossipError> {
+            Ok(())
+        }
+        async fn stop(&self) -> Result<(), GossipError> {
+            Ok(())
+        }
+    }
+
+    fn make_grid(h: usize, w: usize, ch: usize, val: f64) -> Vec<Vec<Vec<f64>>> {
+        vec![vec![vec![val; ch]; w]; h]
+    }
+
+    fn make_manager_with_transport(
+        transport: Arc<dyn GossipTransport>,
+    ) -> NetworkManager {
+        let identity = identity::NodeIdentity::generate();
+        let config = NetworkConfig::default();
+        NetworkManager::with_transport(identity, config, transport)
+    }
+
+    #[tokio::test]
+    async fn test_grid_state_request_insync_when_hashes_match() {
+        let (mock, sent) = MockTransport::new();
+        let transport: Arc<dyn GossipTransport> = Arc::new(mock);
+        let mgr = make_manager_with_transport(transport);
+
+        let grid = make_grid(4, 4, 2, 0.5);
+        let hash = merkle_hash(&grid);
+
+        let req = gossip::GridStateRequest {
+            requesting_node: "peer-1".to_string(),
+            current_hash: hash,
+            full_state: false,
+        };
+
+        mgr.handle_grid_state_request(req, &grid).await;
+
+        let messages = sent.lock().await;
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "peer-1");
+        match &messages[0].1 {
+            GossipMessage::GridStateResponse(GridStateResponse::InSync) => {}
+            other => panic!("Expected InSync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grid_state_request_sends_diff_on_hash_mismatch() {
+        let (mock, sent) = MockTransport::new();
+        let transport: Arc<dyn GossipTransport> = Arc::new(mock);
+        let mgr = make_manager_with_transport(transport);
+
+        let grid = make_grid(4, 4, 2, 0.5);
+        let different_hash = [0u8; 32]; // deliberately wrong
+
+        let req = gossip::GridStateRequest {
+            requesting_node: "peer-2".to_string(),
+            current_hash: different_hash,
+            full_state: false,
+        };
+
+        mgr.handle_grid_state_request(req, &grid).await;
+
+        let messages = sent.lock().await;
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "peer-2");
+        match &messages[0].1 {
+            GossipMessage::GridStateResponse(GridStateResponse::Diff(d)) => {
+                assert!(!d.changes.is_empty(), "Diff should have changes");
+                assert_eq!(d.source_node, mgr.identity.node_id);
+            }
+            other => panic!("Expected Diff, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grid_state_request_full_state() {
+        let (mock, sent) = MockTransport::new();
+        let transport: Arc<dyn GossipTransport> = Arc::new(mock);
+        let mgr = make_manager_with_transport(transport);
+
+        let grid = make_grid(4, 4, 2, 0.7);
+        let req = gossip::GridStateRequest {
+            requesting_node: "peer-3".to_string(),
+            current_hash: [0u8; 32],
+            full_state: true,
+        };
+
+        mgr.handle_grid_state_request(req, &grid).await;
+
+        let messages = sent.lock().await;
+        assert_eq!(messages.len(), 1);
+        match &messages[0].1 {
+            GossipMessage::GridStateResponse(GridStateResponse::FullState {
+                node_id,
+                grid: remote_grid,
+                ..
+            }) => {
+                assert_eq!(node_id, &mgr.identity.node_id);
+                assert_eq!(remote_grid.len(), 4);
+            }
+            other => panic!("Expected FullState, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merge_full_state_applies_to_local_grid() {
+        let identity = identity::NodeIdentity::generate();
+        let config = NetworkConfig::default();
+        let mgr = NetworkManager::new(identity, config);
+
+        let remote = make_grid(4, 4, 2, 1.0);
+        let mut local = make_grid(4, 4, 2, 0.0);
+
+        mgr.merge_full_state("peer-4", &remote, 1.0, &mut local).await;
+
+        // apply_weighted blends: remote_weight = remote_confidence / (local_confidence + remote_confidence)
+        // With remote_confidence=1.0, local_confidence=0.8:
+        //   remote_weight = 1.0 / 1.8 ≈ 0.5556
+        //   result = 0.0 * (0.8/1.8) + 1.0 * (1.0/1.8) ≈ 0.5556
+        let lc = mgr.config.local_confidence; // 0.8
+        let rc = 1.0_f64;
+        let expected = rc / (lc + rc);
+        for row in &local {
+            for cell in row {
+                for &val in cell {
+                    assert!(
+                        (val - expected).abs() < 1e-9,
+                        "Expected {expected}, got {val}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_no_transport_does_not_panic() {
+        let identity = identity::NodeIdentity::generate();
+        let config = NetworkConfig::default();
+        let mgr = NetworkManager::new(identity, config); // no transport
+
+        let grid = make_grid(4, 4, 2, 0.5);
+        let req = gossip::GridStateRequest {
+            requesting_node: "peer-5".to_string(),
+            current_hash: [0u8; 32],
+            full_state: false,
+        };
+
+        // Should log a warning but not panic.
+        mgr.handle_grid_state_request(req, &grid).await;
+    }
 }
