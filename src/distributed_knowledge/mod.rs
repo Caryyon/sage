@@ -24,7 +24,112 @@ use crate::grid::{
 use decoder::{scan_active_knowledge, KnowledgeActivation};
 use encoder::{encode_text, write_knowledge, EncoderConfig};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 pub use text_store::{default_text_store_path, TextStore};
+
+// ── Retrieval Quality Metrics ──────────────────────────────────────────────
+
+/// Atomic counters tracking retrieval quality over the lifetime of a knowledge store.
+///
+/// # Definitions
+/// - **query**: every call to `NCAKnowledge::query()`
+/// - **hit**: a query that returned ≥1 result with relevance > 0.3 and text present
+/// - **miss**: a query that returned nothing useful (empty or all below threshold)
+/// - Relevance buckets: \[0,0.3), \[0.3,0.6), \[0.6,0.8), \[0.8,1.0\]
+#[derive(Debug, Default)]
+pub struct RetrievalStats {
+    /// Total calls to `query()`
+    pub total_queries: AtomicU64,
+    /// Queries returning ≥1 useful result (relevance > 0.3, text present)
+    pub hits: AtomicU64,
+    /// Queries returning nothing useful
+    pub misses: AtomicU64,
+    /// Relevance bucket \[0, 0.3) — low relevance results observed
+    pub relevance_low: AtomicU64,
+    /// Relevance bucket \[0.3, 0.6) — medium relevance
+    pub relevance_mid: AtomicU64,
+    /// Relevance bucket \[0.6, 0.8) — good relevance
+    pub relevance_good: AtomicU64,
+    /// Relevance bucket \[0.8, 1.0\] — excellent relevance
+    pub relevance_excellent: AtomicU64,
+    /// Sum of top-result relevance scores × 1_000_000 (for mean computation)
+    pub relevance_sum_scaled: AtomicU64,
+}
+
+impl RetrievalStats {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// Record one query result set. `results` is the full ranked result list.
+    pub fn record(&self, results: &[KnowledgeActivation]) {
+        self.total_queries.fetch_add(1, Ordering::Relaxed);
+
+        let useful: Vec<_> = results
+            .iter()
+            .filter(|r| r.text.is_some() && r.relevance > 0.3)
+            .collect();
+
+        if useful.is_empty() {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Bucket all returned results by relevance
+        for r in results {
+            let bucket = if r.relevance < 0.3 {
+                &self.relevance_low
+            } else if r.relevance < 0.6 {
+                &self.relevance_mid
+            } else if r.relevance < 0.8 {
+                &self.relevance_good
+            } else {
+                &self.relevance_excellent
+            };
+            bucket.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Track mean top-result relevance
+        if let Some(top) = results.first() {
+            let scaled = (top.relevance.clamp(0.0, 1.0) * 1_000_000.0) as u64;
+            self.relevance_sum_scaled.fetch_add(scaled, Ordering::Relaxed);
+        }
+    }
+
+    /// Hit rate in [0, 1].  Returns 0.0 if no queries yet.
+    pub fn hit_rate(&self) -> f64 {
+        let total = self.total_queries.load(Ordering::Relaxed);
+        if total == 0 {
+            return 0.0;
+        }
+        self.hits.load(Ordering::Relaxed) as f64 / total as f64
+    }
+
+    /// Mean relevance of the top result across all queries (0.0 if none).
+    pub fn mean_top_relevance(&self) -> f64 {
+        let total = self.total_queries.load(Ordering::Relaxed);
+        if total == 0 {
+            return 0.0;
+        }
+        self.relevance_sum_scaled.load(Ordering::Relaxed) as f64 / (total as f64 * 1_000_000.0)
+    }
+
+    /// Human-readable one-liner for logs / TUI.
+    pub fn summary(&self) -> String {
+        format!(
+            "queries={} hit_rate={:.1}% mean_top_rel={:.3} [low={} mid={} good={} exc={}]",
+            self.total_queries.load(Ordering::Relaxed),
+            self.hit_rate() * 100.0,
+            self.mean_top_relevance(),
+            self.relevance_low.load(Ordering::Relaxed),
+            self.relevance_mid.load(Ordering::Relaxed),
+            self.relevance_good.load(Ordering::Relaxed),
+            self.relevance_excellent.load(Ordering::Relaxed),
+        )
+    }
+}
 
 // ── Brain file versioning ──────────────────────────────────────────────────
 
@@ -174,6 +279,8 @@ pub struct NCAKnowledge {
     pub node_id: f64,
     pub text_store: TextStore,
     timestamp_counter: f64,
+    /// Shared retrieval quality counters.  Clone the `Arc` to read metrics from another thread.
+    pub retrieval_stats: Arc<RetrievalStats>,
 }
 
 impl Default for NCAKnowledge {
@@ -190,7 +297,14 @@ impl NCAKnowledge {
             node_id: 0.0,
             text_store: TextStore::new(),
             timestamp_counter: 0.0,
+            retrieval_stats: RetrievalStats::new(),
         }
+    }
+
+    /// Return a clone of the `Arc<RetrievalStats>` so callers (e.g. TUI) can
+    /// read live metrics without holding a lock on the whole knowledge store.
+    pub fn stats_handle(&self) -> Arc<RetrievalStats> {
+        Arc::clone(&self.retrieval_stats)
     }
 
     pub fn with_node_id(mut self, node_id: f64) -> Self {
@@ -255,13 +369,15 @@ impl KnowledgeStore for NCAKnowledge {
     }
 
     fn query(&self, query: &str, max_results: usize) -> Vec<KnowledgeActivation> {
-        decoder::query_knowledge_with_text(
+        let results = decoder::query_knowledge_with_text(
             &self.grid,
             query,
             &self.config,
             max_results,
             Some(&self.text_store),
-        )
+        );
+        self.retrieval_stats.record(&results);
+        results
     }
 
     fn merge(&mut self, other: &Grid, merge_strength: f64) {
@@ -690,5 +806,115 @@ mod tests {
         assert_eq!(store.grid.height, 256);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    // ── RetrievalStats tests ───────────────────────────────────────────────
+
+    #[test]
+    fn test_retrieval_stats_zero_on_fresh_store() {
+        let store = NCAKnowledge::new();
+        let stats = store.stats_handle();
+        assert_eq!(stats.total_queries.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.hit_rate(), 0.0);
+        assert_eq!(stats.mean_top_relevance(), 0.0);
+        assert!(stats.summary().contains("queries=0"));
+    }
+
+    #[test]
+    fn test_retrieval_stats_recorded_on_query() {
+        let mut store = NCAKnowledge::new();
+        store.encode("the quick brown fox", 0.9);
+        store.encode("jumped over the lazy dog", 0.8);
+
+        let stats = store.stats_handle();
+        assert_eq!(stats.total_queries.load(Ordering::Relaxed), 0);
+
+        // First query
+        let _ = store.query("quick fox", 5);
+        assert_eq!(stats.total_queries.load(Ordering::Relaxed), 1);
+
+        // Second query
+        let _ = store.query("lazy dog", 5);
+        assert_eq!(stats.total_queries.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn test_retrieval_stats_hit_vs_miss() {
+        let mut store = NCAKnowledge::new();
+        // Encode something so there IS something to retrieve
+        store.encode("mars is the fourth planet", 0.9);
+
+        let stats = store.stats_handle();
+
+        // Query for something plausible — might hit or miss depending on hash
+        let _ = store.query("mars fourth planet", 5);
+
+        // Either a hit or miss was recorded — total must be 1
+        let total = stats.total_queries.load(Ordering::Relaxed);
+        let hits = stats.hits.load(Ordering::Relaxed);
+        let misses = stats.misses.load(Ordering::Relaxed);
+        assert_eq!(total, 1);
+        assert_eq!(hits + misses, 1, "hits + misses must equal total queries");
+    }
+
+    #[test]
+    fn test_retrieval_stats_arc_shared_across_handles() {
+        let mut store = NCAKnowledge::new();
+        store.encode("shared arc test", 0.7);
+
+        // Grab a handle before any queries
+        let stats_handle = store.stats_handle();
+        assert_eq!(stats_handle.total_queries.load(Ordering::Relaxed), 0);
+
+        // Run a query — should be visible through the cloned handle
+        let _ = store.query("shared arc", 3);
+        assert_eq!(stats_handle.total_queries.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_retrieval_stats_relevance_buckets_populated() {
+        use crate::distributed_knowledge::decoder::KnowledgeActivation;
+
+        let stats = RetrievalStats::new();
+        let fake_results = vec![
+            KnowledgeActivation {
+                position: (0, 0),
+                activation: 0.1,
+                confidence: 0.1,
+                timestamp: 0.0,
+                embedding: 0.0,
+                relevance: 0.1, // low bucket
+                text: None,
+            },
+            KnowledgeActivation {
+                position: (1, 0),
+                activation: 0.5,
+                confidence: 0.5,
+                timestamp: 0.0,
+                embedding: 0.0,
+                relevance: 0.45, // mid bucket
+                text: Some("midrange".to_string()),
+            },
+            KnowledgeActivation {
+                position: (2, 0),
+                activation: 0.9,
+                confidence: 0.9,
+                timestamp: 0.0,
+                embedding: 0.0,
+                relevance: 0.9, // excellent bucket
+                text: Some("excellent hit".to_string()),
+            },
+        ];
+        stats.record(&fake_results);
+
+        assert_eq!(stats.total_queries.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.hits.load(Ordering::Relaxed), 1); // has text + relevance > 0.3
+        assert_eq!(stats.misses.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.relevance_low.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.relevance_mid.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.relevance_excellent.load(Ordering::Relaxed), 1);
+        // mean_top_relevance is the first result's relevance = 0.1
+        let mean = stats.mean_top_relevance();
+        assert!((mean - 0.1).abs() < 0.001, "mean_top_relevance should be ~0.1, got {}", mean);
     }
 }
