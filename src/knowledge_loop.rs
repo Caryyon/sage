@@ -127,6 +127,24 @@ impl KnowledgeLoop {
                 Some(&self.knowledge.text_store),
             );
 
+            // Record semantic retrieval into shared stats (convert to KnowledgeActivation-like)
+            {
+                use crate::distributed_knowledge::decoder::KnowledgeActivation;
+                let ka_results: Vec<KnowledgeActivation> = attention_results
+                    .iter()
+                    .map(|r| KnowledgeActivation {
+                        position: r.position,
+                        activation: r.attention_weight,
+                        confidence: r.attention_weight,
+                        timestamp: 0.0,
+                        embedding: 0.0,
+                        relevance: r.attention_weight,
+                        text: r.text.clone(),
+                    })
+                    .collect();
+                self.knowledge.retrieval_stats.record(&ka_results);
+            }
+
             attention_results
                 .into_iter()
                 .filter(|r| r.attention_weight > self.relevance_threshold && r.text.is_some())
@@ -134,6 +152,7 @@ impl KnowledgeLoop {
                 .collect()
         } else {
             // Fall back to cosine+proximity for hash-based queries
+            // (stats are recorded inside NCAKnowledge::query)
             let results = self.knowledge.query(query, self.max_results);
             results
                 .into_iter()

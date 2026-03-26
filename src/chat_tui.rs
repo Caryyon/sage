@@ -155,6 +155,8 @@ struct AppState {
     scroll_offset: usize, // 0 = bottom (most recent), >0 = scrolled up
     // Network
     peer_count: usize,
+    // Retrieval quality metrics (shared with NCAKnowledge)
+    retrieval_stats: std::sync::Arc<crate::distributed_knowledge::RetrievalStats>,
 }
 
 fn format_peer_count(n: usize) -> String {
@@ -278,15 +280,33 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
         lines.push(Line::from(spans));
     }
 
+    // Retrieval quality stats line
+    let stats = &state.retrieval_stats;
+    let total_q = stats.total_queries.load(std::sync::atomic::Ordering::Relaxed);
+    let hit_rate_pct = (stats.hit_rate() * 100.0).round() as u32;
+    let mean_rel = stats.mean_top_relevance();
+    let stats_line = if total_q == 0 {
+        Line::from(vec![
+            Span::styled("● ", Style::default().fg(GREEN)),
+            Span::styled("enc ", Style::default().fg(DIM)),
+            Span::styled("● ", Style::default().fg(CYAN)),
+            Span::styled("ret ", Style::default().fg(DIM)),
+            Span::styled("● ", Style::default().fg(Color::Rgb(0x1a, 0x1a, 0x1a))),
+            Span::styled("idle", Style::default().fg(DIM)),
+        ])
+    } else {
+        let hr_color = if hit_rate_pct >= 60 { GREEN } else if hit_rate_pct >= 30 { ORANGE } else { Color::Rgb(0xcc, 0x44, 0x44) };
+        Line::from(vec![
+            Span::styled("hit:", Style::default().fg(DIM)),
+            Span::styled(format!("{}%", hit_rate_pct), Style::default().fg(hr_color)),
+            Span::styled(" rel:", Style::default().fg(DIM)),
+            Span::styled(format!("{:.2}", mean_rel), Style::default().fg(PURPLE)),
+            Span::styled(format!(" q:{}", total_q), Style::default().fg(DIM)),
+        ])
+    };
+
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("● ", Style::default().fg(GREEN)),
-        Span::styled("enc ", Style::default().fg(DIM)),
-        Span::styled("● ", Style::default().fg(CYAN)),
-        Span::styled("ret ", Style::default().fg(DIM)),
-        Span::styled("● ", Style::default().fg(Color::Rgb(0x1a, 0x1a, 0x1a))),
-        Span::styled("idle", Style::default().fg(DIM)),
-    ]));
+    lines.push(stats_line);
 
     let para = Paragraph::new(lines).style(Style::default().bg(BG));
     f.render_widget(para, inner);
@@ -695,6 +715,7 @@ pub fn run(
     let engine_name = engine.name().to_string();
     let knowledge = Arc::new(std::sync::Mutex::new(knowledge));
     let active_cells = knowledge.lock().unwrap().active_knowledge(0.01).len();
+    let retrieval_stats = knowledge.lock().unwrap().stats_handle();
 
     // Build brain grid from NCA knowledge
     let mut brain_grid = vec![vec![0.0f64; BRAIN_VIZ_SIZE]; BRAIN_VIZ_SIZE];
@@ -734,6 +755,7 @@ pub fn run(
         frame_counter: 0,
         scroll_offset: 0,
         peer_count: 0,
+        retrieval_stats,
     };
 
     // Check for updates (non-blocking, 3s timeout)
@@ -1103,6 +1125,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
             Ok(()) => eprintln!("🧠 Brain saved to {}", brain_path),
             Err(e) => eprintln!("⚠️  Failed to save brain: {}", e),
         }
+        eprintln!("📊 Retrieval stats: {}", k.retrieval_stats.summary());
     }
 
     // Restore terminal
