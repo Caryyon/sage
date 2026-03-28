@@ -41,6 +41,11 @@ enum Commands {
         #[arg(long, default_value = "http://localhost:11434")]
         ollama_url: String,
     },
+    /// Manage local LLM models for bundled generation
+    Model {
+        #[command(subcommand)]
+        command: ModelCommands,
+    },
     /// Manage the SAGE network node
     Node {
         #[command(subcommand)]
@@ -60,6 +65,19 @@ enum Commands {
         #[arg(long)]
         quiet: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ModelCommands {
+    /// Download a preset model from HuggingFace
+    Download {
+        /// Model preset name (phi3-mini, tinyllama, mistral-7b)
+        name: String,
+    },
+    /// List available model presets
+    List,
+    /// Show current model status
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -127,6 +145,17 @@ fn main() {
             };
             run_chat(engine_mode, &model, &ollama_url);
         }
+        Some(Commands::Model { command }) => match command {
+            ModelCommands::Download { name } => {
+                run_model_download(&name);
+            }
+            ModelCommands::List => {
+                run_model_list();
+            }
+            ModelCommands::Status => {
+                run_model_status();
+            }
+        },
         Some(Commands::Version) => {
             println!("sage {VERSION}");
         }
@@ -297,6 +326,23 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
             }
             EmbeddingStatus::HashFallback => {
                 println!("   ⚠️  Embeddings: {}", embed_status);
+            }
+        }
+
+        // Show generation backend status
+        let gen_backend = sage::inference::detect_generation_backend();
+        match &gen_backend {
+            sage::inference::GenerationBackend::Local { model_name, model_size } => {
+                println!("   ⚡ Generation: local ({}, {})", model_name, model_size);
+            }
+            sage::inference::GenerationBackend::Ollama { model } => {
+                println!("   🔗 Generation: Ollama ({})", model);
+            }
+            sage::inference::GenerationBackend::Embedded { model_name } => {
+                println!("   🧠 Generation: embedded ({})", model_name);
+            }
+            sage::inference::GenerationBackend::Offline => {
+                println!("   📚 Generation: offline (retrieval only)");
             }
         }
 
@@ -626,5 +672,209 @@ fn run_node_status() {
         }
     } else {
         println!("  Running:  ✗ not running");
+    }
+}
+
+/// Download a model preset from HuggingFace
+fn run_model_download(name: &str) {
+    use indicatif::{ProgressBar, ProgressStyle};
+    use sage::inference::local_llm::{get_preset, LocalLLM, MODEL_PRESETS};
+
+    let preset = match get_preset(name) {
+        Some(p) => p,
+        None => {
+            eprintln!("Unknown model: {}", name);
+            eprintln!("\nAvailable presets:");
+            for p in MODEL_PRESETS {
+                eprintln!("  {:<12} {:>6}  {}", p.name, p.size, p.description);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    let dest_path = LocalLLM::default_path();
+    let dest_dir = dest_path.parent().unwrap();
+
+    // Create directory if needed
+    if let Err(e) = std::fs::create_dir_all(dest_dir) {
+        eprintln!("Failed to create directory: {}", e);
+        std::process::exit(1);
+    }
+
+    // Check if model already exists
+    if dest_path.exists() {
+        println!("⚠️  Model already exists at: {}", dest_path.display());
+        println!("   Delete it first if you want to re-download.");
+        return;
+    }
+
+    println!("📥 Downloading {} ({})...", preset.name, preset.size);
+    println!("   {}", preset.description);
+    println!("   From: {}", preset.url);
+    println!("   To:   {}", dest_path.display());
+    println!();
+
+    // Download with progress bar
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600)) // 1 hour timeout for large files
+        .build()
+        .expect("Failed to create HTTP client");
+
+    let response = match client.get(preset.url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Download failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if !response.status().is_success() {
+        eprintln!("Download failed: HTTP {}", response.status());
+        std::process::exit(1);
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .expect("Invalid progress bar template")
+            .progress_chars("#>-"),
+    );
+
+    // Download to temp file first
+    let temp_path = dest_dir.join(format!("{}.download", preset.filename));
+    let mut file = match std::fs::File::create(&temp_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to create file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    use std::io::{Read, Write};
+    let mut downloaded: u64 = 0;
+    let mut buffer = [0u8; 8192];
+    let mut reader = response;
+
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => {
+                if let Err(e) = file.write_all(&buffer[..n]) {
+                    let _ = std::fs::remove_file(&temp_path);
+                    eprintln!("Write error: {}", e);
+                    std::process::exit(1);
+                }
+                downloaded += n as u64;
+                pb.set_position(downloaded);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&temp_path);
+                eprintln!("Download error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    pb.finish_with_message("Download complete");
+
+    // Rename to final location
+    if let Err(e) = std::fs::rename(&temp_path, &dest_path) {
+        let _ = std::fs::remove_file(&temp_path);
+        eprintln!("Failed to move file: {}", e);
+        std::process::exit(1);
+    }
+
+    println!();
+    println!("✅ Model downloaded successfully!");
+    println!("   Path: {}", dest_path.display());
+    println!();
+    println!("SAGE will now use local generation by default.");
+    println!("Run `sage chat` to start chatting!");
+}
+
+/// List available model presets
+fn run_model_list() {
+    use sage::inference::local_llm::MODEL_PRESETS;
+
+    println!("Available model presets:");
+    println!();
+    println!("  {:<12} {:>6}  {}", "NAME", "SIZE", "DESCRIPTION");
+    println!("  {}", "-".repeat(60));
+    for p in MODEL_PRESETS {
+        println!("  {:<12} {:>6}  {}", p.name, p.size, p.description);
+    }
+    println!();
+    println!("Download with: sage model download <name>");
+    println!("Example:       sage model download phi3-mini");
+}
+
+/// Show current model status
+fn run_model_status() {
+    use sage::inference::local_llm::LocalLLM;
+    use sage::inference::{detect_generation_backend, GenerationBackend};
+
+    let model_path = LocalLLM::default_path();
+    let backend = detect_generation_backend();
+
+    println!("SAGE Model Status");
+    println!("─────────────────");
+    println!();
+
+    // Model file status
+    if model_path.exists() {
+        if let Ok(metadata) = std::fs::metadata(&model_path) {
+            let size = metadata.len();
+            let gb = size as f64 / 1_073_741_824.0;
+            let size_str = if gb >= 1.0 {
+                format!("{:.1} GB", gb)
+            } else {
+                format!("{:.0} MB", size as f64 / 1_048_576.0)
+            };
+            println!("  Model file: {} ✓", model_path.display());
+            println!("  Size:       {}", size_str);
+        }
+    } else {
+        println!("  Model file: {} ✗ (not found)", model_path.display());
+    }
+
+    println!();
+
+    // Backend status
+    match backend {
+        GenerationBackend::Local { model_name, model_size } => {
+            println!("  ⚡ Generation: local ({}, {})", model_name, model_size);
+        }
+        GenerationBackend::Ollama { model } => {
+            println!("  🔗 Generation: Ollama ({})", model);
+        }
+        GenerationBackend::Embedded { model_name } => {
+            println!("  🧠 Generation: embedded ({})", model_name);
+        }
+        GenerationBackend::Offline => {
+            println!("  📚 Generation: offline (retrieval only)");
+        }
+    }
+
+    println!();
+
+    // Feature flag status
+    #[cfg(feature = "local-llm")]
+    println!("  local-llm feature: enabled ✓");
+    #[cfg(not(feature = "local-llm"))]
+    println!("  local-llm feature: disabled ✗");
+
+    #[cfg(feature = "cuda")]
+    println!("  CUDA acceleration: enabled ✓");
+    #[cfg(feature = "metal")]
+    println!("  Metal acceleration: enabled ✓");
+
+    println!();
+
+    if !model_path.exists() {
+        println!("To enable local generation without Ollama:");
+        println!("  sage model download phi3-mini");
+        println!();
     }
 }

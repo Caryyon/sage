@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## v0.3.0 — 2026-03-28
+
+Bundled LLM generation via llama.cpp — SAGE is now fully self-contained. Download a GGUF model once with `sage model download phi3-mini` and SAGE runs entirely on your machine with no external dependencies. Ollama remains supported as an alternative backend.
+
+New features:
+- **Local LLM generation**: Optional llama.cpp backend via the `local-llm` cargo feature. When enabled and a model is present at `~/.sage/model.gguf`, SAGE uses local generation with no network calls.
+- **`sage model` command**: New CLI subcommand for managing local models:
+  - `sage model download phi3-mini` — Downloads Phi-3-mini GGUF (~2.3GB) from HuggingFace
+  - `sage model list` — Shows available preset models with sizes and descriptions
+  - `sage model status` — Shows current model status, file size, and generation backend
+- **Generation backend detection**: Startup now shows the active generation backend:
+  - `⚡ Generation: local (phi3-mini, 2.3GB)` — when using local llama.cpp
+  - `🔗 Generation: Ollama (qwen2.5:14b)` — when using Ollama
+  - `📚 Generation: offline (retrieval only)` — when no LLM available
+- **Model presets**: Three preset models available for download:
+  - `phi3-mini` (2.3GB) — Microsoft Phi-3 Mini, fast and good for Q&A
+  - `tinyllama` (600MB) — TinyLlama 1.1B, fastest but lowest quality
+  - `mistral-7b` (4.1GB) — Mistral 7B, best quality, needs 8GB RAM
+- **GPU acceleration**: Optional CUDA (`--features cuda`) and Metal (`--features metal`) support
+
+Build notes:
+- The `local-llm` feature requires cmake and a C++ compiler. Default build compiles cleanly without it.
+- Install with local LLM support: `cargo install sage --features local-llm`
+- For GPU acceleration: `cargo install sage --features local-llm,cuda` (NVIDIA) or `cargo install sage --features local-llm,metal` (Apple Silicon)
+
 ## v0.2.9 — 2026-03-28
 
 Bundled embeddings via fastembed-rs: SAGE now generates high-quality semantic embeddings without requiring Ollama. The AllMiniLML6V2 model (22MB, 384-dim) is bundled directly into SAGE and downloaded on first use to `~/.cache/fastembed/`. Benchmark results show 96% retrieval hit rate with fastembed vs ~12% with the previous hash fallback — a massive improvement in semantic retrieval quality for offline use.

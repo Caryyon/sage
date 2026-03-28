@@ -1,6 +1,6 @@
 [package]
 name = "sage"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
 description = "SAGE - Distributed Intelligence System with NCA-based knowledge propagation"
 default-run = "sage-cli"
@@ -45,10 +45,19 @@ libp2p = { version = "0.54", features = ["tcp", "noise", "yamux", "gossipsub", "
 tracing = "0.1"
 tokio-stream = "0.1"
 
+# Local LLM via llama.cpp (optional, requires cmake)
+llama_cpp = { version = "0.3", optional = true }
+
+# Progress bars for model downloads
+indicatif = "0.17"
+
 [features]
 default = ["embedded-llm"]
 embedded-llm = []
 ollama = []
+local-llm = ["llama_cpp"]
+cuda = ["llama_cpp/cuda"]
+metal = ["llama_cpp/metal"]
 
 [[bin]]
 name = "sage-cli"
@@ -129,6 +138,10 @@ path = "tests/integration/attention_knowledge.rs"
 [[test]]
 name = "gossip_two_node"
 path = "tests/integration/gossip_two_node.rs"
+
+[[test]]
+name = "e2e_local_llm"
+path = "tests/e2e_local_llm.rs"
 
 [[bin]]
 name = "nca-timing"
