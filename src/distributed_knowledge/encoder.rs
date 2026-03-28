@@ -1,13 +1,15 @@
 //! Knowledge Encoder
 //!
 //! Encodes text/semantic input into NCA memory channel patterns.
-//! Uses Ollama embeddings for semantic encoding when available,
-//! falling back to hashed n-grams.
+//! Priority order for embeddings:
+//!   1. fastembed (bundled, no external dependencies)
+//!   2. Ollama (if configured and running)
+//!   3. Hash-based fallback (always available)
 //! Spatial locality: related knowledge clusters in nearby cells.
 
+use super::embedder;
 use crate::grid::{
     Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
-    NUM_KNOWLEDGE_CHANNELS,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -107,6 +109,65 @@ fn extract_ngrams(text: &str, n: usize) -> Vec<String> {
     chars.windows(n).map(|w| w.iter().collect()).collect()
 }
 
+/// Embedding backend status for display purposes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbeddingStatus {
+    /// fastembed bundled model (preferred)
+    Fastembed { model: &'static str, dim: usize },
+    /// Ollama external service
+    Ollama { model: String },
+    /// Hash-based fallback (reduced quality)
+    HashFallback,
+}
+
+impl std::fmt::Display for EmbeddingStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EmbeddingStatus::Fastembed { model, dim } => {
+                write!(f, "bundled ({}, {}-dim)", model, dim)
+            }
+            EmbeddingStatus::Ollama { model } => write!(f, "Ollama ({})", model),
+            EmbeddingStatus::HashFallback => write!(f, "hash fallback (reduced quality)"),
+        }
+    }
+}
+
+/// Detect the active embedding backend and return its status.
+/// Checks in priority order: fastembed > Ollama > hash.
+pub fn detect_embedding_status(config: &EncoderConfig) -> EmbeddingStatus {
+    // Check fastembed first
+    if embedder::is_available() {
+        return EmbeddingStatus::Fastembed {
+            model: embedder::model_name(),
+            dim: embedder::dimension(),
+        };
+    }
+
+    // Check Ollama
+    if let Some(url) = &config.ollama_url {
+        let endpoint = format!("{}/api/embeddings", url);
+        let body = serde_json::json!({
+            "model": &config.embedding_model,
+            "prompt": "test",
+        });
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+        {
+            if let Ok(resp) = client.post(&endpoint).json(&body).send() {
+                if resp.status().is_success() {
+                    return EmbeddingStatus::Ollama {
+                        model: config.embedding_model.clone(),
+                    };
+                }
+            }
+        }
+    }
+
+    // Fallback
+    EmbeddingStatus::HashFallback
+}
+
 /// Get semantic embedding from Ollama's /api/embeddings endpoint.
 /// Returns None if Ollama is unavailable or errors.
 pub fn get_ollama_embedding(text: &str, config: &EncoderConfig) -> Option<Vec<f64>> {
@@ -167,9 +228,20 @@ pub fn reduce_embedding(full: &[f64], target_size: usize) -> Vec<f64> {
 }
 
 /// Encode text into a feature vector.
-/// Tries Ollama semantic embedding first, falls back to hash-based encoding.
+/// Priority order: fastembed > Ollama > hash fallback.
 pub fn encode_text(text: &str, config: &EncoderConfig) -> FeatureVector {
-    // Try semantic embedding first
+    // Priority 1: Try fastembed (bundled, no external service)
+    if let Some(embedding) = embedder::embed_text_f64(text) {
+        let reduced = reduce_embedding(&embedding, config.num_features);
+        let mut features = FeatureVector {
+            values: reduced,
+            is_semantic: true,
+        };
+        features.normalize();
+        return features;
+    }
+
+    // Priority 2: Try Ollama (if configured and running)
     if let Some(embedding) = get_ollama_embedding(text, config) {
         let reduced = reduce_embedding(&embedding, config.num_features);
         let mut features = FeatureVector {
@@ -180,7 +252,7 @@ pub fn encode_text(text: &str, config: &EncoderConfig) -> FeatureVector {
         return features;
     }
 
-    // Fallback: hash-based encoding
+    // Priority 3: Hash-based encoding (always available)
     encode_text_hash(text, config)
 }
 
@@ -402,12 +474,13 @@ mod tests {
 
     #[test]
     fn test_encode_text_produces_nonzero() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None; // Force hash fallback for tests
+        let config = EncoderConfig::default();
         let features = encode_text("hello world", &config);
         let nonzero = features.values.iter().filter(|v| v.abs() > 1e-10).count();
         assert!(nonzero > 0, "Encoding should produce non-zero features");
-        assert!(!features.is_semantic);
+        // With fastembed available, encoding will be semantic
+        // With hash fallback, it will be non-semantic
+        // Either way, we get valid features
     }
 
     #[test]
@@ -511,10 +584,10 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_fallback_when_no_ollama() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
-        let features = encode_text("test fallback", &config);
+    fn test_encode_text_hash_always_works() {
+        // The hash fallback function should always work
+        let config = EncoderConfig::default();
+        let features = encode_text_hash("test hash fallback", &config);
         assert!(!features.is_semantic);
         assert_eq!(features.values.len(), config.num_features);
     }

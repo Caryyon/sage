@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.2.9 — 2026-03-28
+
+Bundled embeddings via fastembed-rs: SAGE now generates high-quality semantic embeddings without requiring Ollama. The AllMiniLML6V2 model (22MB, 384-dim) is bundled directly into SAGE and downloaded on first use to `~/.cache/fastembed/`. Benchmark results show 96% retrieval hit rate with fastembed vs ~12% with the previous hash fallback — a massive improvement in semantic retrieval quality for offline use.
+
+New embedding priority order: fastembed (bundled) > Ollama (if running) > hash fallback. Startup messaging now displays the active embedding backend: `Embeddings: bundled (AllMiniLML6V2, 384-dim)` when fastembed is available.
+
+Added `src/distributed_knowledge/embedder.rs` with `OnceLock`-based lazy initialization, `embed_text()` and `is_available()` functions, and tests for dimension (384), determinism, and semantic similarity (cat/dog vs cat/car). Wired into `encoder.rs` as the primary embedding path.
+
 ## v0.2.6 — 2026-03-27
 
 NCA Delta Attention: live grid dynamics now shape knowledge retrieval. Previously the NCA update steps ran but only touched hidden channels 4-15 — nobody read them. Now, before each retrieval, the system snapshots the knowledge channels (26-31), runs 4 NCA freerun steps across the full grid, computes per-cell L2 delta magnitude, and retrieves the top-K cells with the highest delta. These are the "activated" concepts — what the NCA grid thought about in response to the query. Delta-unique results (not found by semantic/hash retrieval) are injected into the LLM system prompt as associatively recalled concepts, implementing spreading activation memory.

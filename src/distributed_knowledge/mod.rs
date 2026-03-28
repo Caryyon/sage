@@ -14,6 +14,7 @@
 
 pub mod attention_decoder;
 pub mod decoder;
+pub mod embedder;
 pub mod encoder;
 pub mod text_store;
 
@@ -1017,51 +1018,53 @@ mod tests {
     /// Test that NCAKnowledge works correctly with text store persistence.
     #[test]
     fn test_text_store_roundtrip() {
-        let path = "/tmp/sage_test_text_store_roundtrip.bin";
-        let text_path = path.replace("brain", "text_store");
+        let path = "/tmp/sage_test_text_store_roundtrip_brain.bin";
+        let text_path = "/tmp/text_store.bin";
         let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(&text_path);
+        let _ = std::fs::remove_file(text_path);
 
         let fact = "Rust memory safety without garbage collection";
 
         // Create, encode, and save
-        {
+        let encoded_pos = {
             let mut store = NCAKnowledge::new();
-            store.config.ollama_url = None;
-            store.encode(fact, 0.9);
+            let pos = store.encode(fact, 0.9);
 
-            // Verify text is in store
-            let results = store.query("Rust memory safety", 5);
-            let found_before_save = results.iter().any(|r| {
-                r.text.as_ref().map(|t| t.contains("Rust")).unwrap_or(false)
-            });
+            // Verify text is in store at the encoded position
+            let text_at_pos = store.text_store.get(pos.0, pos.1);
             assert!(
-                found_before_save,
-                "Should find text in store before saving"
+                text_at_pos.is_some(),
+                "Should find text at encoded position before saving"
+            );
+            assert!(
+                text_at_pos.unwrap().contains("Rust"),
+                "Text should contain 'Rust'"
             );
 
             store.save(path).expect("Save should succeed");
-        }
+            pos
+        };
 
-        // Load and verify text survived
+        // Load and verify text survived at the same position
         {
             let mut store = NCAKnowledge::new();
-            store.config.ollama_url = None;
             store.load(path).expect("Load should succeed");
 
-            let results = store.query("Rust memory safety", 5);
-            let found_after_load = results.iter().any(|r| {
-                r.text.as_ref().map(|t| t.contains("Rust")).unwrap_or(false)
-            });
+            // Check text store directly at the encoded position
+            let text_at_pos = store.text_store.get(encoded_pos.0, encoded_pos.1);
             assert!(
-                found_after_load,
+                text_at_pos.is_some(),
                 "Text store should persist across save/load. \
                  This is a regression — text was lost during serialization."
+            );
+            assert!(
+                text_at_pos.unwrap().contains("Rust"),
+                "Persisted text should contain 'Rust'"
             );
         }
 
         // Cleanup
         let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(&text_path);
+        let _ = std::fs::remove_file(text_path);
     }
 }

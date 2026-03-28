@@ -56,3 +56,6 @@ data/
 sage_inner_world.json
 sage_semantic_memory.json
 sage_snapshots/
+
+# ML model caches (downloaded at runtime)
+.fastembed_cache/

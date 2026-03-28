@@ -7,6 +7,7 @@
 //!   sage config     — show/edit configuration
 
 use clap::{Parser, Subcommand};
+use sage::distributed_knowledge::encoder::{detect_embedding_status, EmbeddingStatus, EncoderConfig};
 use sage::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -284,6 +285,20 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
             "   Brain: {brain_path} ({} active cells)",
             knowledge.lock().await.active_knowledge(0.01).len()
         );
+
+        // Show embedding backend status
+        let embed_status = detect_embedding_status(&EncoderConfig::default());
+        match &embed_status {
+            EmbeddingStatus::Fastembed { .. } => {
+                println!("   Embeddings: {} ✓", embed_status);
+            }
+            EmbeddingStatus::Ollama { .. } => {
+                println!("   Embeddings: {} ✓", embed_status);
+            }
+            EmbeddingStatus::HashFallback => {
+                println!("   ⚠️  Embeddings: {}", embed_status);
+            }
+        }
 
         let net_config = NetworkConfig {
             listen_port: port,

@@ -12,14 +12,25 @@
 
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::distributed_knowledge::decoder::{KnowledgeActivation, query_knowledge_with_text};
-use sage::distributed_knowledge::encoder::{EncoderConfig, get_ollama_embedding};
+use sage::distributed_knowledge::encoder::{detect_embedding_status, EmbeddingStatus, EncoderConfig};
 use sage::distributed_knowledge::attention_decoder::AttentionDecoder;
 use std::time::Instant;
 
-/// Check if Ollama is available and can generate embeddings
-fn check_ollama_available() -> bool {
+/// Get a description of the current embedding method
+fn embedding_method_description() -> String {
     let config = EncoderConfig::default();
-    get_ollama_embedding("test", &config).is_some()
+    let status = detect_embedding_status(&config);
+    match status {
+        EmbeddingStatus::Fastembed { model, dim } => {
+            format!("fastembed ({}, {}-dim)", model, dim)
+        }
+        EmbeddingStatus::Ollama { model } => {
+            format!("Ollama ({})", model)
+        }
+        EmbeddingStatus::HashFallback => {
+            "hash fallback (reduced quality)".to_string()
+        }
+    }
 }
 
 /// The 50 fact-pairs used for benchmarking.
@@ -123,15 +134,15 @@ fn mean_relevance(results: &[KnowledgeActivation]) -> f64 {
     results.iter().map(|r| r.relevance).sum::<f64>() / results.len() as f64
 }
 
-fn run_semantic_benchmark(store: &NCAKnowledge, use_ollama: bool) -> MethodResult {
+fn run_semantic_benchmark(store: &NCAKnowledge, use_semantic: bool) -> MethodResult {
     let mut hits = 0;
     let mut total_relevance = 0.0;
     let mut total_results = 0.0;
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    if !use_ollama {
-        config.ollama_url = None; // Force hash fallback
+    if !use_semantic {
+        config.ollama_url = None; // Force hash fallback (disable Ollama, fastembed still checked)
     }
 
     for &(query, answer) in FACTS {
@@ -152,7 +163,7 @@ fn run_semantic_benchmark(store: &NCAKnowledge, use_ollama: bool) -> MethodResul
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_ollama { "Semantic (Ollama)" } else { "Semantic (hash)" },
+        name: if use_semantic { "Semantic (auto)" } else { "Semantic (hash)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -161,14 +172,14 @@ fn run_semantic_benchmark(store: &NCAKnowledge, use_ollama: bool) -> MethodResul
     }
 }
 
-fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResult {
+fn run_delta_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> MethodResult {
     let mut hits = 0;
     let mut total_relevance = 0.0;
     let mut total_results = 0.0;
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    if !use_ollama {
+    if !use_semantic {
         config.ollama_url = None;
     }
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
@@ -193,7 +204,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResu
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_ollama { "Contrast (Ollama)" } else { "Contrast (local)" },
+        name: if use_semantic { "Contrast (auto)" } else { "Contrast (local)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -202,7 +213,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResu
     }
 }
 
-fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResult {
+fn run_combined_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> MethodResult {
     // Combined: union of semantic results and contrast results (deduped)
     let mut hits = 0;
     let mut total_relevance = 0.0;
@@ -210,7 +221,7 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodR
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    if !use_ollama {
+    if !use_semantic {
         config.ollama_url = None;
     }
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
@@ -262,7 +273,7 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodR
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_ollama { "Combined (Ollama)" } else { "Combined (hash)" },
+        name: if use_semantic { "Combined (auto)" } else { "Combined (hash)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -288,7 +299,7 @@ fn print_table(results: &[MethodResult]) {
     println!();
 }
 
-fn save_results(results: &[MethodResult], store_stats: &str, ollama_available: bool) {
+fn save_results(results: &[MethodResult], store_stats: &str, embed_method: &str) {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let dir = std::path::PathBuf::from(format!(
         "{}/clawd/sage-team/sage-daily-dev",
@@ -298,14 +309,13 @@ fn save_results(results: &[MethodResult], store_stats: &str, ollama_available: b
     ));
     std::fs::create_dir_all(&dir).ok();
 
-    // Use the requested filename with embeddings suffix
-    let path = dir.join(format!("{}-benchmark-with-embeddings.md", date));
+    // Use fastembed suffix for the filename
+    let path = dir.join(format!("{}-fastembed-results.md", date));
 
     let mut md = String::new();
     md.push_str(&format!("# SAGE Retrieval Quality Benchmark — {}\n\n", date));
     md.push_str("## Setup\n\n");
-    md.push_str(&format!("{}\n", store_stats));
-    md.push_str(&format!("- Ollama available: {}\n\n", if ollama_available { "Yes (nomic-embed-text)" } else { "No" }));
+    md.push_str(&format!("{}\n\n", store_stats));
     md.push_str("## Results\n\n");
     md.push_str("| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |\n");
     md.push_str("|------------------------------|----------|----------------|--------------|----------|\n");
@@ -334,8 +344,9 @@ fn save_results(results: &[MethodResult], store_stats: &str, ollama_available: b
     md.push_str("- Hit = answer keyword found in top-5 retrieved results\n");
     md.push_str("- Contrast retrieval uses local contrast scoring (query-conditioned, no freerun)\n");
     md.push_str("- Combined = union of semantic + contrast, deduped, top-5 by relevance\n");
-    md.push_str("- Ollama uses nomic-embed-text for semantic embeddings\n");
-    md.push_str("- Hash fallback uses n-gram feature hashing when Ollama unavailable\n");
+    md.push_str(&format!("- Embedding method: {}\n", embed_method));
+    md.push_str("- fastembed bundles AllMiniLML6V2 (384-dim) for offline semantic embeddings\n");
+    md.push_str("- Hash fallback uses n-gram feature hashing when no semantic backend available\n");
 
     match std::fs::write(&path, &md) {
         Ok(()) => println!("📄 Results saved to: {}", path.display()),
@@ -348,20 +359,16 @@ fn main() {
     println!("   Facts: {}", FACTS.len());
     println!("   Grid: 256×256");
 
-    // Check if Ollama is available
-    let ollama_available = check_ollama_available();
-    if ollama_available {
-        println!("   Embeddings: Ollama (nomic-embed-text) ✓");
-    } else {
-        println!("   Embeddings: hash fallback (Ollama unavailable)");
-    }
+    // Detect embedding backend
+    let embed_method = embedding_method_description();
+    let config = EncoderConfig::default();
+    let embed_status = detect_embedding_status(&config);
+    let is_semantic = !matches!(embed_status, EmbeddingStatus::HashFallback);
+
+    println!("   Embeddings: {}{}", embed_method, if is_semantic { " ✓" } else { "" });
     println!();
 
-    // Build the knowledge store with Ollama if available
-    let use_ollama = ollama_available;
-
-    println!("📝 Encoding {} fact-pairs{}...", FACTS.len(),
-        if use_ollama { " with Ollama embeddings" } else { " (hash fallback)" });
+    println!("📝 Encoding {} fact-pairs ({})...", FACTS.len(), embed_method);
     let encode_start = Instant::now();
 
     let mut store = NCAKnowledge::new();
@@ -380,7 +387,7 @@ fn main() {
         store.grid.width,
         store.grid.height,
         encode_ms,
-        if use_ollama { "Ollama (nomic-embed-text)" } else { "Hash fallback" }
+        embed_method
     );
 
     // Run benchmarks with both hash and Ollama if available
@@ -396,15 +403,15 @@ fn main() {
     println!("🏃 Running hash-based combined benchmark...");
     results.push(run_combined_benchmark(&mut store, false));
 
-    // Run Ollama benchmarks if available
-    if ollama_available {
-        println!("\n🏃 Running Ollama semantic benchmark...");
+    // Run semantic (auto) benchmarks — uses fastembed/Ollama if available
+    if is_semantic {
+        println!("\n🏃 Running semantic (auto) benchmark...");
         results.push(run_semantic_benchmark(&store, true));
 
-        println!("🏃 Running Ollama delta-attention benchmark...");
+        println!("🏃 Running contrast (auto) benchmark...");
         results.push(run_delta_benchmark(&mut store, true));
 
-        println!("🏃 Running Ollama combined benchmark...");
+        println!("🏃 Running combined (auto) benchmark...");
         results.push(run_combined_benchmark(&mut store, true));
     }
 
@@ -412,7 +419,7 @@ fn main() {
     print_table(&results);
 
     // Detailed breakdown using best available method
-    let method_label = if ollama_available { "Ollama" } else { "hash" };
+    let method_label = if is_semantic { &embed_method } else { "hash" };
     println!("## Per-fact hit report (Combined method with {})\n", method_label);
     {
         let mut combined_store = NCAKnowledge::new();
@@ -422,13 +429,7 @@ fn main() {
         }
 
         let decoder = AttentionDecoder::new(combined_store.grid.width, combined_store.grid.height);
-        let enc_config = {
-            let mut c = EncoderConfig::default();
-            if !ollama_available {
-                c.ollama_url = None;
-            }
-            c
-        };
+        let enc_config = EncoderConfig::default();
 
         let mut semantic_hits = 0;
         let mut combined_hits = 0;
@@ -471,5 +472,5 @@ fn main() {
         println!("  Contrast-unique:\t{} (found by contrast only)", combined_hits - semantic_hits);
     }
 
-    save_results(&results, &store_stats, ollama_available);
+    save_results(&results, &store_stats, &embed_method);
 }

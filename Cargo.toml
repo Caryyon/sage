@@ -1,6 +1,6 @@
 [package]
 name = "sage"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 description = "SAGE - Distributed Intelligence System with NCA-based knowledge propagation"
 default-run = "sage-cli"
@@ -36,6 +36,9 @@ tower-http = { version = "0.5", features = ["fs", "cors"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 dirs = "5.0"
 toml = "0.8"
+
+# Embedded embeddings (no external service required)
+fastembed = "4"
 
 # libp2p networking for decentralized gossip
 libp2p = { version = "0.54", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "kad", "identify", "tokio", "macros", "dns", "request-response"] }
