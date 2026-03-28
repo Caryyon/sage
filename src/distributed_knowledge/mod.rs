@@ -17,6 +17,9 @@ pub mod decoder;
 pub mod encoder;
 pub mod text_store;
 
+#[cfg(test)]
+mod property_tests;
+
 use crate::grid::{
     Grid, COMM_NODE_ID, COMM_SYNC_STATE, GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START,
     KNOWLEDGE_CONFIDENCE, NUM_CHANNELS, NUM_KNOWLEDGE_CHANNELS,

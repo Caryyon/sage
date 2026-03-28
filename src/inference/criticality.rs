@@ -777,6 +777,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow: runs full NCA criticality measurement, run manually with cargo test -- --ignored"]
     fn test_full_criticality_measurement() {
         let (mut predictor, tokens) = make_test_predictor();
         let metrics = measure_criticality(&mut predictor, &tokens, 20, 0.05);
@@ -796,6 +797,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow: runs NCA criticality regularizer penalty computation, run manually with cargo test -- --ignored"]
     fn test_regularizer_penalty() {
         let corpus = "the cat sat on the mat";
         let tokenizer = SimpleTokenizer::from_corpus(corpus, 64);

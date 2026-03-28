@@ -1,0 +1,19 @@
+name: Fuzz
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # Weekly Sunday 3am
+  workflow_dispatch:  # Manual trigger
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly  # cargo-fuzz requires nightly
+      - run: cargo install cargo-fuzz
+      - run: sudo apt-get install -y libssl-dev pkg-config nasm cmake
+      - name: Fuzz encode (60s)
+        run: cargo fuzz run fuzz_encode -- -max_total_time=60
+      - name: Fuzz decode (60s)
+        run: cargo fuzz run fuzz_decode -- -max_total_time=60
+      - name: Fuzz gossip (60s)
+        run: cargo fuzz run fuzz_gossip -- -max_total_time=60
