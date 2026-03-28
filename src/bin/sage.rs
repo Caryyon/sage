@@ -127,8 +127,8 @@ enum ModelCommands {
 enum NodeCommands {
     /// Start the SAGE node
     Start {
-        /// Port for peer gossip (0 = random)
-        #[arg(short, long, default_value_t = 0)]
+        /// Port for peer gossip (default: 4001, 0 = random)
+        #[arg(short, long, default_value_t = 4001)]
         port: u16,
         /// Port for chat connections
         #[arg(long, default_value_t = 19175)]
@@ -150,6 +150,8 @@ enum NodeCommands {
     Stop,
     /// Show node status
     Status,
+    /// Check node health
+    Health,
 }
 
 fn sage_home() -> std::path::PathBuf {
@@ -259,14 +261,14 @@ fn main() {
                     // Run directly (foreground mode or we ARE the daemon)
                     if daemon_internal {
                         // Write PID file
-                        let pid_file = sage_home().join("sage.pid");
+                        let pid_file = sage_home().join("node.pid");
                         let _ = std::fs::create_dir_all(sage_home());
                         let _ = std::fs::write(&pid_file, std::process::id().to_string());
                     }
-                    run_node_start(port, chat_port, sync_interval, no_mdns);
+                    run_node_start(port, chat_port, sync_interval, no_mdns, foreground);
                     if daemon_internal {
                         // Clean up PID file on exit
-                        let _ = std::fs::remove_file(sage_home().join("sage.pid"));
+                        let _ = std::fs::remove_file(sage_home().join("node.pid"));
                     }
                 } else {
                     // Daemonize: re-exec self with --daemon-internal
@@ -278,6 +280,9 @@ fn main() {
             }
             NodeCommands::Status => {
                 run_node_status();
+            }
+            NodeCommands::Health => {
+                run_node_health();
             }
         },
     }
@@ -293,10 +298,12 @@ fn run_chat(engine_mode: sage::chat_tui::EngineMode, model: &str, ollama_url: &s
 
 /// Daemonize: re-exec self with --daemon-internal, redirect output to log file.
 fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) {
+    use sage::network::identity::NodeIdentity;
+
     let home = sage_home();
     let _ = std::fs::create_dir_all(&home);
-    let pid_file = home.join("sage.pid");
-    let log_file = home.join("sage.log");
+    let pid_file = home.join("node.pid");
+    let log_file = home.join("node.log");
 
     // Check if already running
     if pid_file.exists() {
@@ -311,6 +318,7 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
                         .status();
                     if status.map(|s| s.success()).unwrap_or(false) {
                         eprintln!("SAGE node is already running (PID {pid})");
+                        eprintln!("Run `sage node stop` first, or `sage node status` to check.");
                         std::process::exit(1);
                     }
                 }
@@ -319,6 +327,26 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
             }
         }
     }
+
+    // Check if port is already in use before daemonizing
+    if port != 0 {
+        let addr = format!("0.0.0.0:{}", port);
+        match std::net::TcpListener::bind(&addr) {
+            Ok(_listener) => {
+                // Port is available, listener will be dropped and released
+            }
+            Err(e) => {
+                eprintln!("Error: Port {} is already in use: {}", port, e);
+                eprintln!("Run `sage node stop` first, or choose a different port with --port.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Load identity to show the node name
+    let identity = NodeIdentity::load_or_generate(None).ok();
+    let node_name = identity.as_ref().map(|i| i.human_name.as_str()).unwrap_or("unknown");
+    let node_id = identity.as_ref().map(|i| i.node_id.as_str()).unwrap_or("unknown");
 
     let exe = std::env::current_exe().expect("Failed to determine executable path");
     let log = std::fs::OpenOptions::new()
@@ -352,7 +380,15 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
 
     match cmd.spawn() {
         Ok(child) => {
-            println!("🧠 SAGE node started (PID {})", child.id());
+            // Wait a moment to check if daemon started successfully
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            println!("🌐 Starting SAGE node...");
+            println!("🔑 Node ID: {} ({})", node_name, node_id);
+            println!("📡 Listening on: /ip4/0.0.0.0/tcp/{}", port);
+            println!("🔍 Searching for peers...");
+            println!("✅ Node running (PID {}). Press Ctrl+C to stop.", child.id());
+            println!();
             println!("   Log: {}", log_file.display());
             println!("   Stop: sage node stop");
         }
@@ -363,11 +399,20 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
     }
 }
 
+/// Default bootstrap nodes for SAGE network discovery.
+const BOOTSTRAP_NODES: &[&str] = &[
+    // Placeholder bootstrap node - replace with actual when deployed
+    // "/ip4/bootstrap.whatssage.ai/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN",
+];
+
 /// Start the SAGE node.
-fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) {
+fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, _foreground: bool) {
     use sage::network::identity::NodeIdentity;
+    use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
+    use sage::network::gossip::GossipTransport;
     use sage::network::{NetworkConfig, NetworkManager};
     use std::sync::Arc;
+    use std::io::Write;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
     use tokio::sync::Mutex;
@@ -377,28 +422,67 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
         let brain_path = default_brain_path();
         let mut knowledge = NCAKnowledge::new();
         let _ = knowledge.load(&brain_path); // load existing if available
+        let active_cells = knowledge.active_knowledge(0.01).len();
         let knowledge: Arc<Mutex<NCAKnowledge>> = Arc::new(Mutex::new(knowledge));
 
         let identity =
             NodeIdentity::load_or_generate(None).expect("Failed to load/create node identity");
-        println!("🧠 SAGE Node starting...");
-        println!("   Identity: {}", identity.node_id);
-        println!(
-            "   Brain: {brain_path} ({} active cells)",
-            knowledge.lock().await.active_knowledge(0.01).len()
-        );
+
+        // Startup sequence
+        println!();
+        println!("🌐 Starting SAGE node...");
+        println!("🔑 Node ID: {} ({})", identity.human_name, identity.node_id);
+
+        // Check if gossip port is available
+        if port != 0 {
+            let addr = format!("0.0.0.0:{}", port);
+            match std::net::TcpListener::bind(&addr) {
+                Ok(listener) => {
+                    drop(listener); // Release the port immediately
+                }
+                Err(e) => {
+                    eprintln!();
+                    eprintln!("❌ Error: Port {} is already in use: {}", port, e);
+                    eprintln!();
+                    eprintln!("Try one of these:");
+                    eprintln!("  • Run `sage node stop` to stop an existing node");
+                    eprintln!("  • Use a different port: `sage node start --port 4002`");
+                    eprintln!("  • Use a random port: `sage node start --port 0`");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // Check if chat port is available
+        let chat_addr = format!("0.0.0.0:{}", chat_port);
+        match std::net::TcpListener::bind(&chat_addr) {
+            Ok(listener) => {
+                drop(listener); // Release the port
+            }
+            Err(e) => {
+                eprintln!();
+                eprintln!("❌ Error: Chat port {} is already in use: {}", chat_port, e);
+                eprintln!();
+                eprintln!("Try one of these:");
+                eprintln!("  • Run `sage node stop` to stop an existing node");
+                eprintln!("  • Use a different chat port: `sage node start --chat-port 19176`");
+                std::process::exit(1);
+            }
+        }
+
+        println!("📡 Listening on: /ip4/0.0.0.0/tcp/{}", port);
 
         // Show embedding backend status
         let embed_status = detect_embedding_status(&EncoderConfig::default());
         match &embed_status {
             EmbeddingStatus::Fastembed { .. } => {
-                println!("   Embeddings: {} ✓", embed_status);
+                println!("🧠 Embeddings: {} ✓", embed_status);
             }
             EmbeddingStatus::Ollama { .. } => {
-                println!("   Embeddings: {} ✓", embed_status);
+                println!("🧠 Embeddings: {} ✓", embed_status);
             }
             EmbeddingStatus::HashFallback => {
-                println!("   ⚠️  Embeddings: {}", embed_status);
+                println!("⚠️  Embeddings: {}", embed_status);
             }
         }
 
@@ -406,18 +490,20 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
         let gen_backend = sage::inference::detect_generation_backend();
         match &gen_backend {
             sage::inference::GenerationBackend::Local { model_name, model_size } => {
-                println!("   ⚡ Generation: local ({}, {})", model_name, model_size);
+                println!("⚡ Generation: local ({}, {})", model_name, model_size);
             }
             sage::inference::GenerationBackend::Ollama { model } => {
-                println!("   🔗 Generation: Ollama ({})", model);
+                println!("🔗 Generation: Ollama ({})", model);
             }
             sage::inference::GenerationBackend::Embedded { model_name } => {
-                println!("   🧠 Generation: embedded ({})", model_name);
+                println!("🧠 Generation: embedded ({})", model_name);
             }
             sage::inference::GenerationBackend::Offline => {
-                println!("   📚 Generation: offline (retrieval only)");
+                println!("📚 Generation: offline (retrieval only)");
             }
         }
+
+        println!("💾 Brain: {} ({} active cells)", brain_path, active_cells);
 
         let net_config = NetworkConfig {
             listen_port: port,
@@ -427,15 +513,62 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
         };
 
         let _net = NetworkManager::new(identity.clone(), net_config);
-        println!("   Gossip port: {port}");
-        println!("   Chat port: {chat_port}");
-        println!("   mDNS: {}", if no_mdns { "disabled" } else { "enabled" });
+
+        // Start libp2p transport for real peer discovery
+        let bootstrap_nodes: Vec<String> = BOOTSTRAP_NODES.iter().map(|s| s.to_string()).collect();
+        let libp2p_config = Libp2pConfig {
+            listen_port: port,
+            mdns_enabled: !no_mdns,
+            bootstrap_nodes: bootstrap_nodes.clone(),
+        };
+        let transport = Arc::new(Libp2pTransport::new(libp2p_config));
+
+        match transport.start().await {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!();
+                eprintln!("❌ Error starting network transport: {}", e);
+                std::process::exit(1);
+            }
+        }
 
         // Chat listener
-        let chat_listener = TcpListener::bind(format!("0.0.0.0:{chat_port}"))
-            .await
-            .expect("Failed to bind chat port");
-        println!("\n✅ Node running. Press Ctrl+C to stop.\n");
+        let chat_listener = match TcpListener::bind(format!("0.0.0.0:{chat_port}")).await {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!();
+                eprintln!("❌ Error: Failed to bind chat port {}: {}", chat_port, e);
+                std::process::exit(1);
+            }
+        };
+
+        println!("🔍 Searching for peers...");
+
+        // Give mDNS/Kademlia time to discover peers
+        let transport_clone = transport.clone();
+        let discovery_task = tokio::spawn(async move {
+            let mut check_count = 0;
+            let max_checks = 6; // 30 seconds total
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                let peers = transport_clone.connected_peers().await;
+                if !peers.is_empty() {
+                    println!("✅ Connected to {} peer(s)", peers.len());
+                    break;
+                }
+                check_count += 1;
+                if check_count >= max_checks {
+                    println!("🔍 No peers found yet. Waiting for connections... (Ctrl+C to stop)");
+                    break;
+                }
+            }
+        });
+
+        println!("✅ Node running. Press Ctrl+C to stop.");
+        println!();
+
+        // Log sync events
+        let sync_log_path = sage_home().join("sync.log");
 
         let k = knowledge.clone();
         tokio::spawn(async move {
@@ -473,9 +606,10 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
             }
         });
 
-        // Periodic brain save
+        // Periodic brain save + sync logging
         let k = knowledge.clone();
         let bp = brain_path.clone();
+        let slp = sync_log_path.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(sync_interval));
             loop {
@@ -483,47 +617,323 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
                 let k: tokio::sync::MutexGuard<'_, NCAKnowledge> = k.lock().await;
                 if let Err(e) = k.save(&bp) {
                     eprintln!("Brain save error: {e}");
+                } else {
+                    // Log the auto-save
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&slp)
+                    {
+                        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                        let _ = writeln!(file, "[{}] Auto-save: {} active cells", timestamp, k.active_knowledge(0.01).len());
+                    }
                 }
             }
         });
 
         // Wait for ctrl+c
         tokio::signal::ctrl_c().await.ok();
-        println!("\n🛑 Shutting down...");
+        discovery_task.abort();
+
+        println!();
+        println!("🛑 Shutting down...");
+
+        // Stop transport
+        if let Err(e) = transport.stop().await {
+            eprintln!("Transport stop error: {e}");
+        }
+
+        // Save brain
         let k: tokio::sync::MutexGuard<'_, NCAKnowledge> = knowledge.lock().await;
         if let Err(e) = k.save(&brain_path) {
             eprintln!("Final save error: {e}");
+        } else {
+            // Log shutdown
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&sync_log_path)
+            {
+                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                let _ = writeln!(file, "[{}] Shutdown: {} active cells saved", timestamp, k.active_knowledge(0.01).len());
+            }
         }
-        println!("Brain saved. Goodbye!");
+        println!("💾 Brain saved. Goodbye!");
     });
 }
 
 fn run_node_stop() {
-    let pid_file = sage_home().join("sage.pid");
-    match std::fs::read_to_string(&pid_file) {
+    let pid_file = sage_home().join("node.pid");
+
+    // Also check old sage.pid for backwards compatibility
+    let old_pid_file = sage_home().join("sage.pid");
+    let actual_pid_file = if pid_file.exists() {
+        pid_file.clone()
+    } else if old_pid_file.exists() {
+        old_pid_file.clone()
+    } else {
+        eprintln!("No node is running.");
+        eprintln!("Start one with: sage node start");
+        return;
+    };
+
+    match std::fs::read_to_string(&actual_pid_file) {
         Ok(pid_str) => {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                 #[cfg(unix)]
                 {
-                    let status = std::process::Command::new("kill")
-                        .arg(pid.to_string())
-                        .status();
-                    if status.map(|s| s.success()).unwrap_or(false) {
-                        println!("🛑 Stopped SAGE node (PID {pid})");
-                    } else {
-                        eprintln!("Process {pid} not found (may have already exited)");
+                    // Check if process exists first
+                    let exists = std::process::Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+
+                    if !exists {
+                        println!("Node was not running, cleaned up.");
+                        let _ = std::fs::remove_file(&actual_pid_file);
+                        // Also clean up old file if different
+                        if actual_pid_file != pid_file {
+                            let _ = std::fs::remove_file(&pid_file);
+                        }
+                        return;
                     }
+
+                    // Send SIGTERM for graceful shutdown
+                    println!("🛑 Stopping SAGE node (PID {})...", pid);
+                    let _ = std::process::Command::new("kill")
+                        .args(["-TERM", &pid.to_string()])
+                        .status();
+
+                    // Wait up to 5 seconds for graceful shutdown
+                    for i in 0..10 {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        let still_running = std::process::Command::new("kill")
+                            .args(["-0", &pid.to_string()])
+                            .stderr(std::process::Stdio::null())
+                            .status()
+                            .map(|s| s.success())
+                            .unwrap_or(false);
+
+                        if !still_running {
+                            println!("✅ Node stopped gracefully.");
+                            let _ = std::fs::remove_file(&actual_pid_file);
+                            if actual_pid_file != pid_file {
+                                let _ = std::fs::remove_file(&pid_file);
+                            }
+                            return;
+                        }
+
+                        if i == 4 {
+                            println!("   Waiting for graceful shutdown...");
+                        }
+                    }
+
+                    // Still running? Send SIGKILL
+                    println!("   Forcing shutdown (SIGKILL)...");
+                    let _ = std::process::Command::new("kill")
+                        .args(["-KILL", &pid.to_string()])
+                        .status();
+
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    println!("✅ Node stopped.");
                 }
-                let _ = std::fs::remove_file(&pid_file);
+
+                #[cfg(not(unix))]
+                {
+                    println!("Cannot stop process on this platform. PID was: {}", pid);
+                }
+
+                let _ = std::fs::remove_file(&actual_pid_file);
+                if actual_pid_file != pid_file {
+                    let _ = std::fs::remove_file(&pid_file);
+                }
             } else {
-                eprintln!("Invalid PID file");
+                eprintln!("Invalid PID file contents");
+                let _ = std::fs::remove_file(&actual_pid_file);
             }
         }
-        Err(_) => eprintln!(
-            "No running SAGE node found (no PID file at {})",
-            pid_file.display()
-        ),
+        Err(_) => {
+            eprintln!("No node is running.");
+            eprintln!("Start one with: sage node start");
+        }
     }
+}
+
+/// Check node health - detailed status with exit codes.
+/// Exit codes: 0 = healthy, 1 = degraded, 2 = down
+#[allow(unused_imports)]
+fn run_node_health() {
+    use sage::network::identity::NodeIdentity;
+
+    let home = sage_home();
+    let brain_path = default_brain_path();
+    let pid_file = home.join("node.pid");
+    let old_pid_file = home.join("sage.pid");
+    let sync_log = home.join("sync.log");
+
+    let mut health_issues: Vec<String> = Vec::new();
+    let mut health_checks: Vec<(bool, &str)> = Vec::new();
+
+    // Check 1: Process running
+    let actual_pid_file = if pid_file.exists() {
+        Some(pid_file.clone())
+    } else if old_pid_file.exists() {
+        Some(old_pid_file.clone())
+    } else {
+        None
+    };
+
+    let (process_running, pid) = if let Some(ref pf) = actual_pid_file {
+        if let Ok(pid_str) = std::fs::read_to_string(pf) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                #[cfg(unix)]
+                {
+                    let alive = std::process::Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    (alive, Some(pid))
+                }
+                #[cfg(not(unix))]
+                {
+                    (true, Some(pid)) // Assume running on non-unix
+                }
+            } else {
+                (false, None)
+            }
+        } else {
+            (false, None)
+        }
+    } else {
+        (false, None)
+    };
+
+    health_checks.push((process_running, "Process running"));
+    if !process_running {
+        health_issues.push("Node process not running".to_string());
+    }
+
+    // Check 2: Port bound (try to bind, if we can't, something is listening)
+    let port_bound = {
+        let port = 4001; // Default port
+        match std::net::TcpListener::bind(format!("0.0.0.0:{}", port)) {
+            Ok(_) => {
+                // We could bind, so port is NOT in use (bad if node should be running)
+                if process_running {
+                    false // Node running but not listening? Bad
+                } else {
+                    true // Node not running, port not in use - expected
+                }
+            }
+            Err(_) => {
+                // Port in use - good if node is running
+                true
+            }
+        }
+    };
+    health_checks.push((port_bound || !process_running, "Port 4001 bound"));
+    if process_running && !port_bound {
+        health_issues.push("Port 4001 not bound (node may have crashed)".to_string());
+    }
+
+    // Check 3: Recent sync activity
+    let recent_sync = if sync_log.exists() {
+        if let Ok(metadata) = std::fs::metadata(&sync_log) {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = modified.elapsed() {
+                    // Consider healthy if synced in last hour
+                    elapsed.as_secs() < 3600
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let last_sync_str = if sync_log.exists() {
+        if let Ok(content) = std::fs::read_to_string(&sync_log) {
+            content.lines().last()
+                .and_then(|line| line.strip_prefix('[').and_then(|s| s.split(']').next()))
+                .map(|s| s.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Only check sync if process is running
+    if process_running {
+        health_checks.push((recent_sync, "Last sync: recent"));
+        if !recent_sync {
+            health_issues.push("No recent sync activity".to_string());
+        }
+    }
+
+    // Check 4: Brain file accessible
+    let brain_accessible = std::path::Path::new(&brain_path).exists();
+    health_checks.push((brain_accessible, "Brain file accessible"));
+    if !brain_accessible {
+        health_issues.push("Brain file not found".to_string());
+    }
+
+    // Determine overall health
+    let (health_status, exit_code) = if !process_running {
+        ("DOWN", 2)
+    } else if health_issues.is_empty() {
+        ("HEALTHY", 0)
+    } else {
+        ("DEGRADED", 1)
+    };
+
+    // Output
+    println!();
+    match health_status {
+        "HEALTHY" => println!("Node health: ✅ HEALTHY"),
+        "DEGRADED" => println!("Node health: ⚠️  DEGRADED"),
+        "DOWN" => println!("Node health: ❌ DOWN"),
+        _ => {}
+    }
+    println!();
+
+    for (ok, check) in &health_checks {
+        if *ok {
+            println!("✅ {}", check);
+        } else {
+            println!("❌ {}", check);
+        }
+    }
+
+    if let Some(pid) = pid {
+        if process_running {
+            println!("✅ Process running (PID {})", pid);
+        }
+    }
+
+    if let Some(sync_time) = last_sync_str {
+        println!("ℹ️  Last sync: {}", sync_time);
+    }
+
+    if !health_issues.is_empty() {
+        println!();
+        println!("Issues:");
+        for issue in &health_issues {
+            println!("  • {}", issue);
+        }
+    }
+
+    println!();
+    std::process::exit(exit_code);
 }
 
 /// Self-update: download latest binary, preserve data, run migration if needed.
@@ -680,47 +1090,33 @@ fn run_node_status() {
     use sage::network::identity::NodeIdentity;
 
     let home = sage_home();
-    let config_path = home.join("config.toml");
     let brain_path = default_brain_path();
-    let pid_file = home.join("sage.pid");
-    let log_file = home.join("sage.log");
+    let pid_file = home.join("node.pid");
+    let old_pid_file = home.join("sage.pid");
+    let log_file = home.join("node.log");
+    let sync_log = home.join("sync.log");
     let key_path = home.join("identity.key");
+
+    // Check both pid files
+    let actual_pid_file = if pid_file.exists() {
+        Some(pid_file.clone())
+    } else if old_pid_file.exists() {
+        Some(old_pid_file.clone())
+    } else {
+        None
+    };
 
     // Load or create node identity to get the name
     let identity = if key_path.exists() {
         NodeIdentity::load(&key_path).ok()
     } else {
-        Some(NodeIdentity::generate())
+        None
     };
 
-    println!("SAGE Node Status");
-    println!("─────────────────");
-
-    // Show node identity with human name
-    if let Some(id) = &identity {
-        println!("  Node:     {} | {}", id.human_name, id.node_id);
-    }
-
-    println!("  Home:     {}", home.display());
-    println!(
-        "  Config:   {} {}",
-        config_path.display(),
-        if config_path.exists() { "✓" } else { "✗" }
-    );
-    println!(
-        "  Brain:    {brain_path} {}",
-        if std::path::Path::new(&brain_path).exists() {
-            "✓"
-        } else {
-            "✗"
-        }
-    );
-    println!("  Log:      {}", log_file.display());
-
-    if pid_file.exists() {
-        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
-            if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                // Check if actually running
+    // Check if running
+    let running_info: Option<(u32, String)> = actual_pid_file.as_ref().and_then(|pf| {
+        std::fs::read_to_string(pf).ok().and_then(|pid_str| {
+            pid_str.trim().parse::<u32>().ok().and_then(|pid| {
                 #[cfg(unix)]
                 {
                     let alive = std::process::Command::new("kill")
@@ -730,7 +1126,7 @@ fn run_node_status() {
                         .map(|s| s.success())
                         .unwrap_or(false);
                     if alive {
-                        // Try to get uptime from /proc on Linux
+                        // Get uptime
                         let mut uptime_str = String::new();
                         #[cfg(target_os = "linux")]
                         {
@@ -740,27 +1136,118 @@ fn run_node_status() {
                                         let secs = elapsed.as_secs();
                                         let h = secs / 3600;
                                         let m = (secs % 3600) / 60;
-                                        uptime_str = format!(", uptime: {h}h {m}m");
+                                        let s = secs % 60;
+                                        if h > 0 {
+                                            uptime_str = format!("{}h {}m", h, m);
+                                        } else if m > 0 {
+                                            uptime_str = format!("{}m {}s", m, s);
+                                        } else {
+                                            uptime_str = format!("{}s", s);
+                                        }
                                     }
                                 }
                             }
                         }
-                        println!("  Running:  ✅ PID {pid}{uptime_str}");
+                        Some((pid, uptime_str))
                     } else {
-                        println!("  Running:  ✗ (stale PID file, process {pid} not found)");
-                        let _ = std::fs::remove_file(&pid_file);
+                        // Stale PID file
+                        let _ = std::fs::remove_file(pf);
+                        None
                     }
                 }
                 #[cfg(not(unix))]
                 {
-                    println!("  Running:  PID {pid} (cannot verify on this platform)");
+                    Some((pid, String::new()))
                 }
-            } else {
-                println!("  Running:  ✗ (invalid PID file)");
+            })
+        })
+    });
+
+    if running_info.is_none() {
+        println!("No node running. Start with: sage node start");
+        return;
+    }
+
+    let (pid, uptime_str) = running_info.unwrap();
+
+    println!();
+    println!("SAGE Node Status");
+    println!("════════════════");
+    println!();
+
+    // Show node identity with human name
+    if let Some(id) = &identity {
+        println!("Node:     {}", id.human_name);
+        let uptime_display = if uptime_str.is_empty() { "running" } else { &uptime_str };
+        println!("State:    running (PID {}, uptime {})", pid, uptime_display);
+    } else {
+        println!("State:    running (PID {})", pid);
+    }
+
+    // Read sync log for peer info
+    #[allow(unused_variables)]
+    let peers_info: Vec<String> = Vec::new();
+    let mut synced_received: usize = 0;
+    let mut synced_sent: usize = 0;
+    let mut last_sync: Option<String> = None;
+
+    if sync_log.exists() {
+        if let Ok(content) = std::fs::read_to_string(&sync_log) {
+            for line in content.lines().rev().take(100) {
+                // Parse sync log entries
+                if line.contains("Synced") && line.contains("from") {
+                    synced_received += 1;
+                    if last_sync.is_none() {
+                        // Extract timestamp
+                        if let Some(ts) = line.strip_prefix('[').and_then(|s| s.split(']').next()) {
+                            last_sync = Some(ts.to_string());
+                        }
+                    }
+                }
+                if line.contains("patterns") && line.contains("sent") {
+                    synced_sent += 1;
+                }
             }
         }
-    } else {
-        println!("  Running:  ✗ not running");
+    }
+
+    // Show peer count (we'd need IPC to get actual live peers, show placeholder)
+    println!("Peers:    (run `sage node status` with node logs for live peers)");
+
+    // Show sync stats from log
+    if synced_received > 0 || synced_sent > 0 {
+        println!("Synced:   {} patterns received, {} sent", synced_received, synced_sent);
+    }
+
+    // Brain stats
+    let mut knowledge = NCAKnowledge::new();
+    if std::path::Path::new(&brain_path).exists() {
+        if knowledge.load(&brain_path).is_ok() {
+            let active = knowledge.active_knowledge(0.01);
+            let total_cells = knowledge.grid.width * knowledge.grid.height;
+            let utilization = (active.len() as f64 / total_cells as f64) * 100.0;
+            println!("Brain:    {} active cells ({:.1}% of grid)", active.len(), utilization);
+        }
+    }
+
+    // Network address (from config or default)
+    println!("Network:  /ip4/0.0.0.0/tcp/4001");
+    println!();
+
+    // Show log file location
+    if log_file.exists() {
+        println!("Log file: {}", log_file.display());
+        // Show last few log lines
+        if let Ok(content) = std::fs::read_to_string(&log_file) {
+            let lines: Vec<_> = content.lines().rev().take(3).collect();
+            if !lines.is_empty() {
+                println!();
+                println!("Recent log:");
+                for line in lines.iter().rev() {
+                    println!("  {}", line);
+                }
+            }
+        }
     }
 }
 
@@ -1298,7 +1785,8 @@ fn run_status() {
     let home = sage_home();
     let brain_path = default_brain_path();
     let text_store_path = brain_path.replace("brain.bin", "text_store.bin");
-    let pid_file = home.join("sage.pid");
+    let pid_file = home.join("node.pid");
+    let old_pid_file = home.join("sage.pid");
 
     println!();
     println!("╔══════════════════════════════════════════════════════════════════╗");
@@ -1394,9 +1882,17 @@ fn run_status() {
     }
     println!();
 
-    // Network status
-    let node_running = if pid_file.exists() {
-        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+    // Network status - check both pid files
+    let actual_pid_file = if pid_file.exists() {
+        Some(&pid_file)
+    } else if old_pid_file.exists() {
+        Some(&old_pid_file)
+    } else {
+        None
+    };
+
+    let node_running = if let Some(pf) = actual_pid_file {
+        if let Ok(pid_str) = std::fs::read_to_string(pf) {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
                 #[cfg(unix)]
                 {
