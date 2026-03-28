@@ -38,7 +38,7 @@ dirs = "5.0"
 toml = "0.8"
 
 # libp2p networking for decentralized gossip
-libp2p = { version = "0.54", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "kad", "identify", "tokio", "macros", "dns"] }
+libp2p = { version = "0.54", features = ["tcp", "noise", "yamux", "gossipsub", "mdns", "kad", "identify", "tokio", "macros", "dns", "request-response"] }
 tracing = "0.1"
 tokio-stream = "0.1"
 
