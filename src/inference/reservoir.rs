@@ -527,6 +527,266 @@ pub fn train_standalone_readout(
 }
 
 // ---------------------------------------------------------------------------
+// Retrieval Feedback Loop
+// ---------------------------------------------------------------------------
+
+/// A single retrieval event for feedback training.
+#[derive(Clone, Debug)]
+pub struct RetrievalEvent {
+    /// Feature vector extracted from NCA grid state after query
+    pub query_features: Vec<f64>,
+    /// The retrieved text (for logging)
+    pub retrieved_text: String,
+    /// Whether the retrieval was relevant (user/system signal)
+    pub was_relevant: bool,
+}
+
+/// Accumulates retrieval quality signals and periodically fine-tunes the readout.
+///
+/// After `min_events` events are accumulated, calling `maybe_train()` will run
+/// a mini-batch Adam update on the reservoir readout using the relevance signal as supervision.
+pub struct RetrievalFeedback {
+    /// Accumulated retrieval events (capped at capacity)
+    events: Vec<RetrievalEvent>,
+    /// Maximum events to store before rolling over
+    capacity: usize,
+    /// Minimum events before training triggers
+    pub min_events: usize,
+    /// Number of fine-tuning epochs per training trigger
+    pub finetune_epochs: usize,
+    /// Learning rate for fine-tuning Adam optimizer
+    pub learning_rate: f64,
+    /// Number of training rounds completed
+    pub rounds_completed: usize,
+    /// Adam optimizer state for the binary readout
+    m_w: Vec<f64>, // first moment for weights
+    v_w: Vec<f64>, // second moment for weights
+    m_b: [f64; 2], // first moment for bias [irrelevant, relevant]
+    v_b: [f64; 2], // second moment for bias
+    adam_t: usize, // Adam step counter
+}
+
+impl RetrievalFeedback {
+    /// Create a new feedback accumulator.
+    ///
+    /// `feature_dim` is the dimension of query feature vectors.
+    pub fn new(feature_dim: usize) -> Self {
+        Self {
+            events: Vec::new(),
+            capacity: 500,
+            min_events: 100,
+            finetune_epochs: 5,
+            learning_rate: 1e-3,
+            rounds_completed: 0,
+            m_w: vec![0.0; feature_dim],
+            v_w: vec![0.0; feature_dim],
+            m_b: [0.0; 2],
+            v_b: [0.0; 2],
+            adam_t: 0,
+        }
+    }
+
+    /// Record a retrieval event.
+    pub fn record(&mut self, query_features: Vec<f64>, retrieved_text: String, was_relevant: bool) {
+        if self.events.len() >= self.capacity {
+            // Ring buffer: remove oldest
+            self.events.remove(0);
+        }
+        self.events.push(RetrievalEvent {
+            query_features,
+            retrieved_text,
+            was_relevant,
+        });
+    }
+
+    /// Returns true when enough events are available to train.
+    pub fn should_train(&self) -> bool {
+        self.events.len() >= self.min_events
+    }
+
+    /// Run a fine-tuning pass on the binary relevance classifier (relevant/irrelevant).
+    ///
+    /// Uses a 2-class linear model: `score = w·features + b`
+    /// with BCE loss and Adam updates. This tightens the readout toward the
+    /// retrieval quality signal without touching NCA weights.
+    ///
+    /// Returns (final_loss, accuracy) on the current event buffer.
+    pub fn finetune(&mut self, readout: &mut BinaryRelevanceReadout) -> (f64, f64) {
+        let n = self.events.len();
+        if n == 0 {
+            return (0.0, 0.0);
+        }
+
+        let beta1 = 0.9_f64;
+        let beta2 = 0.999_f64;
+        let eps = 1e-8_f64;
+
+        for _epoch in 0..self.finetune_epochs {
+            self.adam_t += 1;
+            let t = self.adam_t as f64;
+
+            let mut g_w = vec![0.0f64; readout.weights.len()];
+            let mut g_b = [0.0f64; 2];
+
+            for event in &self.events {
+                let feat = &event.query_features;
+                let label = if event.was_relevant { 1 } else { 0 };
+
+                // Forward: logit for "relevant" class
+                let logit: f64 = readout.weights.iter().zip(feat.iter())
+                    .map(|(w, f)| w * f)
+                    .sum::<f64>()
+                    + readout.bias[1] - readout.bias[0];
+
+                // Sigmoid
+                let prob = 1.0 / (1.0 + (-logit).exp());
+
+                // BCE gradient: (prob - label)
+                let err = prob - label as f64;
+
+                // Accumulate gradients
+                for (i, f) in feat.iter().enumerate() {
+                    if i < g_w.len() {
+                        g_w[i] += err * f / n as f64;
+                    }
+                }
+                g_b[1] += err / n as f64;
+                g_b[0] -= err / n as f64;
+            }
+
+            // Adam update for weights
+            for i in 0..readout.weights.len().min(g_w.len()) {
+                self.m_w[i] = beta1 * self.m_w[i] + (1.0 - beta1) * g_w[i];
+                self.v_w[i] = beta2 * self.v_w[i] + (1.0 - beta2) * g_w[i] * g_w[i];
+                let m_hat = self.m_w[i] / (1.0 - beta1.powf(t));
+                let v_hat = self.v_w[i] / (1.0 - beta2.powf(t));
+                readout.weights[i] -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
+            }
+
+            // Adam update for bias
+            for c in 0..2 {
+                self.m_b[c] = beta1 * self.m_b[c] + (1.0 - beta1) * g_b[c];
+                self.v_b[c] = beta2 * self.v_b[c] + (1.0 - beta2) * g_b[c] * g_b[c];
+                let m_hat = self.m_b[c] / (1.0 - beta1.powf(t));
+                let v_hat = self.v_b[c] / (1.0 - beta2.powf(t));
+                readout.bias[c] -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
+            }
+        }
+
+        self.rounds_completed += 1;
+
+        // Compute final accuracy and loss on the buffer
+        let mut correct = 0;
+        let mut total_loss = 0.0;
+        for event in &self.events {
+            let logit: f64 = readout.weights.iter().zip(event.query_features.iter())
+                .map(|(w, f)| w * f)
+                .sum::<f64>()
+                + readout.bias[1] - readout.bias[0];
+            let prob = 1.0 / (1.0 + (-logit).exp());
+            let label = if event.was_relevant { 1.0 } else { 0.0 };
+            total_loss -= label * prob.ln().max(-100.0) + (1.0 - label) * (1.0 - prob).ln().max(-100.0);
+            if (prob > 0.5) == event.was_relevant {
+                correct += 1;
+            }
+        }
+
+        (total_loss / n as f64, correct as f64 / n as f64)
+    }
+
+    /// Call this after each retrieval. If enough events have accumulated,
+    /// runs a fine-tuning pass automatically.
+    ///
+    /// Returns Some((loss, accuracy)) if training ran, None otherwise.
+    pub fn maybe_train(&mut self, readout: &mut BinaryRelevanceReadout) -> Option<(f64, f64)> {
+        if self.should_train() {
+            Some(self.finetune(readout))
+        } else {
+            None
+        }
+    }
+
+    /// Current event count.
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Relevance rate in current buffer.
+    pub fn relevance_rate(&self) -> f64 {
+        if self.events.is_empty() {
+            return 0.0;
+        }
+        let relevant = self.events.iter().filter(|e| e.was_relevant).count();
+        relevant as f64 / self.events.len() as f64
+    }
+}
+
+/// Binary linear classifier: relevant vs. irrelevant retrieval.
+///
+/// Weights over the query feature space; trained on retrieval feedback signals.
+pub struct BinaryRelevanceReadout {
+    /// Feature weights (feature_dim elements)
+    pub weights: Vec<f64>,
+    /// Class bias: [irrelevant, relevant]
+    pub bias: [f64; 2],
+    pub feature_dim: usize,
+}
+
+impl BinaryRelevanceReadout {
+    /// Create a zero-initialized readout for the given feature dimension.
+    pub fn new(feature_dim: usize) -> Self {
+        Self {
+            weights: vec![0.0; feature_dim],
+            bias: [0.0, 0.0],
+            feature_dim,
+        }
+    }
+
+    /// Score a feature vector — higher = more likely relevant.
+    pub fn score(&self, features: &[f64]) -> f64 {
+        let logit: f64 = self.weights.iter().zip(features.iter())
+            .map(|(w, f)| w * f)
+            .sum::<f64>()
+            + self.bias[1] - self.bias[0];
+        1.0 / (1.0 + (-logit).exp()) // sigmoid probability
+    }
+
+    /// Save to binary file.
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let mut data = Vec::with_capacity((self.feature_dim + 2) * 8);
+        for &w in &self.weights {
+            data.extend_from_slice(&w.to_le_bytes());
+        }
+        for &b in &self.bias {
+            data.extend_from_slice(&b.to_le_bytes());
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, data)
+    }
+
+    /// Load from binary file.
+    pub fn load(path: &std::path::Path, feature_dim: usize) -> std::io::Result<Self> {
+        let bytes = fs::read(path)?;
+        let values: Vec<f64> = bytes.chunks_exact(8)
+            .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        if values.len() < feature_dim + 2 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Readout file too small",
+            ));
+        }
+        Ok(Self {
+            weights: values[..feature_dim].to_vec(),
+            bias: [values[feature_dim], values[feature_dim + 1]],
+            feature_dim,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -605,6 +865,96 @@ mod tests {
         assert!(top1 >= 0.0 && top1 <= 1.0);
         assert!(top5 >= top1);
         assert!(baseline > 0.0);
+    }
+
+    #[test]
+    fn test_binary_readout_score() {
+        let mut readout = BinaryRelevanceReadout::new(4);
+        // With zero weights and equal bias, score should be 0.5
+        let score = readout.score(&[1.0, 0.5, -0.5, 0.0]);
+        assert!((score - 0.5).abs() < 1e-10, "Zero readout should score 0.5");
+
+        // Set a weight and verify it shifts score
+        readout.weights[0] = 1.0;
+        let score_pos = readout.score(&[2.0, 0.0, 0.0, 0.0]);
+        assert!(score_pos > 0.5, "Positive feature with positive weight should score > 0.5");
+    }
+
+    #[test]
+    fn test_retrieval_feedback_accumulates_events() {
+        let mut feedback = RetrievalFeedback::new(4);
+        assert!(!feedback.should_train(), "Should not train with 0 events");
+
+        for i in 0..99 {
+            feedback.record(vec![i as f64, 0.0, 0.0, 0.0], format!("result {}", i), i % 3 == 0);
+        }
+        assert!(!feedback.should_train(), "Should not train with 99 events (needs 100)");
+
+        feedback.record(vec![1.0, 0.0, 0.0, 0.0], "final".to_string(), true);
+        assert!(feedback.should_train(), "Should train with 100 events");
+    }
+
+    #[test]
+    fn test_retrieval_feedback_finetune_runs() {
+        let feature_dim = 8;
+        let mut feedback = RetrievalFeedback::new(feature_dim);
+        feedback.min_events = 10; // Lower threshold for test
+
+        // Add 10 events: relevant when first feature is positive, irrelevant when negative
+        for i in 0..10 {
+            let feat = if i < 5 {
+                vec![1.0_f64, 0.5, 0.1, 0.2, 0.3, -0.1, 0.0, 0.4]  // relevant
+            } else {
+                vec![-1.0_f64, -0.5, -0.1, -0.2, -0.3, 0.1, 0.0, -0.4] // irrelevant
+            };
+            feedback.record(feat, format!("result {}", i), i < 5);
+        }
+
+        assert!(feedback.should_train());
+        let mut readout = BinaryRelevanceReadout::new(feature_dim);
+        let (loss, accuracy) = feedback.finetune(&mut readout);
+
+        // Loss should be finite and non-negative
+        assert!(loss.is_finite(), "Loss should be finite, got {}", loss);
+        assert!(loss >= 0.0, "Loss should be non-negative, got {}", loss);
+        // Accuracy should be in [0, 1]
+        assert!(accuracy >= 0.0 && accuracy <= 1.0, "Accuracy out of range: {}", accuracy);
+
+        eprintln!("Retrieval feedback test: loss={:.4} accuracy={:.1}%", loss, accuracy * 100.0);
+
+        // After training, relevant examples should score higher than irrelevant
+        let relevant_feat = vec![1.0_f64, 0.5, 0.1, 0.2, 0.3, -0.1, 0.0, 0.4];
+        let irrelevant_feat = vec![-1.0_f64, -0.5, -0.1, -0.2, -0.3, 0.1, 0.0, -0.4];
+
+        let relevant_score = readout.score(&relevant_feat);
+        let irrelevant_score = readout.score(&irrelevant_feat);
+
+        // After at least some training, the readout should have learned the pattern
+        assert!(
+            relevant_score > irrelevant_score,
+            "Relevant score ({:.4}) should exceed irrelevant score ({:.4}) after training",
+            relevant_score, irrelevant_score
+        );
+    }
+
+    #[test]
+    fn test_binary_readout_save_load() {
+        let mut readout = BinaryRelevanceReadout::new(8);
+        readout.weights = vec![0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8];
+        readout.bias = [0.1, -0.1];
+
+        let path = std::env::temp_dir().join("test_binary_readout.bin");
+        readout.save(&path).unwrap();
+
+        let loaded = BinaryRelevanceReadout::load(&path, 8).unwrap();
+        assert_eq!(loaded.weights.len(), 8);
+        for (w, lw) in readout.weights.iter().zip(loaded.weights.iter()) {
+            assert!((w - lw).abs() < 1e-15, "Weight mismatch: {} vs {}", w, lw);
+        }
+        assert!((readout.bias[0] - loaded.bias[0]).abs() < 1e-15);
+        assert!((readout.bias[1] - loaded.bias[1]).abs() < 1e-15);
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
