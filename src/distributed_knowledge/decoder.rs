@@ -240,9 +240,15 @@ pub fn decode_region(
             let dist = ((dx * dx + dy * dy) as f64).sqrt();
             let weight = activation / (1.0 + dist);
 
-            let offset =
-                ((dy + r) as usize * (2 * r as usize + 1) + (dx + r) as usize) % num_features;
-            features.values[offset] += grid.cells[ny][nx][KNOWLEDGE_CHANNELS_START] * weight;
+            // Use the same strided projection as the encoder:
+            //   encoder: slot i → feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len
+            // The previous code used a spatial position offset and only read slot 0,
+            // breaking cosine similarity between encoded and decoded feature vectors.
+            for slot in 0..NUM_EMBED_SLOTS {
+                let feat_idx = (slot * num_features / NUM_EMBED_SLOTS) % num_features;
+                features.values[feat_idx] +=
+                    grid.cells[ny][nx][KNOWLEDGE_CHANNELS_START + slot] * weight;
+            }
             total_weight += weight;
         }
     }
