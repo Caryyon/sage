@@ -174,12 +174,12 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResu
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
 
     for &(query, answer) in FACTS {
-        // Encode query to get features for query-conditioned delta retrieval
+        // Encode query to get features for query-conditioned contrast retrieval
         let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
-        // Use delta-attention retrieval (NCA freerun + delta magnitude)
-        let results = decoder.attend_with_delta(
-            &mut store.grid,
-            Some(&query_features),
+        // Use contrast retrieval (Option B: query-conditioned, no freerun, O(active_cells))
+        let results = decoder.attend_with_contrast(
+            &query_features,
+            &store.grid,
             5,
             Some(&store.text_store),
         );
@@ -193,7 +193,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResu
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_ollama { "Delta (Ollama)" } else { "Delta Attention (NCA)" },
+        name: if use_ollama { "Contrast (Ollama)" } else { "Contrast (local)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -203,7 +203,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResu
 }
 
 fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResult {
-    // Combined: union of semantic results and delta results (deduped)
+    // Combined: union of semantic results and contrast results (deduped)
     let mut hits = 0;
     let mut total_relevance = 0.0;
     let mut total_results = 0.0;
@@ -224,26 +224,26 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodR
             Some(&store.text_store),
         );
 
-        // Encode query for query-conditioned delta retrieval
+        // Encode query for query-conditioned contrast retrieval
         let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
-        let delta = decoder.attend_with_delta(
-            &mut store.grid,
-            Some(&query_features),
+        let contrast = decoder.attend_with_contrast(
+            &query_features,
+            &store.grid,
             5,
             Some(&store.text_store),
         );
 
-        // Combine: merge delta results not already in semantic results
+        // Combine: merge contrast results not already in semantic results
         let mut seen_texts: std::collections::HashSet<String> = semantic
             .iter()
             .filter_map(|r| r.text.clone())
             .collect();
 
-        for d_result in delta {
-            if let Some(ref t) = d_result.text {
+        for c_result in contrast {
+            if let Some(ref t) = c_result.text {
                 if !seen_texts.contains(t) {
                     seen_texts.insert(t.clone());
-                    semantic.push(d_result);
+                    semantic.push(c_result);
                 }
             }
         }
@@ -332,8 +332,8 @@ fn save_results(results: &[MethodResult], store_stats: &str, ollama_available: b
     md.push_str("## Notes\n\n");
     md.push_str("- 50 fact-pairs encoded as full Q→A sentences\n");
     md.push_str("- Hit = answer keyword found in top-5 retrieved results\n");
-    md.push_str("- Delta Attention uses NCA freerun + per-cell L2 delta magnitude\n");
-    md.push_str("- Combined = union of semantic + delta, deduped, top-5 by relevance\n");
+    md.push_str("- Contrast retrieval uses local contrast scoring (query-conditioned, no freerun)\n");
+    md.push_str("- Combined = union of semantic + contrast, deduped, top-5 by relevance\n");
     md.push_str("- Ollama uses nomic-embed-text for semantic embeddings\n");
     md.push_str("- Hash fallback uses n-gram feature hashing when Ollama unavailable\n");
 
@@ -441,34 +441,34 @@ fn main() {
                 5,
                 Some(&combined_store.text_store),
             );
-            // Encode query for query-conditioned delta retrieval
+            // Encode query for query-conditioned contrast retrieval
             let query_features = sage::distributed_knowledge::encoder::encode_text(query, &enc_config);
-            let delta = decoder.attend_with_delta(
-                &mut combined_store.grid,
-                Some(&query_features),
+            let contrast = decoder.attend_with_contrast(
+                &query_features,
+                &combined_store.grid,
                 5,
                 Some(&combined_store.text_store),
             );
 
             let sem_hit = check_hit(&sem, answer);
-            let delta_hit = check_hit(&delta, answer);
-            let combined_hit = sem_hit || delta_hit;
+            let contrast_hit = check_hit(&contrast, answer);
+            let combined_hit = sem_hit || contrast_hit;
 
             if sem_hit { semantic_hits += 1; }
             if combined_hit { combined_hits += 1; }
 
-            let flag = match (sem_hit, delta_hit) {
+            let flag = match (sem_hit, contrast_hit) {
                 (true, true) => "✅✅",
                 (true, false) => "✅❌",
                 (false, true) => "❌✅",
                 (false, false) => "❌❌",
             };
-            println!("  {} sem={} delta={} | {:40} → {}", flag, sem_hit as u8, delta_hit as u8, query, answer);
+            println!("  {} sem={} contrast={} | {:40} → {}", flag, sem_hit as u8, contrast_hit as u8, query, answer);
         }
         println!();
         println!("  Semantic hits ({}):\t{}/{}", method_label, semantic_hits, FACTS.len());
         println!("  Combined hits ({}):\t{}/{}", method_label, combined_hits, FACTS.len());
-        println!("  Delta-unique:\t\t{} (found by delta only)", combined_hits - semantic_hits);
+        println!("  Contrast-unique:\t{} (found by contrast only)", combined_hits - semantic_hits);
     }
 
     save_results(&results, &store_stats, ollama_available);

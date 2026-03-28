@@ -376,16 +376,13 @@ impl AttentionDecoder {
         results
     }
 
-    /// Delta-based retrieval: NCA Spreading Activation Readout.
+    /// Delta-based retrieval: NCA Spreading Activation Readout (Option A: quick fix).
     ///
-    /// Instead of reading static cell embeddings, snapshots the knowledge channels
-    /// BEFORE NCA steps, runs NCA update steps, computes per-cell delta magnitude,
-    /// and retrieves the cells with highest delta. These are what the grid "activated"
-    /// in response to the query — the spreading activation front.
+    /// Uses a SCRATCH COPY of the grid (main grid is NOT modified), strong query injection,
+    /// and local freerun for fast, query-conditioned delta retrieval.
     ///
     /// **Query conditioning**: If `query_features` is provided, injects the query
-    /// into the grid at low confidence (~0.1 weight) before running freerun steps.
-    /// This seeds the NCA dynamics so different queries activate different cells.
+    /// into the scratch grid at high weight (0.6) before running local freerun steps.
     ///
     /// Returns results sorted by delta magnitude (descending).
     pub fn attend_with_delta(
@@ -395,44 +392,45 @@ impl AttentionDecoder {
         top_k: usize,
         text_store: Option<&TextStore>,
     ) -> Vec<KnowledgeActivation> {
-        // 1. If query features provided, inject into grid at low confidence to seed NCA dynamics
-        // This is the key fix: query-conditioning makes delta retrieval query-aware.
+        // Clone grid to scratch — the MAIN GRID is NOT modified
+        let mut scratch = grid.clone();
+
+        // 1. If query features provided, inject into SCRATCH grid with strong signal
         let query_center = if let Some(features) = query_features {
             // Find position based on query features (same hashing as encoder)
-            let (qx, qy) = feature_to_position(features, grid.width, grid.height);
+            let (qx, qy) = feature_to_position(features, scratch.width, scratch.height);
 
-            // Inject query signal at low confidence (~0.1) so it influences dynamics
-            // without overwriting existing knowledge
-            let inject_weight = 0.1;
-            let inject_radius = 2;
+            // Strong injection for delta mode: weight 0.6, radius 10
+            let inject_weight = 0.6;
+            let inject_radius = 10;
 
             for dy in -(inject_radius as i32)..=(inject_radius as i32) {
                 for dx in -(inject_radius as i32)..=(inject_radius as i32) {
-                    let nx = ((qx as i32 + dx).rem_euclid(grid.width as i32)) as usize;
-                    let ny = ((qy as i32 + dy).rem_euclid(grid.height as i32)) as usize;
+                    let nx = ((qx as i32 + dx).rem_euclid(scratch.width as i32)) as usize;
+                    let ny = ((qy as i32 + dy).rem_euclid(scratch.height as i32)) as usize;
 
                     let dist = ((dx * dx + dy * dy) as f64).sqrt();
                     if dist > inject_radius as f64 {
                         continue;
                     }
-                    let decay = 0.5_f64.powf(dist);
+                    let decay = 0.5_f64.powf(dist / 3.0); // Slower decay for wider influence
 
-                    // Write query embedding slots at low weight
+                    // Write query embedding slots at high weight
                     let feat_len = features.values.len().max(1);
                     for slot in 0..NUM_EMBED_SLOTS {
                         let feat_idx = (slot * feat_len / NUM_EMBED_SLOTS) % feat_len;
                         let embedding_val = features.values[feat_idx];
                         let ch = KNOWLEDGE_CHANNELS_START + slot;
-                        let existing = grid.cells[ny][nx][ch];
-                        // Blend: mostly existing, small query signal
-                        grid.cells[ny][nx][ch] = existing * (1.0 - inject_weight * decay)
+                        let existing = scratch.cells[ny][nx][ch];
+                        // Blend with strong query signal
+                        scratch.cells[ny][nx][ch] = existing * (1.0 - inject_weight * decay)
                             + embedding_val * inject_weight * decay;
                     }
 
-                    // Bump activation slightly at query position to seed dynamics
-                    let existing_act = grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
-                    grid.cells[ny][nx][KNOWLEDGE_ACTIVATION] =
-                        (existing_act + inject_weight * decay * 0.3).clamp(0.0, 1.0);
+                    // Bump activation to seed dynamics
+                    let existing_act = scratch.cells[ny][nx][KNOWLEDGE_ACTIVATION];
+                    scratch.cells[ny][nx][KNOWLEDGE_ACTIVATION] =
+                        (existing_act + inject_weight * decay * 0.5).clamp(0.0, 1.0);
                 }
             }
 
@@ -442,34 +440,24 @@ impl AttentionDecoder {
         };
 
         // 2. Snapshot knowledge channels before NCA steps
-        let before = grid.snapshot_knowledge_channels();
+        let before = scratch.snapshot_knowledge_channels();
 
-        // 3. Run NCA freerun steps — let the grid react to query-seeded state
-        // Center freerun around query position if available, otherwise grid center
-        let (cx, cy) = query_center.unwrap_or((grid.width / 2, grid.height / 2));
-        let radius = grid.width / 2; // Full grid
-        grid.freerun_repair(cx, cy, radius, 4);
+        // 3. Run LOCAL freerun (2 steps, radius 24) — much faster than full grid
+        let (cx, cy) = query_center.unwrap_or((scratch.width / 2, scratch.height / 2));
+        let radius = 24; // Local neighborhood, NOT full grid
+        scratch.freerun_repair(cx, cy, radius, 2);
 
         // 4. Snapshot after NCA steps
-        let after = grid.snapshot_knowledge_channels();
+        let after = scratch.snapshot_knowledge_channels();
 
         // 5. Compute delta magnitude per cell
         let deltas = Grid::compute_delta_magnitude(&before, &after);
 
-        // Compute grid energy signal (convergence metric)
-        let grid_energy: f32 = deltas
-            .iter()
-            .flatten()
-            .map(|d| d * d)
-            .sum::<f32>()
-            .sqrt();
-        tracing::debug!("NCA grid energy after query: {:.4}", grid_energy);
-
         // 6. Find top-K cells by delta magnitude, filtered by activation
         let mut candidates: Vec<(usize, usize, f32)> = Vec::new();
-        for y in 0..grid.height {
-            for x in 0..grid.width {
-                let activation = safe_knowledge_activation(&grid.cells[y][x]);
+        for y in 0..scratch.height {
+            for x in 0..scratch.width {
+                let activation = safe_knowledge_activation(&scratch.cells[y][x]);
                 if activation < 1e-6 {
                     continue;
                 }
@@ -484,11 +472,163 @@ impl AttentionDecoder {
         candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
         candidates.truncate(top_k);
 
-        // 7. Build KnowledgeActivation results with text lookup
+        // 7. Build KnowledgeActivation results with text lookup (from MAIN grid's text store)
         let mut seen_texts = std::collections::HashSet::new();
         let mut results: Vec<KnowledgeActivation> = Vec::new();
 
         for (x, y, delta) in candidates {
+            let text = text_store.and_then(|ts| ts.peek(x, y).map(|s| s.to_string()));
+
+            // Deduplicate by text
+            if let Some(ref t) = text {
+                if seen_texts.contains(t) {
+                    continue;
+                }
+                seen_texts.insert(t.clone());
+            }
+
+            // Read activation/confidence from MAIN grid (not scratch)
+            let cell = &grid.cells[y][x];
+            results.push(KnowledgeActivation {
+                position: (x, y),
+                activation: safe_knowledge_activation(cell),
+                confidence: safe_knowledge_confidence(cell),
+                timestamp: 0.0,
+                embedding: cell.get(KNOWLEDGE_CHANNELS_START).copied().unwrap_or(0.0),
+                relevance: delta as f64, // Use delta as relevance score
+                text,
+            });
+        }
+
+        // Results already sorted by delta (descending)
+        results
+    }
+
+    /// Query-conditioned contrast retrieval (Option B: no freerun, O(active_cells)).
+    ///
+    /// Finds cells where query similarity is locally high relative to spatial neighbors.
+    /// This is the "delta" in feature space: cells that stand out as query-relevant
+    /// compared to their neighborhood.
+    ///
+    /// Algorithm:
+    /// 1. Encode query to get feature vector
+    /// 2. For each active cell, compute cosine similarity to query
+    /// 3. For each cell, compute average similarity of its spatial neighbors
+    /// 4. Local contrast = cell_similarity - neighbor_avg_similarity
+    /// 5. Return top-K cells by local contrast score
+    ///
+    /// This is O(active_cells) not O(all_cells), and is truly query-conditioned.
+    pub fn attend_with_contrast(
+        &self,
+        query_features: &FeatureVector,
+        grid: &Grid,
+        top_k: usize,
+        text_store: Option<&TextStore>,
+    ) -> Vec<KnowledgeActivation> {
+        let query = self.query_slots(query_features);
+        let neighbor_radius = 5; // Check 11x11 neighborhood for better contrast
+
+        // 1. Collect all active cells with their query similarity
+        let mut cell_similarities: Vec<(usize, usize, f64, [f64; NUM_EMBED_SLOTS])> = Vec::new();
+
+        for y in 0..grid.height.min(self.grid_height) {
+            for x in 0..grid.width.min(self.grid_width) {
+                let activation = safe_knowledge_activation(&grid.cells[y][x]);
+                if activation < self.activation_threshold {
+                    continue;
+                }
+
+                let cell_embed = self.cell_embedding(grid, x, y);
+                let similarity = self.cosine_similarity(&query, &cell_embed);
+                cell_similarities.push((x, y, similarity, cell_embed));
+            }
+        }
+
+        if cell_similarities.is_empty() {
+            return Vec::new();
+        }
+
+        // 2. Build a lookup map for fast neighbor similarity queries
+        let sim_map: std::collections::HashMap<(usize, usize), f64> = cell_similarities
+            .iter()
+            .map(|&(x, y, sim, _)| ((x, y), sim))
+            .collect();
+
+        // Also compute global statistics for relative scoring
+        let n = cell_similarities.len() as f64;
+        let global_mean: f64 = cell_similarities.iter().map(|(_, _, s, _)| s).sum::<f64>() / n;
+        let global_std: f64 = (cell_similarities
+            .iter()
+            .map(|(_, _, s, _)| (s - global_mean).powi(2))
+            .sum::<f64>()
+            / n)
+            .sqrt()
+            .max(0.01); // Avoid division by zero
+
+        // 3. Compute local contrast for each cell
+        let mut candidates: Vec<(usize, usize, f64, f64)> = Vec::new(); // (x, y, z_score, similarity)
+
+        for &(x, y, cell_sim, _) in &cell_similarities {
+            // Compute average similarity of spatial neighbors
+            let mut neighbor_sum = 0.0;
+            let mut neighbor_count = 0;
+
+            let r = neighbor_radius as i32;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx == 0 && dy == 0 {
+                        continue; // Skip self
+                    }
+                    let nx = ((x as i32 + dx).rem_euclid(grid.width as i32)) as usize;
+                    let ny = ((y as i32 + dy).rem_euclid(grid.height as i32)) as usize;
+
+                    if let Some(&neighbor_sim) = sim_map.get(&(nx, ny)) {
+                        neighbor_sum += neighbor_sim;
+                        neighbor_count += 1;
+                    }
+                }
+            }
+
+            // Local contrast = cell similarity - neighbor average
+            // If no active neighbors, use global mean as baseline
+            let neighbor_avg = if neighbor_count > 0 {
+                neighbor_sum / neighbor_count as f64
+            } else {
+                global_mean
+            };
+            let local_contrast = cell_sim - neighbor_avg;
+
+            // Z-score: how many standard deviations above mean
+            let z_score = (cell_sim - global_mean) / global_std;
+
+            // Combined contrast: local standout + global outlier detection
+            // Weight local contrast higher when we have neighbors
+            let effective_contrast = if neighbor_count > 0 {
+                0.5 * local_contrast + 0.5 * z_score * 0.1
+            } else {
+                z_score * 0.1
+            };
+
+            // Lower threshold: include more candidates for ranking
+            if cell_sim > 0.2 || effective_contrast > 0.0 {
+                candidates.push((x, y, effective_contrast, cell_sim));
+            }
+        }
+
+        // 4. Sort by a combined score: emphasize absolute similarity more
+        // 30% contrast + 70% absolute similarity — similarity is more predictive
+        candidates.sort_by(|a, b| {
+            let score_a = 0.3 * a.2 + 0.7 * a.3;
+            let score_b = 0.3 * b.2 + 0.7 * b.3;
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        candidates.truncate(top_k * 3); // Get more candidates before dedup
+
+        // 5. Build KnowledgeActivation results with text lookup
+        let mut seen_texts = std::collections::HashSet::new();
+        let mut results: Vec<KnowledgeActivation> = Vec::new();
+
+        for (x, y, contrast, similarity) in candidates {
             let text = text_store.and_then(|ts| ts.peek(x, y).map(|s| s.to_string()));
 
             // Deduplicate by text
@@ -506,13 +646,29 @@ impl AttentionDecoder {
                 confidence: safe_knowledge_confidence(cell),
                 timestamp: 0.0,
                 embedding: cell.get(KNOWLEDGE_CHANNELS_START).copied().unwrap_or(0.0),
-                relevance: delta as f64, // Use delta as relevance score
+                relevance: (0.3 * contrast + 0.7 * similarity).max(0.0), // Combined score
                 text,
             });
+
+            if results.len() >= top_k {
+                break;
+            }
         }
 
-        // Results already sorted by delta (descending)
         results
+    }
+
+    /// Compute cosine similarity between two embedding vectors.
+    #[inline]
+    fn cosine_similarity(&self, a: &[f64; NUM_EMBED_SLOTS], b: &[f64; NUM_EMBED_SLOTS]) -> f64 {
+        let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let norm_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if norm_a < 1e-10 || norm_b < 1e-10 {
+            0.0
+        } else {
+            dot / (norm_a * norm_b)
+        }
     }
 }
 

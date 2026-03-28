@@ -253,25 +253,23 @@ impl KnowledgeLoop {
         )
     }
 
-    /// Delta-based retrieval using NCA spreading activation.
+    /// Query-conditioned contrast retrieval (Option B: fast, no freerun).
     ///
-    /// Snapshots knowledge channels, runs NCA steps, finds cells with highest
-    /// delta magnitude. These are the "activated" concepts — what the NCA grid
-    /// thought about in response to the current input.
+    /// Uses `attend_with_contrast()` to find cells where query similarity is locally
+    /// high relative to spatial neighbors. This is O(active_cells) not O(all_cells),
+    /// and is truly query-conditioned without expensive NCA freerun.
     ///
-    /// The query is injected into the grid at low confidence before freerun steps,
-    /// making delta retrieval query-conditioned (different queries activate different cells).
-    ///
-    /// Returns unique texts found by delta that were NOT in `already_found`.
+    /// Returns unique texts found by contrast retrieval that were NOT in `already_found`.
     pub fn retrieve_delta_unique(&mut self, query: &str, already_found: &[String]) -> Vec<String> {
         let top_k = self.max_results;
 
-        // Encode query to get features for query-conditioned delta retrieval
+        // Encode query to get features for query-conditioned contrast retrieval
         let query_features = encode_text(query, &self.encoder_config);
 
-        let delta_results = self.attention_decoder.attend_with_delta(
-            &mut self.knowledge.grid,
-            Some(&query_features),
+        // Use Option B: attend_with_contrast (fast, no freerun, query-conditioned)
+        let contrast_results = self.attention_decoder.attend_with_contrast(
+            &query_features,
+            &self.knowledge.grid,
             top_k,
             Some(&self.knowledge.text_store),
         );
@@ -279,7 +277,7 @@ impl KnowledgeLoop {
         let already_set: std::collections::HashSet<&str> =
             already_found.iter().map(|s| s.as_str()).collect();
 
-        let delta_unique: Vec<String> = delta_results
+        let delta_unique: Vec<String> = contrast_results
             .into_iter()
             .filter(|r| r.relevance > 0.0 && r.text.is_some())
             .filter_map(|r| r.text)
@@ -295,7 +293,7 @@ impl KnowledgeLoop {
         if total % 10 == 0 && total > 0 {
             let hits = DELTA_UNIQUE_HITS.load(Ordering::Relaxed);
             tracing::debug!(
-                "Delta retrieval stats: {}/{} retrievals with unique hits ({:.1}%)",
+                "Contrast retrieval stats: {}/{} retrievals with unique hits ({:.1}%)",
                 hits,
                 total,
                 hits as f64 / total as f64 * 100.0
