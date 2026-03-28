@@ -136,6 +136,9 @@ struct CellFlash {
     timestamp: Instant,
 }
 
+/// Auto-save interval in seconds (configurable via SAGE_AUTOSAVE_INTERVAL env var)
+const DEFAULT_AUTOSAVE_INTERVAL_SECS: u64 = 300; // 5 minutes
+
 // --- App State ---
 struct AppState {
     messages: Vec<TuiChatMessage>,
@@ -157,6 +160,9 @@ struct AppState {
     peer_count: usize,
     // Retrieval quality metrics (shared with NCAKnowledge)
     retrieval_stats: std::sync::Arc<crate::distributed_knowledge::RetrievalStats>,
+    // Auto-save
+    last_save: Instant,
+    autosave_interval_secs: u64,
 }
 
 fn format_peer_count(n: usize) -> String {
@@ -757,6 +763,12 @@ pub fn run(
         })
         .collect();
 
+    // Read auto-save interval from environment (default 5 minutes)
+    let autosave_interval_secs = std::env::var("SAGE_AUTOSAVE_INTERVAL")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_AUTOSAVE_INTERVAL_SECS);
+
     let mut state = AppState {
         messages: Vec::new(),
         input: String::new(),
@@ -773,6 +785,8 @@ pub fn run(
         scroll_offset: 0,
         peer_count: 0,
         retrieval_stats,
+        last_save: Instant::now(),
+        autosave_interval_secs,
     };
 
     // Check for updates (non-blocking, 3s timeout)
@@ -992,6 +1006,20 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                     if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
                         state.brain_grid[y][x] = entry.relevance;
                     }
+                }
+            }
+        }
+
+        // Auto-save brain periodically (every autosave_interval_secs)
+        let elapsed_since_save = state.last_save.elapsed().as_secs();
+        if elapsed_since_save >= state.autosave_interval_secs && state.autosave_interval_secs > 0 {
+            if let Ok(k) = knowledge.try_lock() {
+                if let Ok(()) = k.save(&brain_path) {
+                    state.last_save = Instant::now();
+                    state.messages.push(TuiChatMessage {
+                        role: Role::System,
+                        content: "💾 Brain auto-saved.".to_string(),
+                    });
                 }
             }
         }

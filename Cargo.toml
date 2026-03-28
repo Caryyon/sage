@@ -102,6 +102,7 @@ path = "src/bin/miniworld_server.rs"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
+tempfile = "3.10"
 
 [[bench]]
 name = "knowledge_bench"
