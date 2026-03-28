@@ -122,6 +122,10 @@ path = "tests/integration/knowledge_loop.rs"
 name = "attention_knowledge"
 path = "tests/integration/attention_knowledge.rs"
 
+[[test]]
+name = "gossip_two_node"
+path = "tests/integration/gossip_two_node.rs"
+
 [[bin]]
 name = "nca-timing"
 path = "src/bin/nca_timing.rs"
