@@ -1,10 +1,12 @@
-# 🌿 Getting Started with SAGE
+# Getting Started with SAGE
 
-SAGE is a decentralized AI that runs locally on your machine and shares knowledge across a peer-to-peer network. No accounts, no API keys, no monthly fees.
+SAGE is a decentralized AI that runs locally and shares knowledge across a peer-to-peer network. No accounts, no API keys, no monthly fees.
+
+**Current version:** 0.2.9
 
 ---
 
-## 📦 Installation
+## Installation
 
 One command:
 
@@ -16,119 +18,222 @@ This downloads the `sage` binary for your platform (Linux/macOS, x86_64/arm64) a
 
 After install, open a new terminal (or `source ~/.bashrc`) and verify:
 
-```
-$ sage version
-sage 0.1.0
+```bash
+sage version
+# sage 0.2.9
 ```
 
 ---
 
-## 💬 First Chat
+## First Run
 
 ```bash
 sage chat
 ```
 
-On first run, SAGE downloads **SmolLM2 1.7B** (~1 GB) — a small but capable language model that runs entirely on your CPU. No GPU needed.
+On first run, SAGE will:
+
+1. Create `~/.sage/` directory for config and data
+2. Initialize an empty brain (NCA grid)
+3. Download bundled embedding model (~22MB) to `~/.cache/fastembed/`
+4. Start the chat interface
+
+You'll see something like:
 
 ```
-SAGE Chat — engine: SmolLM2-1.7B
-Brain: /home/you/.sage/brain.bin (0 active cells)
-Type your message, or /quit to exit.
+SAGE v0.2.9 — The People's AI
+Brain: ~/.sage/brain.bin (0 active cells)
+Embeddings: bundled (AllMiniLML6V2, 384-dim)
 
-you> What is SAGE?
-sage> I'm SAGE — a decentralized AI running locally on your machine...
+Type /help for commands, /quit to exit.
+
+you>
 ```
 
-**Commands in chat:**
-- Type your message and hit Enter
-- `/quit` or `/exit` to leave
+### First Run with Ollama
 
-### Using Ollama Instead
-
-If you have [Ollama](https://ollama.com) installed, you can use any Ollama model as the backend:
+If you have [Ollama](https://ollama.com) installed:
 
 ```bash
-sage chat --ollama                          # Uses qwen2.5:14b by default
-sage chat --ollama --model llama3.2:3b      # Pick a different model
-sage chat --ollama --ollama-url http://remote:11434  # Remote Ollama
+sage chat --ollama                      # Uses qwen2.5:14b by default
+sage chat --ollama --model llama3.2:3b  # Pick a different model
+```
+
+With Ollama, you get:
+- Higher quality LLM responses
+- Semantic embeddings via nomic-embed-text (60% retrieval hit rate)
+
+Without Ollama, SAGE uses:
+- Bundled fastembed for embeddings (96% retrieval hit rate)
+- A fallback response mode (limited without LLM backend)
+
+### In-Chat Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/quit` or `/exit` | Exit chat |
+| `/status` | Show node health and retrieval stats |
+| `/dream` | Trigger a dream cycle |
+| `/explore` | Trigger curiosity exploration |
+
+---
+
+## How Knowledge Retrieval Works
+
+SAGE uses three retrieval strategies, selected automatically based on availability:
+
+### 1. Semantic Retrieval (Best)
+
+**When:** Ollama running with nomic-embed-text
+**Hit rate:** ~60%
+**How:** Cross-attention decoder queries NCA grid using semantic embeddings
+
+### 2. Contrast Retrieval (Good)
+
+**When:** Bundled fastembed available (default since v0.2.9)
+**Hit rate:** ~96%
+**How:** Query-conditioned delta attention over local grid regions
+
+### 3. Hash Fallback (Basic)
+
+**When:** No embedding model available
+**Hit rate:** ~12%
+**How:** Hash-based feature matching with cosine similarity
+
+Check which mode is active:
+
+```bash
+sage status
+# Shows: Embeddings: bundled (AllMiniLML6V2, 384-dim)
 ```
 
 ---
 
-## 🔗 Join the Network
+## Joining the Mesh Network
 
 ```bash
 sage node start
 ```
 
-This starts your SAGE node and connects it to the decentralized network:
+Your node connects to the decentralized network:
 
 ```
-🧠 SAGE Node starting...
-   Identity: 12D3KooW...
-   Brain: /home/you/.sage/brain.bin (42 active cells)
-   Gossip port: 0
-   Chat port: 19175
-   mDNS: enabled
+SAGE Node starting...
+  Identity: 12D3KooW...
+  Brain: ~/.sage/brain.bin (42 active cells)
+  Gossip: listening
+  mDNS: enabled
 
-✅ Node running. Press Ctrl+C to stop.
+Node running. Press Ctrl+C to stop.
 ```
 
-**What happens when your node starts:**
+### What Happens
 
-1. **LAN Discovery** — mDNS finds other SAGE nodes on your local network automatically
-2. **Bootstrap Connection** — Connects to `bootstrap.whatssage.ai:4001` to find peers on the internet
-3. **Knowledge Sync** — Your node exchanges compressed knowledge diffs with peers
-4. **Brain Saves** — Your brain file is periodically saved to disk
+1. **LAN Discovery** — mDNS finds other SAGE nodes on your local network
+2. **Bootstrap** — Connects to `bootstrap.whatssage.ai:4001` for internet peers
+3. **Knowledge Sync** — Exchanges Merkle-verified diffs with peers
+4. **Brain Saves** — Periodically saves brain state to disk
 
-### Node Options
+### Node Commands
 
 ```bash
-sage node start --port 9000          # Set gossip port (default: random)
-sage node start --chat-port 19175    # Set chat port (default: 19175)
-sage node start --sync-interval 600  # Sync every 10 min (default: 300s)
-sage node start --no-mdns            # Disable LAN discovery
-```
-
-### Check Node Status
-
-```bash
-sage node status
-```
-
-```
-SAGE Node Status
-─────────────────
-  Home:     /home/you/.sage
-  Config:   /home/you/.sage/config.toml ✓
-  Brain:    /home/you/.sage/brain.bin ✓
-  Running:  PID 12345
-```
-
-### Stop the Node
-
-```bash
-sage node stop
+sage node start               # Start node
+sage node start --port 9000   # Custom gossip port
+sage node status              # Check peers and sync state
+sage node stop                # Stop node
 ```
 
 ---
 
-## 🧠 How It Works
+## OpenAI-Compatible API
 
-1. **You chat** with your local SAGE instance
-2. **Conversations become knowledge** — encoded into a Neural Cellular Automata (NCA) grid, a compact 32×32 grid of multi-channel cells (~128 KB)
-3. **Knowledge is shared as diffs** — tiny compressed updates (200–2000 bytes each) that represent *what was learned*, not what was said
-4. **Diffs flow via gossip** — peer-to-peer, no central server, reaching the whole network in seconds
-5. **Your raw conversations never leave your machine** — only abstract, lossy knowledge patterns are shared
+SAGE exposes an API at `localhost:19176/v1`. Point any OpenAI-compatible tool at it:
 
-The more people run SAGE, the more knowledge flows through the network, and the smarter every node becomes.
+```bash
+export OPENAI_API_BASE=http://localhost:19176/v1
+export OPENAI_API_KEY=not-needed
+```
+
+### Works With
+
+- **[Continue](https://continue.dev)** — Set base URL in config
+- **[Open WebUI](https://openwebui.com)** — Add as OpenAI-compatible endpoint
+- **[Cursor](https://cursor.sh)** — Configure API settings
+- **LangChain** — `ChatOpenAI(base_url="http://localhost:19176/v1")`
+
+### Example API Call
+
+```bash
+curl http://localhost:19176/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sage",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+No API key required. No rate limits. No billing.
 
 ---
 
-## ⚙️ Configuration
+## Troubleshooting
 
-SAGE stores its config at `~/.sage/config.toml`. View it with:
+### "command not found: sage"
+
+`~/.sage/bin` isn't in your PATH. Fix:
+
+```bash
+export PATH="$HOME/.sage/bin:$PATH"
+# Add to ~/.bashrc or ~/.zshrc for persistence
+```
+
+Or re-run the install script.
+
+### Brain version mismatch
+
+If you see a warning about brain.bin format, SAGE now handles this gracefully since v0.2.8. It will either migrate the brain or start fresh if migration fails.
+
+To manually reset:
+
+```bash
+rm ~/.sage/brain.bin
+sage chat  # Creates fresh brain
+```
+
+### Ollama not running
+
+SAGE works without Ollama since v0.2.9. You'll see:
+
+```
+Ollama not available, using bundled embeddings
+Embeddings: bundled (AllMiniLML6V2, 384-dim)
+```
+
+This is fine — bundled embeddings actually have higher retrieval accuracy (96% vs 60%).
+
+### Node won't connect to peers
+
+- Check firewall allows outbound connections
+- Verify `bootstrap.whatssage.ai:4001` is reachable
+- Try `sage node start --no-mdns` if mDNS causes issues
+
+### Slow first run
+
+The bundled embedding model (~22MB) downloads on first use. This only happens once.
+
+### Change data directory
+
+```bash
+export SAGE_HOME=/path/to/custom/sage
+sage chat  # Uses /path/to/custom/sage/brain.bin
+```
+
+---
+
+## Configuration
+
+Config lives at `~/.sage/config.toml`:
 
 ```bash
 sage config          # Print current config
@@ -146,141 +251,17 @@ sync_interval = 300      # seconds
 mdns = true
 
 [privacy]
-# Channels to share (semantic only by default)
 shared_channels = [8, 9, 10, 11, 12, 13, 14, 15]
-# Don't share until N conversations contribute
 min_conversations_before_share = 5
-# Differential privacy noise level
 dp_epsilon = 1.0
-# Topics to never share
 private_topics = ["health", "finance"]
 ```
 
-Set `SAGE_HOME` environment variable to change the data directory (default: `~/.sage`).
-
 ---
 
-## 🔌 OpenAI-Compatible API
+## Next Steps
 
-SAGE exposes an OpenAI-compatible API at `localhost:19176/v1`. Point any tool that speaks OpenAI protocol at it:
-
-```bash
-# Environment variable (works with most tools)
-export OPENAI_API_BASE=http://localhost:19176/v1
-export OPENAI_API_KEY=not-needed
-
-# curl example
-curl http://localhost:19176/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "sage",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
-### Works With
-
-- **Continue** — set base URL in config
-- **Open WebUI** — add as an OpenAI-compatible endpoint
-- **LangChain** — `ChatOpenAI(base_url="http://localhost:19176/v1")`
-- **Any OpenAI SDK** — just change the base URL
-
-No API key required. No rate limits. No billing.
-
----
-
-## 📋 Commands Reference
-
-| Command | Description |
-|---------|-------------|
-| `sage chat` | Interactive chat (default if no subcommand) |
-| `sage chat --ollama` | Chat using Ollama backend |
-| `sage chat --ollama --model <name>` | Chat with specific Ollama model |
-| `sage node start` | Start the SAGE network node |
-| `sage node stop` | Stop the running node |
-| `sage node status` | Show node status |
-| `sage config` | Show current configuration |
-| `sage config --path` | Print config file path |
-| `sage update` | Update SAGE to latest version |
-| `sage update --quiet` | Update without showing changelog |
-| `sage version` | Print version info |
-
----
-
-## 🔄 Updating
-
-```bash
-sage update
-```
-
-This downloads the latest binary, shows the changelog, and migrates your brain file if needed. Your data in `~/.sage` is always preserved.
-
-```
-🔄 Checking for updates...
-
-📋 Changelog:
-## v0.2.0
-- Improved knowledge sync
-- Better NCA encoding
-...
-
-⬇️  Downloading...
-✅ Binary updated
-🧠 Brain file up to date
-
-🎉 Update complete! Data in /home/you/.sage preserved.
-```
-
-Skip the changelog with `sage update --quiet`.
-
----
-
-## 🔧 Troubleshooting
-
-### "command not found: sage"
-
-Make sure `~/.sage/bin` is in your PATH. Re-run the install script or add manually:
-
-```bash
-export PATH="$HOME/.sage/bin:$PATH"
-```
-
-### Model download is slow
-
-The SmolLM2 model (~1 GB) downloads on first `sage chat`. If it's slow, check your internet connection. The download only happens once.
-
-### Node won't connect to peers
-
-- Check your firewall allows outbound connections on the gossip port
-- Make sure `bootstrap.whatssage.ai:4001` is reachable
-- Try `sage node start --no-mdns` if mDNS is causing issues on your network
-
-### "No running SAGE node found"
-
-`sage node stop` requires a running node. Check with `sage node status`.
-
-### Brain file corruption
-
-If your brain file gets corrupted, delete it and SAGE will create a fresh one:
-
-```bash
-rm ~/.sage/brain.bin
-```
-
-You'll lose local knowledge but will re-sync from the network when you start a node.
-
-### Change data directory
-
-```bash
-export SAGE_HOME=/path/to/custom/sage
-sage chat  # Uses /path/to/custom/sage/brain.bin etc.
-```
-
----
-
-## 🔗 Links
-
-- **GitHub:** [github.com/Caryyon/sage](https://github.com/Caryyon/sage)
-- **Discord:** [discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
-- **Website:** [whatssage.ai](https://whatssage.ai)
-- **Technical Details:** [DISTRIBUTED.md](./DISTRIBUTED.md)
+- **Join the network** — `sage node start`
+- **Explore docs** — [ARCHITECTURE.md](./ARCHITECTURE.md) for technical depth
+- **Join Discord** — [discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
+- **Contribute** — See [CONTRIBUTING.md](../CONTRIBUTING.md)
