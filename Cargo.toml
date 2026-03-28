@@ -125,3 +125,7 @@ path = "tests/integration/attention_knowledge.rs"
 [[bin]]
 name = "nca-timing"
 path = "src/bin/nca_timing.rs"
+
+[[bin]]
+name = "train-nca"
+path = "src/bin/train_nca.rs"
