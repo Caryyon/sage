@@ -7,7 +7,6 @@
 //!   sage config     — show/edit configuration
 
 use clap::{Parser, Subcommand};
-use sage::distributed_knowledge::encoder::{detect_embedding_status, EmbeddingStatus, EncoderConfig};
 use sage::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -142,6 +141,9 @@ enum NodeCommands {
         /// Run in foreground (don't daemonize)
         #[arg(short, long)]
         foreground: bool,
+        /// Run as background daemon
+        #[arg(long)]
+        daemon: bool,
         /// Internal flag: running as daemon (hidden)
         #[arg(long, hide = true)]
         daemon_internal: bool,
@@ -152,6 +154,28 @@ enum NodeCommands {
     Status,
     /// Check node health
     Health,
+    /// Generate an invite link for direct peer connection
+    Invite,
+    /// Join a peer using an invite code
+    Join {
+        /// The invite code to join
+        code: String,
+    },
+    /// Show the last 50 lines of the node log
+    Logs {
+        /// Follow the log output (like tail -f)
+        #[arg(short, long)]
+        follow: bool,
+        /// Number of lines to show
+        #[arg(short, long, default_value_t = 50)]
+        lines: usize,
+    },
+    /// Export node stats as JSON for whatssage.ai
+    Stats {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn sage_home() -> std::path::PathBuf {
@@ -255,6 +279,7 @@ fn main() {
                 sync_interval,
                 no_mdns,
                 foreground,
+                daemon,
                 daemon_internal,
             } => {
                 if foreground || daemon_internal {
@@ -270,8 +295,11 @@ fn main() {
                         // Clean up PID file on exit
                         let _ = std::fs::remove_file(sage_home().join("node.pid"));
                     }
+                } else if daemon {
+                    // Explicit --daemon flag: daemonize
+                    daemonize_node(port, chat_port, sync_interval, no_mdns);
                 } else {
-                    // Daemonize: re-exec self with --daemon-internal
+                    // Default: daemonize (original behavior)
                     daemonize_node(port, chat_port, sync_interval, no_mdns);
                 }
             }
@@ -283,6 +311,18 @@ fn main() {
             }
             NodeCommands::Health => {
                 run_node_health();
+            }
+            NodeCommands::Invite => {
+                run_node_invite();
+            }
+            NodeCommands::Join { code } => {
+                run_node_join(&code);
+            }
+            NodeCommands::Logs { follow, lines } => {
+                run_node_logs(follow, lines);
+            }
+            NodeCommands::Stats { json } => {
+                run_node_stats(json);
             }
         },
     }
@@ -405,8 +445,40 @@ const BOOTSTRAP_NODES: &[&str] = &[
     // "/ip4/bootstrap.whatssage.ai/tcp/4001/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN",
 ];
 
-/// Start the SAGE node.
-fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, _foreground: bool) {
+/// Live network stats for the node UI
+#[derive(Clone, Default)]
+struct LiveNodeStats {
+    peers_connected: usize,
+    #[allow(dead_code)]
+    patterns_received: u64,
+    #[allow(dead_code)]
+    patterns_sent: u64,
+    start_time: Option<std::time::Instant>,
+}
+
+impl LiveNodeStats {
+    fn uptime_str(&self) -> String {
+        match self.start_time {
+            Some(start) => {
+                let secs = start.elapsed().as_secs();
+                if secs < 60 {
+                    format!("{}s", secs)
+                } else if secs < 3600 {
+                    format!("{}m {}s", secs / 60, secs % 60)
+                } else {
+                    let h = secs / 3600;
+                    let m = (secs % 3600) / 60;
+                    format!("{}h {}m", h, m)
+                }
+            }
+            None => "0s".to_string(),
+        }
+    }
+}
+
+/// Start the SAGE node with live knowledge feed.
+fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, foreground: bool) {
+    use sage::network::contribution::ContributionStats;
     use sage::network::identity::NodeIdentity;
     use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
     use sage::network::gossip::GossipTransport;
@@ -422,16 +494,14 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
         let brain_path = default_brain_path();
         let mut knowledge = NCAKnowledge::new();
         let _ = knowledge.load(&brain_path); // load existing if available
-        let active_cells = knowledge.active_knowledge(0.01).len();
+        let initial_cells = knowledge.active_knowledge(0.01).len();
         let knowledge: Arc<Mutex<NCAKnowledge>> = Arc::new(Mutex::new(knowledge));
+
+        // Load contribution stats
+        let contrib = Arc::new(Mutex::new(ContributionStats::load_or_create()));
 
         let identity =
             NodeIdentity::load_or_generate(None).expect("Failed to load/create node identity");
-
-        // Startup sequence
-        println!();
-        println!("🌐 Starting SAGE node...");
-        println!("🔑 Node ID: {} ({})", identity.human_name, identity.node_id);
 
         // Check if gossip port is available
         if port != 0 {
@@ -470,40 +540,21 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             }
         }
 
-        println!("📡 Listening on: /ip4/0.0.0.0/tcp/{}", port);
+        // Get contribution tier
+        let tier = {
+            let c = contrib.lock().await;
+            c.tier()
+        };
 
-        // Show embedding backend status
-        let embed_status = detect_embedding_status(&EncoderConfig::default());
-        match &embed_status {
-            EmbeddingStatus::Fastembed { .. } => {
-                println!("🧠 Embeddings: {} ✓", embed_status);
-            }
-            EmbeddingStatus::Ollama { .. } => {
-                println!("🧠 Embeddings: {} ✓", embed_status);
-            }
-            EmbeddingStatus::HashFallback => {
-                println!("⚠️  Embeddings: {}", embed_status);
-            }
-        }
-
-        // Show generation backend status
-        let gen_backend = sage::inference::detect_generation_backend();
-        match &gen_backend {
-            sage::inference::GenerationBackend::Local { model_name, model_size } => {
-                println!("⚡ Generation: local ({}, {})", model_name, model_size);
-            }
-            sage::inference::GenerationBackend::Ollama { model } => {
-                println!("🔗 Generation: Ollama ({})", model);
-            }
-            sage::inference::GenerationBackend::Embedded { model_name } => {
-                println!("🧠 Generation: embedded ({})", model_name);
-            }
-            sage::inference::GenerationBackend::Offline => {
-                println!("📚 Generation: offline (retrieval only)");
-            }
-        }
-
-        println!("💾 Brain: {} ({} active cells)", brain_path, active_cells);
+        // Print the live knowledge feed header
+        println!();
+        println!("🌐 SAGE Node — {}", identity.human_name);
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("✅ Listening on /ip4/0.0.0.0/tcp/{}", port);
+        println!("💾 Brain: {} active cells", initial_cells);
+        println!("{} Contribution tier: {}", tier.emoji(), tier.name());
+        println!("🔍 Searching for peers on local network...");
+        println!();
 
         let net_config = NetworkConfig {
             listen_port: port,
@@ -516,10 +567,25 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
 
         // Start libp2p transport for real peer discovery
         let bootstrap_nodes: Vec<String> = BOOTSTRAP_NODES.iter().map(|s| s.to_string()).collect();
+
+        // Also load custom bootstrap peers from file
+        let bootstrap_path = sage_home().join("bootstrap_peers.txt");
+        let mut all_bootstrap: Vec<String> = bootstrap_nodes;
+        if bootstrap_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&bootstrap_path) {
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() && !all_bootstrap.contains(&line.to_string()) {
+                        all_bootstrap.push(line.to_string());
+                    }
+                }
+            }
+        }
+
         let libp2p_config = Libp2pConfig {
             listen_port: port,
             mdns_enabled: !no_mdns,
-            bootstrap_nodes: bootstrap_nodes.clone(),
+            bootstrap_nodes: all_bootstrap,
         };
         let transport = Arc::new(Libp2pTransport::new(libp2p_config));
 
@@ -542,30 +608,88 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             }
         };
 
-        println!("🔍 Searching for peers...");
+        // Live stats tracking
+        let live_stats = Arc::new(Mutex::new(LiveNodeStats {
+            start_time: Some(std::time::Instant::now()),
+            ..Default::default()
+        }));
 
-        // Give mDNS/Kademlia time to discover peers
+        // Track connected peer names for display
+        let peer_names: Arc<Mutex<std::collections::HashMap<String, String>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+
+        // Peer discovery and live feed task
         let transport_clone = transport.clone();
+        let live_stats_clone = live_stats.clone();
+        let peer_names_clone = peer_names.clone();
+        let contrib_clone = contrib.clone();
+        let is_foreground = foreground;
         let discovery_task = tokio::spawn(async move {
-            let mut check_count = 0;
-            let max_checks = 6; // 30 seconds total
+            let mut last_peers: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut last_stats_line_len = 0usize;
+
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                let peers = transport_clone.connected_peers().await;
-                if !peers.is_empty() {
-                    println!("✅ Connected to {} peer(s)", peers.len());
-                    break;
+
+                let current_peers = transport_clone.connected_peers().await;
+                let current_set: std::collections::HashSet<String> = current_peers.iter().cloned().collect();
+
+                // Check for new connections
+                for peer_id in current_set.difference(&last_peers) {
+                    // Generate a human-readable name for the peer
+                    let peer_name = generate_peer_display_name(peer_id);
+                    let short_addr = peer_id.chars().take(20).collect::<String>();
+
+                    let timestamp = chrono::Local::now().format("%H:%M:%S");
+                    println!("[{}] 🤝 {} connected    ({}...)", timestamp, peer_name, short_addr);
+
+                    // Store peer name
+                    peer_names_clone.lock().await.insert(peer_id.clone(), peer_name.clone());
+
+                    // Update contribution stats
+                    {
+                        let mut c = contrib_clone.lock().await;
+                        c.unique_peers.insert(peer_id.clone());
+                    }
                 }
-                check_count += 1;
-                if check_count >= max_checks {
-                    println!("🔍 No peers found yet. Waiting for connections... (Ctrl+C to stop)");
-                    break;
+
+                // Check for disconnections
+                for peer_id in last_peers.difference(&current_set) {
+                    let peer_name = peer_names_clone.lock().await.get(peer_id).cloned()
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let timestamp = chrono::Local::now().format("%H:%M:%S");
+                    println!("[{}] 👋 {} disconnected", timestamp, peer_name);
                 }
+
+                // Update live stats
+                {
+                    let mut stats = live_stats_clone.lock().await;
+                    stats.peers_connected = current_set.len();
+                }
+
+                // Update stats line (only in foreground mode)
+                if is_foreground {
+                    let stats = live_stats_clone.lock().await;
+                    let contrib = contrib_clone.lock().await;
+
+                    let stats_line = format!(
+                        "\rNetwork stats: {} peers | {} received | {} sent | uptime {}",
+                        stats.peers_connected,
+                        contrib.patterns_received,
+                        contrib.patterns_sent,
+                        stats.uptime_str()
+                    );
+
+                    // Clear previous line and print new one
+                    let padding = " ".repeat(last_stats_line_len.saturating_sub(stats_line.len()));
+                    print!("{}{}", stats_line, padding);
+                    let _ = std::io::stdout().flush();
+                    last_stats_line_len = stats_line.len();
+                }
+
+                last_peers = current_set;
             }
         });
-
-        println!("✅ Node running. Press Ctrl+C to stop.");
-        println!();
 
         // Log sync events
         let sync_log_path = sage_home().join("sync.log");
@@ -606,10 +730,11 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             }
         });
 
-        // Periodic brain save + sync logging
+        // Periodic brain save + sync logging + contribution save
         let k = knowledge.clone();
         let bp = brain_path.clone();
         let slp = sync_log_path.clone();
+        let contrib_save = contrib.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(sync_interval));
             loop {
@@ -628,6 +753,13 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                         let _ = writeln!(file, "[{}] Auto-save: {} active cells", timestamp, k.active_knowledge(0.01).len());
                     }
                 }
+
+                // Save contribution stats
+                {
+                    let mut c = contrib_save.lock().await;
+                    c.update_uptime();
+                    let _ = c.save();
+                }
             }
         });
 
@@ -636,6 +768,8 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
         discovery_task.abort();
 
         println!();
+        println!();
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!("🛑 Shutting down...");
 
         // Stop transport
@@ -658,9 +792,48 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                 let _ = writeln!(file, "[{}] Shutdown: {} active cells saved", timestamp, k.active_knowledge(0.01).len());
             }
         }
-        println!("💾 Brain saved. Goodbye!");
+
+        // Save final contribution stats
+        {
+            let mut c = contrib.lock().await;
+            c.update_uptime();
+            let _ = c.save();
+        }
+
+        let _final_stats = live_stats.lock().await;
+        let final_contrib = contrib.lock().await;
+        println!("💾 Brain saved.");
+        println!("📊 Session: {} peers | {} patterns received | {} sent",
+            final_contrib.peer_count(),
+            final_contrib.patterns_received,
+            final_contrib.patterns_sent
+        );
+        println!("👋 Goodbye!");
     });
 }
+
+/// Generate a human-readable display name for a peer from its ID.
+fn generate_peer_display_name(peer_id: &str) -> String {
+    // Use first few bytes of peer ID to generate a consistent name
+    let bytes: Vec<u8> = peer_id.bytes().take(4).collect();
+    if bytes.len() >= 2 {
+        let adj_idx = bytes[0] as usize % PEER_ADJECTIVES.len();
+        let noun_idx = bytes[1] as usize % PEER_NOUNS.len();
+        format!("{}-{}", PEER_ADJECTIVES[adj_idx], PEER_NOUNS[noun_idx])
+    } else {
+        "unknown-peer".to_string()
+    }
+}
+
+const PEER_ADJECTIVES: &[&str] = &[
+    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure",
+    "rare", "sage", "warm", "wise", "wild", "amber", "azure", "coral", "dusty", "golden",
+];
+
+const PEER_NOUNS: &[&str] = &[
+    "harbor", "ridge", "creek", "grove", "haven", "brook", "cliff", "delta", "forge", "glade",
+    "hill", "inlet", "knoll", "lake", "marsh", "nexus", "oasis", "peak", "quay", "river",
+];
 
 fn run_node_stop() {
     let pid_file = sage_home().join("node.pid");
@@ -934,6 +1107,257 @@ fn run_node_health() {
 
     println!();
     std::process::exit(exit_code);
+}
+
+/// Generate an invite link for direct peer connection.
+fn run_node_invite() {
+    use sage::network::identity::NodeIdentity;
+    use sage::network::invite::InviteCode;
+
+    let home = sage_home();
+    let key_path = home.join("identity.key");
+
+    // Load or create identity
+    let identity = match NodeIdentity::load_or_generate(Some(&key_path)) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Failed to load node identity: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Generate multiaddr for this node (using default port 4001)
+    // In a real implementation, we'd read the actual listening port from config
+    let multiaddr = format!("/ip4/0.0.0.0/tcp/4001/p2p/{}", identity.node_id);
+
+    let invite = InviteCode::generate(&multiaddr);
+
+    println!();
+    println!("🔗 Invite Code for {} ({})", identity.human_name, identity.node_id);
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+    println!("  {}", invite.code);
+    println!();
+    println!("Share this code with a friend. They can run:");
+    println!("  sage node join {}", invite.code);
+    println!();
+    println!("Valid for: {} (expires in {})", "24 hours", invite.time_remaining());
+    println!();
+}
+
+/// Join a peer using an invite code.
+fn run_node_join(code: &str) {
+    use sage::network::invite::InviteCode;
+
+    match InviteCode::parse(code) {
+        Ok(invite) => {
+            if !invite.is_valid() {
+                eprintln!("❌ This invite code has expired.");
+                std::process::exit(1);
+            }
+
+            println!("🔗 Invite code valid (expires in {})", invite.time_remaining());
+            println!("   Connecting to: {}", invite.multiaddr);
+            println!();
+
+            // Save the peer address to bootstrap file for next node start
+            let home = sage_home();
+            let bootstrap_path = home.join("bootstrap_peers.txt");
+
+            let mut peers: Vec<String> = if bootstrap_path.exists() {
+                std::fs::read_to_string(&bootstrap_path)
+                    .unwrap_or_default()
+                    .lines()
+                    .map(|s| s.to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            if !peers.contains(&invite.multiaddr) {
+                peers.push(invite.multiaddr.clone());
+                let _ = std::fs::write(&bootstrap_path, peers.join("\n"));
+            }
+
+            println!("✅ Added {} to bootstrap peers.", invite.multiaddr);
+            println!();
+            println!("Run `sage node start` to connect to this peer.");
+        }
+        Err(e) => {
+            eprintln!("❌ Invalid invite code: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Show the node log file.
+fn run_node_logs(follow: bool, lines: usize) {
+    let log_file = sage_home().join("node.log");
+
+    if !log_file.exists() {
+        eprintln!("No node log found at {}", log_file.display());
+        eprintln!("Start the node with: sage node start");
+        return;
+    }
+
+    if follow {
+        // Use tail -f for live following
+        #[cfg(unix)]
+        {
+            let status = std::process::Command::new("tail")
+                .args(["-f", "-n", &lines.to_string()])
+                .arg(&log_file)
+                .status();
+
+            if let Err(e) = status {
+                eprintln!("Failed to follow log: {}", e);
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            eprintln!("Live log following not supported on this platform.");
+            eprintln!("Log file: {}", log_file.display());
+        }
+    } else {
+        // Read and show last N lines
+        match std::fs::read_to_string(&log_file) {
+            Ok(content) => {
+                let all_lines: Vec<&str> = content.lines().collect();
+                let start = if all_lines.len() > lines {
+                    all_lines.len() - lines
+                } else {
+                    0
+                };
+
+                for line in &all_lines[start..] {
+                    println!("{}", line);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to read log: {}", e);
+            }
+        }
+    }
+}
+
+/// Export node stats as JSON (for whatssage.ai dashboard).
+fn run_node_stats(json_output: bool) {
+    use sage::network::contribution::ContributionStats;
+    use sage::network::identity::NodeIdentity;
+
+    let home = sage_home();
+    let brain_path = default_brain_path();
+    let key_path = home.join("identity.key");
+    let pid_file = home.join("node.pid");
+
+    // Load identity
+    let identity = if key_path.exists() {
+        NodeIdentity::load(&key_path).ok()
+    } else {
+        None
+    };
+
+    // Load contribution stats
+    let contrib = ContributionStats::load_or_create();
+
+    // Load brain for grid stats
+    let mut knowledge = NCAKnowledge::new();
+    let (active_cells, grid_utilization) = if std::path::Path::new(&brain_path).exists() {
+        if knowledge.load(&brain_path).is_ok() {
+            let active = knowledge.active_knowledge(0.01).len();
+            let total = knowledge.grid.width * knowledge.grid.height;
+            let util = active as f64 / total as f64;
+            (active, util)
+        } else {
+            (0, 0.0)
+        }
+    } else {
+        (0, 0.0)
+    };
+
+    // Check uptime
+    let uptime_secs = if pid_file.exists() {
+        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                #[cfg(target_os = "linux")]
+                {
+                    if let Ok(stat) = std::fs::metadata(format!("/proc/{}", pid)) {
+                        if let Ok(created) = stat.modified() {
+                            if let Ok(elapsed) = created.elapsed() {
+                                elapsed.as_secs()
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = pid;
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    let tier = contrib.tier();
+
+    if json_output {
+        let stats = serde_json::json!({
+            "node_name": identity.as_ref().map(|i| i.human_name.as_str()).unwrap_or("unknown"),
+            "node_id": identity.as_ref().map(|i| i.node_id.as_str()).unwrap_or("unknown"),
+            "version": VERSION,
+            "uptime_seconds": uptime_secs,
+            "patterns_sent": contrib.patterns_sent,
+            "patterns_received": contrib.patterns_received,
+            "peer_count": contrib.peer_count(),
+            "active_cells": active_cells,
+            "grid_utilization": grid_utilization,
+            "contribution_tier": tier.name()
+        });
+
+        println!("{}", serde_json::to_string_pretty(&stats).unwrap_or_else(|_| "{}".to_string()));
+    } else {
+        println!();
+        println!("SAGE Node Stats");
+        println!("═══════════════");
+        println!();
+
+        if let Some(ref id) = identity {
+            println!("Node:            {} ({})", id.human_name, id.node_id);
+        }
+
+        println!("Version:         v{}", VERSION);
+        println!("Tier:            {}", tier);
+        println!();
+        println!("Patterns sent:   {}", contrib.patterns_sent);
+        println!("Patterns recv:   {}", contrib.patterns_received);
+        println!("Unique peers:    {}", contrib.peer_count());
+        println!("Network age:     {}", contrib.network_age());
+        println!("Total uptime:    {}", contrib.uptime_str());
+        println!();
+        println!("Active cells:    {}", active_cells);
+        println!("Grid util:       {:.2}%", grid_utilization * 100.0);
+        println!();
+
+        if uptime_secs > 0 {
+            let h = uptime_secs / 3600;
+            let m = (uptime_secs % 3600) / 60;
+            println!("Current session: {}h {}m", h, m);
+        } else {
+            println!("Current session: Node not running");
+        }
+    }
 }
 
 /// Self-update: download latest binary, preserve data, run migration if needed.

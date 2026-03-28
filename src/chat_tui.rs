@@ -664,6 +664,78 @@ fn simple_hash(s: &str) -> usize {
     h
 }
 
+/// Check if the SAGE node is currently running (via PID file).
+fn is_node_running() -> bool {
+    let home = dirs::home_dir().unwrap_or_default().join(".sage");
+    let pid_file = home.join("node.pid");
+
+    if !pid_file.exists() {
+        return false;
+    }
+
+    if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            #[cfg(unix)]
+            {
+                return std::process::Command::new("kill")
+                    .args(["-0", &pid.to_string()])
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+                return true; // Assume running on non-Unix
+            }
+        }
+    }
+    false
+}
+
+/// Check if the user has already been prompted about running a node.
+fn was_node_prompted() -> bool {
+    let home = dirs::home_dir().unwrap_or_default().join(".sage");
+    let config_path = home.join("config.json");
+
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                return config.get("node_prompted").and_then(|v| v.as_bool()).unwrap_or(false);
+            }
+        }
+    }
+    false
+}
+
+/// Mark that the user has been prompted about running a node.
+fn mark_node_prompted() {
+    let home = dirs::home_dir().unwrap_or_default().join(".sage");
+    let config_path = home.join("config.json");
+    let _ = std::fs::create_dir_all(&home);
+
+    // Load existing config or create new
+    let mut config: serde_json::Value = if config_path.exists() {
+        std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Set node_prompted flag
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert("node_prompted".to_string(), serde_json::json!(true));
+    }
+
+    // Save
+    if let Ok(content) = serde_json::to_string_pretty(&config) {
+        let _ = std::fs::write(&config_path, content);
+    }
+}
+
 /// Run the ratatui TUI chat interface with local inference.
 pub fn run(
     engine_mode: EngineMode,
@@ -1227,6 +1299,56 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+
+    // First-run node prompt: ask user if they want to run a node
+    // Only prompt if this is the first conversation and no node is running
+    if is_first_run && !is_node_running() && !was_node_prompted() {
+        println!();
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("💡 Help SAGE grow smarter for everyone.");
+        println!();
+        println!("SAGE gets better when more people run nodes. Your node shares");
+        println!("anonymous knowledge patterns with the network — no raw data,");
+        println!("just compressed neural patterns that help every node learn faster.");
+        println!();
+        println!("Resources used: ~50MB RAM, ~1% CPU, minimal bandwidth.");
+        println!();
+        print!("Run a node?  [Y/n]: ");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+
+        // Read user input
+        let mut input = String::new();
+        if std::io::stdin().read_line(&mut input).is_ok() {
+            let input = input.trim().to_lowercase();
+            if input.is_empty() || input == "y" || input == "yes" {
+                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                println!();
+                println!("🌐 Starting SAGE node in background...");
+
+                // Mark that we've prompted
+                mark_node_prompted();
+
+                // Start node in background by spawning the command
+                let exe = std::env::current_exe().ok();
+                if let Some(exe_path) = exe {
+                    let _ = std::process::Command::new(exe_path)
+                        .args(["node", "start"])
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+                    println!("✅ Node started! View status with: sage node status");
+                }
+            } else {
+                mark_node_prompted();
+                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                println!();
+                println!("No problem! You can start a node anytime with: sage node start");
+            }
+        }
+        println!();
+    }
+
     println!("SAGE disconnected.");
     Ok(())
 }

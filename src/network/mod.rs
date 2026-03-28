@@ -3,9 +3,11 @@
 //! Provides node identity, knowledge diff computation, gossip message types,
 //! and the NetworkManager that ties it all together.
 
+pub mod contribution;
 pub mod diff;
 pub mod gossip;
 pub mod identity;
+pub mod invite;
 pub mod libp2p_transport;
 pub mod privacy;
 pub mod quarantine;
