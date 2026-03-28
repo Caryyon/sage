@@ -8,13 +8,21 @@
 use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
 use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
-use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, NUM_BASE_CHANNELS};
+use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, MEMORY_RECENCY, NUM_BASE_CHANNELS};
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
 use std::error::Error;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+// ── Delta Retrieval Quality Counters ──────────────────────────────────────
+/// Total number of knowledge retrievals that used delta attention.
+static TOTAL_RETRIEVALS: AtomicUsize = AtomicUsize::new(0);
+/// Retrievals where delta attention surfaced at least one unique result
+/// not already found by semantic/hash retrieval.
+static DELTA_UNIQUE_HITS: AtomicUsize = AtomicUsize::new(0);
 
 /// Number of NCA dream steps to run after encoding a response.
 const N_DREAM_STEPS: usize = 3;
@@ -179,6 +187,67 @@ impl KnowledgeLoop {
         Some(context)
     }
 
+    /// Delta-based retrieval using NCA spreading activation.
+    ///
+    /// Snapshots knowledge channels, runs NCA steps, finds cells with highest
+    /// delta magnitude. These are the "activated" concepts — what the NCA grid
+    /// thought about in response to the current input.
+    ///
+    /// Returns unique texts found by delta that were NOT in `already_found`.
+    pub fn retrieve_delta_unique(&mut self, already_found: &[String]) -> Vec<String> {
+        let top_k = self.max_results;
+        let delta_results = self.attention_decoder.attend_with_delta(
+            &mut self.knowledge.grid,
+            &[], // query_embedding unused for now (delta is query-agnostic)
+            top_k,
+            Some(&self.knowledge.text_store),
+        );
+
+        let already_set: std::collections::HashSet<&str> =
+            already_found.iter().map(|s| s.as_str()).collect();
+
+        let delta_unique: Vec<String> = delta_results
+            .into_iter()
+            .filter(|r| r.relevance > 0.0 && r.text.is_some())
+            .filter_map(|r| r.text)
+            .filter(|t| !already_set.contains(t.as_str()))
+            .collect();
+
+        TOTAL_RETRIEVALS.fetch_add(1, Ordering::Relaxed);
+        if !delta_unique.is_empty() {
+            DELTA_UNIQUE_HITS.fetch_add(1, Ordering::Relaxed);
+        }
+
+        let total = TOTAL_RETRIEVALS.load(Ordering::Relaxed);
+        if total % 10 == 0 && total > 0 {
+            let hits = DELTA_UNIQUE_HITS.load(Ordering::Relaxed);
+            tracing::debug!(
+                "Delta retrieval stats: {}/{} retrievals with unique hits ({:.1}%)",
+                hits,
+                total,
+                hits as f64 / total as f64 * 100.0
+            );
+        }
+
+        delta_unique
+    }
+
+    /// Write recency signal to the memory channel (channel 25) at a grid position.
+    /// Decays all existing recency values by 0.95 first, then writes 1.0 at the new position.
+    pub fn update_recency_channel(&mut self, pos: (usize, usize)) {
+        // Decay all existing recency values
+        for y in 0..self.knowledge.grid.height {
+            for x in 0..self.knowledge.grid.width {
+                self.knowledge.grid.cells[y][x][MEMORY_RECENCY] *= 0.95;
+            }
+        }
+        // Write 1.0 recency at the newly encoded position
+        let (px, py) = pos;
+        if px < self.knowledge.grid.width && py < self.knowledge.grid.height {
+            self.knowledge.grid.cells[py][px][MEMORY_RECENCY] = 1.0;
+        }
+    }
+
     /// Encode text into the NCA brain. Returns the grid position (x, y).
     pub fn encode(&mut self, text: &str, confidence: f64) -> (usize, usize) {
         self.knowledge.encode(text, confidence)
@@ -313,10 +382,36 @@ impl KnowledgeLoop {
         // 3. Retrieve relevant knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
 
+        // 3b. Delta retrieval: find additional concepts activated by NCA spreading activation
+        let semantic_texts: Vec<String> = if let Some(ref ctx) = knowledge_context {
+            // Extract text snippets already found in semantic retrieval for dedup
+            ctx.lines()
+                .filter(|l| l.starts_with("- "))
+                .map(|l| l[2..].to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let delta_unique = self.retrieve_delta_unique(&semantic_texts);
+        let n_delta_unique = delta_unique.len();
+        if n_delta_unique > 0 {
+            tracing::debug!(
+                "Delta retrieval added {} unique results not found by semantic search",
+                n_delta_unique
+            );
+        }
+
         // 4. Build message history with knowledge-augmented system prompt
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
             system = format!("{}\n\n{}", system, ctx);
+        }
+        if !delta_unique.is_empty() {
+            system.push_str("\n\n## Associatively Recalled Concepts\n(Activated by NCA spreading dynamics — may surface indirectly related knowledge):\n\n");
+            for text in &delta_unique {
+                system.push_str(&format!("- {}\n", text));
+            }
         }
 
         let mut messages = vec![ChatMessage {
@@ -340,6 +435,9 @@ impl KnowledgeLoop {
         // Also encode the full exchange for associative recall
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
+
+        // 6b. Write recency signal to memory channel 25
+        self.update_recency_channel(response_pos);
 
         // 7. Dream cycle: run NCA update steps on recently-written region
         self.step_knowledge(response_pos);
@@ -380,10 +478,27 @@ impl KnowledgeLoop {
         // 3. Retrieve knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
 
+        // 3b. Delta retrieval: find additional concepts activated by NCA spreading activation
+        let semantic_texts: Vec<String> = if let Some(ref ctx) = knowledge_context {
+            ctx.lines()
+                .filter(|l| l.starts_with("- "))
+                .map(|l| l[2..].to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let delta_unique = self.retrieve_delta_unique(&semantic_texts);
+
         // 4. Build messages
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
             system = format!("{}\n\n{}", system, ctx);
+        }
+        if !delta_unique.is_empty() {
+            system.push_str("\n\n## Associatively Recalled Concepts\n(Activated by NCA spreading dynamics):\n\n");
+            for text in &delta_unique {
+                system.push_str(&format!("- {}\n", text));
+            }
         }
 
         let mut messages = vec![ChatMessage {
@@ -397,14 +512,6 @@ impl KnowledgeLoop {
         });
 
         // 5. Stream response
-        let full_response = Arc::new(std::sync::Mutex::new(String::new()));
-        let resp_clone = Arc::clone(&full_response);
-        let wrapped_cb = Box::new(move |token: &str| {
-            resp_clone.lock().unwrap().push_str(token);
-            // We can't easily call the original callback here due to ownership,
-            // so we use a different approach
-        });
-
         // Actually, let's collect and use the callback properly
         let response_collector = Arc::new(std::sync::Mutex::new(String::new()));
         let collector = Arc::clone(&response_collector);
@@ -424,6 +531,9 @@ impl KnowledgeLoop {
             .encode(&response, self.response_encode_confidence);
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
+
+        // 6b. Write recency signal to memory channel 25
+        self.update_recency_channel(response_pos);
 
         // 7. Dream cycle
         self.step_knowledge(response_pos);

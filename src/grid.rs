@@ -437,6 +437,45 @@ impl Grid {
     /// # Arguments
     /// * `cx`, `cy` - Center coordinates of the repair region
     /// * `radius` - Half-width of the repair window
+    /// Snapshot the current state of knowledge channels (channels 26-31, the 6 embedding slots)
+    /// across the entire grid. Returns a 2D array: snapshot[y][x] = [f32; 6].
+    ///
+    /// Used for NCA Delta Attention: capture state before NCA steps, compare after,
+    /// and retrieve the cells with highest delta magnitude (the "activated" concepts).
+    pub fn snapshot_knowledge_channels(&self) -> Vec<Vec<[f32; 6]>> {
+        let mut snap = vec![vec![[0.0f32; 6]; self.width]; self.height];
+        for y in 0..self.height {
+            for x in 0..self.width {
+                for slot in 0..6 {
+                    snap[y][x][slot] = self.cells[y][x][KNOWLEDGE_CHANNELS_START + slot] as f32;
+                }
+            }
+        }
+        snap
+    }
+
+    /// Compute per-cell L2 norm of the change between two knowledge channel snapshots.
+    /// Returns a 2D array: delta[y][x] = L2 norm of change in the 6 embedding slots.
+    pub fn compute_delta_magnitude(
+        before: &Vec<Vec<[f32; 6]>>,
+        after: &Vec<Vec<[f32; 6]>>,
+    ) -> Vec<Vec<f32>> {
+        let h = before.len();
+        let w = if h > 0 { before[0].len() } else { 0 };
+        let mut delta = vec![vec![0.0f32; w]; h];
+        for y in 0..h.min(after.len()) {
+            for x in 0..w.min(after[y].len()) {
+                let mut sq_sum = 0.0f32;
+                for slot in 0..6 {
+                    let d = after[y][x][slot] - before[y][x][slot];
+                    sq_sum += d * d;
+                }
+                delta[y][x] = sq_sum.sqrt();
+            }
+        }
+        delta
+    }
+
     /// * `steps` - Number of freerun repair steps to run
     pub fn freerun_repair(&mut self, cx: usize, cy: usize, radius: usize, steps: usize) {
         // Snapshot knowledge channels BEFORE repair to verify they're untouched
