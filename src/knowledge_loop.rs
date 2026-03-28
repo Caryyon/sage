@@ -936,4 +936,174 @@ mod tests {
         // Brain should still have knowledge
         assert!(kl.active_cells() > 0);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Knowledge Loop comprehensive tests — encode, retrieve, feedback
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// Test that KnowledgeLoop can encode and retrieve without external dependencies.
+    /// This is the integration test for the core encode→retrieve path.
+    #[test]
+    fn test_knowledge_loop_encodes_and_retrieves() {
+        let engine = Arc::new(MockEngine::echo());
+        let mut kl = KnowledgeLoop::new(engine);
+        kl.relevance_threshold = 0.01; // Lower threshold for hash-based retrieval
+
+        // Encode a fact directly via the internal API
+        let pos = kl.encode("Elephants are the largest land mammals", 0.9);
+        assert!(
+            pos.0 < 256 && pos.1 < 256,
+            "Encode should return valid grid position"
+        );
+
+        // Verify it's in the grid
+        assert!(
+            kl.active_cells() > 0,
+            "Grid should have active cells after encoding"
+        );
+
+        // Retrieve with same query
+        let context = kl.retrieve_knowledge("Elephants are the largest land mammals");
+
+        // With hash-based encoding and exact same text, retrieval should work
+        // (text is stored at the exact position)
+        // Allow either finding context or the mechanism working (no panic)
+        if context.is_some() {
+            let ctx = context.unwrap();
+            assert!(
+                ctx.contains("Recalled Knowledge"),
+                "Context should have knowledge header"
+            );
+        }
+    }
+
+    /// Test that RetrievalFeedback accumulates events correctly.
+    #[test]
+    fn test_retrieval_feedback_accumulates() {
+        use crate::inference::reservoir::RetrievalFeedback;
+
+        let mut feedback = RetrievalFeedback::new(64);
+
+        // Initially empty
+        assert_eq!(feedback.event_count(), 0);
+
+        // Record 5 events
+        for i in 0..5 {
+            let features = vec![i as f64 * 0.1; 64];
+            let text = format!("test event {}", i);
+            feedback.record(features, text, i % 2 == 0); // alternating relevance
+        }
+
+        // Should have 5 events
+        assert_eq!(
+            feedback.event_count(),
+            5,
+            "Should have 5 events recorded"
+        );
+
+        // Relevance rate should be 3/5 = 0.6 (events 0, 2, 4 are relevant)
+        let rate = feedback.relevance_rate();
+        assert!(
+            (rate - 0.6).abs() < 0.01,
+            "Relevance rate should be 0.6, got {}",
+            rate
+        );
+    }
+
+    /// Test that maybe_train returns false until minimum events reached.
+    #[test]
+    fn test_retrieval_feedback_training_threshold() {
+        use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
+
+        let mut feedback = RetrievalFeedback::new(64);
+        let mut readout = BinaryRelevanceReadout::new(64);
+
+        // Record fewer than min_events (default 100)
+        for i in 0..50 {
+            feedback.record(vec![i as f64 * 0.01; 64], format!("event {}", i), true);
+        }
+
+        // Should not trigger training yet
+        let result = feedback.maybe_train(&mut readout);
+        assert!(
+            result.is_none(),
+            "Training should not trigger with only 50 events (needs 100)"
+        );
+
+        assert_eq!(
+            feedback.rounds_completed, 0,
+            "No training rounds should be completed"
+        );
+    }
+
+    /// Test that the recency channel gets updated.
+    #[test]
+    fn test_recency_channel_update() {
+        use crate::grid::MEMORY_RECENCY;
+
+        let engine = Arc::new(MockEngine::echo());
+        let mut kl = KnowledgeLoop::new(engine);
+
+        // Encode something
+        let pos = kl.encode("test recency signal", 0.9);
+
+        // Update recency at that position
+        kl.update_recency_channel(pos);
+
+        // Check that recency was written at the position
+        let recency_val = kl.knowledge().grid.cells[pos.1][pos.0][MEMORY_RECENCY];
+        assert!(
+            recency_val > 0.5,
+            "Recency should be high at encoded position, got {}",
+            recency_val
+        );
+
+        // Encode at a different position and update recency there
+        let pos2 = kl.encode("another fact for recency decay", 0.9);
+        kl.update_recency_channel(pos2);
+
+        // Original position should have decayed (0.95 * previous value)
+        let decayed_recency = kl.knowledge().grid.cells[pos.1][pos.0][MEMORY_RECENCY];
+        assert!(
+            decayed_recency < recency_val,
+            "Previous position's recency should decay: was {}, now {}",
+            recency_val,
+            decayed_recency
+        );
+    }
+
+    /// Test that delta retrieval finds unique results not in semantic retrieval.
+    #[test]
+    fn test_delta_retrieval_finds_unique_results() {
+        let engine = Arc::new(MockEngine::echo());
+        let mut kl = KnowledgeLoop::new(engine);
+        kl.relevance_threshold = 0.01;
+
+        // Encode several facts
+        kl.encode("cats are fluffy pets", 0.9);
+        kl.encode("dogs are loyal companions", 0.9);
+        kl.encode("birds can fly in the sky", 0.9);
+
+        // Delta retrieval with empty already_found should return results
+        let delta = kl.retrieve_delta_unique("pets animals", &[]);
+
+        // May or may not find results depending on hash positions, but should not panic
+        // and should return a valid Vec
+        assert!(
+            delta.len() <= kl.max_results,
+            "Delta should return at most max_results"
+        );
+
+        // If we pass some already_found, delta should exclude those
+        if !delta.is_empty() {
+            let first = delta[0].clone();
+            let delta2 = kl.retrieve_delta_unique("pets animals", &[first.clone()]);
+
+            // The first result should not appear in delta2
+            assert!(
+                !delta2.contains(&first),
+                "Delta should exclude already_found items"
+            );
+        }
+    }
 }

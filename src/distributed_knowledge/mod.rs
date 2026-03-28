@@ -945,4 +945,120 @@ mod tests {
         let mean = stats.mean_top_relevance();
         assert!((mean - 0.1).abs() < 0.001, "mean_top_relevance should be ~0.1, got {}", mean);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // End-to-end integration: quality gate test
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// QUALITY GATE: End-to-end retrieval hit rate test.
+    /// Encodes 10 facts, queries each with a key term, expects at least 50% hit rate.
+    /// This is a regression test — if hit rate drops below 50%, something is broken.
+    #[test]
+    fn test_end_to_end_retrieval_hit_rate() {
+        let mut store = NCAKnowledge::new();
+
+        // Disable Ollama for deterministic hash-based testing
+        store.config.ollama_url = None;
+
+        // 10 simple, semantically distinct facts
+        let facts = [
+            ("Paris is the capital of France", "Paris France capital"),
+            ("Water freezes at zero degrees Celsius", "water freezes zero"),
+            ("The Eiffel Tower is in Paris", "Eiffel Tower Paris"),
+            ("Rust is a systems programming language", "Rust programming language"),
+            ("Elephants are the largest land mammals", "elephants largest mammals"),
+            ("Mount Everest is the tallest mountain", "Everest tallest mountain"),
+            ("The Pacific Ocean is the largest ocean", "Pacific largest ocean"),
+            ("DNA contains genetic information", "DNA genetic information"),
+            ("Einstein developed relativity theory", "Einstein relativity theory"),
+            ("The Nile is the longest river in Africa", "Nile longest river"),
+        ];
+
+        // Encode all facts
+        for (fact, _query) in &facts {
+            store.encode(fact, 0.9);
+        }
+
+        // Query each fact and count hits
+        let mut hits = 0;
+        for (fact, query) in &facts {
+            let results = store.query(query, 10);
+
+            // A "hit" is when the queried fact appears in results
+            let is_hit = results.iter().any(|r| {
+                r.text.as_ref().map(|t| t == *fact).unwrap_or(false)
+            });
+
+            if is_hit {
+                hits += 1;
+            }
+        }
+
+        // Minimum 50% hit rate (5/10) — this is a quality gate
+        assert!(
+            hits >= 5,
+            "QUALITY GATE FAILED: End-to-end retrieval hit rate too low. \
+             Got {}/10 hits ({}%), expected at least 50%. \
+             This indicates a regression in encode/retrieve pipeline.",
+            hits,
+            hits * 10
+        );
+
+        eprintln!(
+            "End-to-end hit rate: {}/10 ({}%)",
+            hits,
+            hits * 10
+        );
+    }
+
+    /// Test that NCAKnowledge works correctly with text store persistence.
+    #[test]
+    fn test_text_store_roundtrip() {
+        let path = "/tmp/sage_test_text_store_roundtrip.bin";
+        let text_path = path.replace("brain", "text_store");
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&text_path);
+
+        let fact = "Rust memory safety without garbage collection";
+
+        // Create, encode, and save
+        {
+            let mut store = NCAKnowledge::new();
+            store.config.ollama_url = None;
+            store.encode(fact, 0.9);
+
+            // Verify text is in store
+            let results = store.query("Rust memory safety", 5);
+            let found_before_save = results.iter().any(|r| {
+                r.text.as_ref().map(|t| t.contains("Rust")).unwrap_or(false)
+            });
+            assert!(
+                found_before_save,
+                "Should find text in store before saving"
+            );
+
+            store.save(path).expect("Save should succeed");
+        }
+
+        // Load and verify text survived
+        {
+            let mut store = NCAKnowledge::new();
+            store.config.ollama_url = None;
+            store.load(path).expect("Load should succeed");
+
+            let results = store.query("Rust memory safety", 5);
+            let found_after_load = results.iter().any(|r| {
+                r.text.as_ref().map(|t| t.contains("Rust")).unwrap_or(false)
+            });
+            assert!(
+                found_after_load,
+                "Text store should persist across save/load. \
+                 This is a regression — text was lost during serialization."
+            );
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&text_path);
+    }
 }

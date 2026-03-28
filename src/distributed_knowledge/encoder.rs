@@ -640,4 +640,120 @@ mod tests {
             "At least one secondary position should differ from primary"
         );
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Encode → Retrieve roundtrip tests — the fundamental correctness check
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// CRITICAL: The most fundamental test — encode text, retrieve with query,
+    /// get back the original text. If this fails, nothing else works.
+    #[test]
+    fn test_encode_then_retrieve_roundtrip() {
+        use crate::distributed_knowledge::decoder::query_knowledge_with_text;
+        use crate::distributed_knowledge::text_store::TextStore;
+
+        let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
+        let mut config = EncoderConfig::default();
+        config.ollama_url = None; // Use hash fallback for deterministic tests
+        let mut text_store = TextStore::new();
+
+        // Encode a specific fact
+        let fact = "the sky is blue on clear days";
+        let features = encode_text(fact, &config);
+        let pos = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
+        text_store.insert(pos.0, pos.1, fact.to_string());
+
+        // Retrieve with related query
+        let results = query_knowledge_with_text(&grid, "sky blue", &config, 10, Some(&text_store));
+
+        // Should find the fact
+        assert!(
+            !results.is_empty(),
+            "Roundtrip failed: encode + retrieve returned no results"
+        );
+
+        // At least one result should have our text
+        let found_text = results.iter().any(|r| {
+            r.text
+                .as_ref()
+                .map(|t| t.contains("sky") || t.contains("blue"))
+                .unwrap_or(false)
+        });
+        assert!(
+            found_text,
+            "Roundtrip failed: retrieved text doesn't contain encoded content. \
+             Got: {:?}",
+            results.iter().map(|r| &r.text).collect::<Vec<_>>()
+        );
+    }
+
+    /// REGRESSION: Multiple facts should not collide on a 256×256 grid.
+    /// This tests that the 12-dim hashing and secondary positions work.
+    #[test]
+    fn test_encode_multiple_facts_no_collision() {
+        use crate::distributed_knowledge::decoder::query_knowledge_with_text;
+        use crate::distributed_knowledge::text_store::TextStore;
+
+        let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
+        let mut config = EncoderConfig::default();
+        config.ollama_url = None;
+        let mut text_store = TextStore::new();
+
+        // Encode 10 semantically distinct facts
+        let facts = [
+            ("Paris is the capital of France", "Paris capital"),
+            ("Tokyo is the largest city in Japan", "Tokyo Japan"),
+            ("Rust is a systems programming language", "Rust programming"),
+            ("The sun is a yellow dwarf star", "sun star"),
+            ("Water boils at 100 degrees Celsius", "water boils"),
+            ("Einstein developed the theory of relativity", "Einstein relativity"),
+            ("The Pacific is the largest ocean", "Pacific ocean"),
+            ("DNA contains genetic information", "DNA genetic"),
+            ("Mount Everest is the tallest mountain", "Everest mountain"),
+            ("The Nile is the longest river", "Nile river"),
+        ];
+
+        // Encode all facts
+        let mut positions = Vec::new();
+        for (fact, _query) in &facts {
+            let features = encode_text(fact, &config);
+            let pos = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
+            text_store.insert(pos.0, pos.1, fact.to_string());
+            positions.push(pos);
+        }
+
+        // Check for position collisions (should be rare with 10 items on 256×256)
+        let unique_positions: std::collections::HashSet<_> = positions.iter().collect();
+        let collision_count = positions.len() - unique_positions.len();
+        assert!(
+            collision_count <= 2,
+            "Too many position collisions: {} out of {} facts",
+            collision_count,
+            facts.len()
+        );
+
+        // For each fact, retrieve with its key query and check if we get it back
+        let mut hits = 0;
+        for (fact, query) in &facts {
+            let results =
+                query_knowledge_with_text(&grid, query, &config, 10, Some(&text_store));
+
+            if results.iter().any(|r| {
+                r.text.as_ref().map(|t| t == *fact).unwrap_or(false)
+            }) {
+                hits += 1;
+            }
+        }
+
+        // With hash-based embeddings, exact recall is limited, but we should get at least
+        // some hits. On a well-functioning system, typically 5-8 out of 10.
+        // We set a minimum bar of 3/10 (30%) to catch gross regressions.
+        assert!(
+            hits >= 3,
+            "Retrieval hit rate too low: only {}/{} facts retrieved correctly. \
+             Expected at least 30% hit rate to catch regressions.",
+            hits,
+            facts.len()
+        );
+    }
 }

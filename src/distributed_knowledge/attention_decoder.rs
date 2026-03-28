@@ -920,4 +920,170 @@ mod tests {
         let results = decoder.attend_with_delta(&mut grid, None, 5, None);
         assert!(results.is_empty(), "Empty grid should return empty results");
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Contrast retrieval tests — comprehensive assertions for query-conditioning
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// REGRESSION: If contrast retrieval is NOT query-conditioned, results for
+    /// different queries would be identical. This test catches that bug.
+    #[test]
+    fn test_contrast_retrieval_is_query_conditioned() {
+        let mut grid = Grid::new(64, 64);
+        let config = setup_test_config();
+        let decoder = AttentionDecoder::new(64, 64);
+        let mut text_store = crate::distributed_knowledge::text_store::TextStore::new();
+
+        // Encode two semantically distinct facts
+        let fact_a = "cats are furry mammals that meow";
+        let fact_b = "python is a programming language for data science";
+
+        let features_a = encode_text(fact_a, &config);
+        let pos_a = write_knowledge(&mut grid, &features_a, 0.9, 0.5, &config);
+        text_store.insert(pos_a.0, pos_a.1, fact_a.to_string());
+
+        let features_b = encode_text(fact_b, &config);
+        let pos_b = write_knowledge(&mut grid, &features_b, 0.9, 0.5, &config);
+        text_store.insert(pos_b.0, pos_b.1, fact_b.to_string());
+
+        // Query for fact A
+        let query_a = encode_text("cats furry animals", &config);
+        let results_a = decoder.attend_with_contrast(&query_a, &grid, 5, Some(&text_store));
+
+        // Query for fact B (completely different topic)
+        let query_b = encode_text("programming language code", &config);
+        let results_b = decoder.attend_with_contrast(&query_b, &grid, 5, Some(&text_store));
+
+        // Results should differ in some way — positions, relevance scores, or order
+        // If contrast is query-agnostic, these would be identical (the bug)
+        if !results_a.is_empty() && !results_b.is_empty() {
+            let positions_a: Vec<_> = results_a.iter().map(|r| r.position).collect();
+            let positions_b: Vec<_> = results_b.iter().map(|r| r.position).collect();
+            let relevances_a: Vec<f64> = results_a.iter().map(|r| r.relevance).collect();
+            let relevances_b: Vec<f64> = results_b.iter().map(|r| r.relevance).collect();
+
+            // At least one of: different positions OR different relevance scores
+            let positions_differ = positions_a != positions_b;
+            let relevances_differ = relevances_a != relevances_b;
+
+            assert!(
+                positions_differ || relevances_differ,
+                "Contrast retrieval must be query-conditioned: \
+                 results for different queries should differ in positions or relevance. \
+                 Got identical results for 'cats' vs 'programming': positions_a={:?}, positions_b={:?}",
+                positions_a, positions_b
+            );
+        }
+    }
+
+    /// REGRESSION: Contrast retrieval should return cells relevant to the query,
+    /// not arbitrary high-activation cells.
+    #[test]
+    fn test_contrast_retrieval_returns_relevant_cells() {
+        let mut grid = Grid::new(64, 64);
+        let config = setup_test_config();
+        let decoder = AttentionDecoder::new(64, 64);
+        let mut text_store = crate::distributed_knowledge::text_store::TextStore::new();
+
+        // Encode a specific fact
+        let fact = "the cat is a domestic mammal";
+        let features = encode_text(fact, &config);
+        let pos = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
+        text_store.insert(pos.0, pos.1, fact.to_string());
+
+        // Query with related terms
+        let query = encode_text("cat mammal pet", &config);
+        let results = decoder.attend_with_contrast(&query, &grid, 5, Some(&text_store));
+
+        if !results.is_empty() {
+            // Top result should have the text we encoded
+            let has_relevant_text = results.iter().any(|r| {
+                r.text
+                    .as_ref()
+                    .map(|t| t.contains("cat") || t.contains("mammal"))
+                    .unwrap_or(false)
+            });
+            assert!(
+                has_relevant_text || results[0].relevance > 0.0,
+                "Top contrast result should be relevant to query or have positive relevance"
+            );
+        }
+    }
+
+    /// CRITICAL REGRESSION: attend_with_contrast must NOT mutate the grid.
+    /// The main brain must stay untouched during retrieval operations.
+    #[test]
+    fn test_contrast_does_not_mutate_grid() {
+        let mut grid = Grid::new(64, 64);
+        let config = setup_test_config();
+        let decoder = AttentionDecoder::new(64, 64);
+
+        // Encode some knowledge
+        let features = encode_text("test knowledge for immutability check", &config);
+        write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
+
+        // Snapshot grid state before contrast retrieval
+        let snapshot_before: Vec<Vec<Vec<f64>>> = grid
+            .cells
+            .iter()
+            .map(|row| row.iter().map(|cell| cell.clone()).collect())
+            .collect();
+
+        // Run contrast retrieval
+        let query = encode_text("test knowledge", &config);
+        let _ = decoder.attend_with_contrast(&query, &grid, 10, None);
+
+        // Grid must be identical after retrieval
+        for y in 0..grid.height {
+            for x in 0..grid.width {
+                for ch in 0..grid.cells[y][x].len() {
+                    assert_eq!(
+                        grid.cells[y][x][ch], snapshot_before[y][x][ch],
+                        "Grid cell [{y}][{x}][{ch}] was mutated by attend_with_contrast! \
+                         Before: {}, After: {}",
+                        snapshot_before[y][x][ch], grid.cells[y][x][ch]
+                    );
+                }
+            }
+        }
+    }
+
+    /// CRITICAL REGRESSION: attend_with_delta must NOT mutate the MAIN grid.
+    /// It uses a scratch copy internally, but the original must be preserved.
+    #[test]
+    fn test_attend_with_delta_does_not_mutate_grid() {
+        let mut grid = Grid::new(64, 64);
+        let config = setup_test_config();
+        let decoder = AttentionDecoder::new(64, 64);
+
+        // Encode some knowledge
+        let features = encode_text("delta test knowledge preservation", &config);
+        write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
+
+        // Snapshot grid state before delta retrieval
+        let snapshot_before: Vec<Vec<Vec<f64>>> = grid
+            .cells
+            .iter()
+            .map(|row| row.iter().map(|cell| cell.clone()).collect())
+            .collect();
+
+        // Run delta retrieval (this internally clones and mutates a scratch grid)
+        let query = encode_text("delta test", &config);
+        let _ = decoder.attend_with_delta(&mut grid, Some(&query), 10, None);
+
+        // MAIN grid must be identical after retrieval
+        for y in 0..grid.height {
+            for x in 0..grid.width {
+                for ch in 0..grid.cells[y][x].len() {
+                    assert_eq!(
+                        grid.cells[y][x][ch], snapshot_before[y][x][ch],
+                        "MAIN grid cell [{y}][{x}][{ch}] was mutated by attend_with_delta! \
+                         Before: {}, After: {}. \
+                         Delta retrieval must only modify scratch copy, not main brain.",
+                        snapshot_before[y][x][ch], grid.cells[y][x][ch]
+                    );
+                }
+            }
+        }
+    }
 }

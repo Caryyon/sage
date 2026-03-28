@@ -411,4 +411,103 @@ mod tests {
             "Should deduplicate identical text snippets"
         );
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Bounds safety tests — prevent panics from index out of bounds
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// REGRESSION: scan_active_knowledge must not panic on a fresh/empty grid.
+    /// Previously could panic if activation threshold was below 0.0.
+    #[test]
+    fn test_scan_active_knowledge_no_panic_on_empty_grid() {
+        let grid = Grid::new(GRID_SIZE, GRID_SIZE);
+
+        // Should return empty vec, not panic
+        let results = scan_active_knowledge(&grid, 0.01);
+        assert!(
+            results.is_empty(),
+            "Fresh grid should have no active cells"
+        );
+
+        // Edge case: min_activation = 0 (all cells "active" with 0 activation)
+        let results_zero = scan_active_knowledge(&grid, 0.0);
+        // This would return all cells if we didn't have the >= check — that's OK,
+        // but it must not panic
+        assert!(
+            results_zero.len() <= GRID_SIZE * GRID_SIZE,
+            "Should return at most grid_size^2 cells"
+        );
+    }
+
+    /// REGRESSION: cell_embedding_vec must handle grids with fewer channels
+    /// than expected without panicking (index out of bounds bug).
+    #[test]
+    fn test_cell_embedding_vec_bounds() {
+        use crate::grid::NUM_CHANNELS;
+
+        // Standard grid with NUM_CHANNELS
+        let grid = Grid::new(64, 64);
+        assert_eq!(
+            grid.cells[0][0].len(),
+            NUM_CHANNELS,
+            "Grid should have NUM_CHANNELS channels"
+        );
+
+        // cell_embedding_vec should work on every cell without panic
+        for y in 0..grid.height {
+            for x in 0..grid.width {
+                let embedding = cell_embedding_vec(&grid, y, x);
+                // Should return a valid array (zeros for fresh grid)
+                assert_eq!(
+                    embedding.len(),
+                    NUM_EMBED_SLOTS,
+                    "Embedding should have NUM_EMBED_SLOTS elements"
+                );
+            }
+        }
+    }
+
+    /// REGRESSION: cell_embedding_vec gracefully handles cells with missing channels.
+    /// Old brains or corrupted grids might have fewer channels — this must not panic.
+    #[test]
+    fn test_cell_embedding_vec_graceful_degradation() {
+        // Manually create a grid with fewer channels (simulating old brain format)
+        let mut grid = Grid::new(4, 4);
+        // Shrink cells to only 10 channels (less than KNOWLEDGE_CHANNELS_START + NUM_EMBED_SLOTS)
+        for y in 0..grid.height {
+            for x in 0..grid.width {
+                grid.cells[y][x] = vec![0.5; 10]; // Only 10 channels
+            }
+        }
+
+        // cell_embedding_vec should return zeros for missing channels, not panic
+        let embedding = cell_embedding_vec(&grid, 0, 0);
+        assert_eq!(embedding.len(), NUM_EMBED_SLOTS);
+        // All should be 0.0 because KNOWLEDGE_CHANNELS_START (26) > 10
+        for slot in &embedding {
+            assert_eq!(
+                *slot, 0.0,
+                "Missing channels should return 0.0 (graceful degradation)"
+            );
+        }
+    }
+
+    /// Test read_cell_knowledge returns None for out-of-bounds coordinates.
+    #[test]
+    fn test_read_cell_knowledge_out_of_bounds() {
+        let grid = Grid::new(64, 64);
+
+        // Out of bounds should return None, not panic
+        let result_x_oob = read_cell_knowledge(&grid, 100, 0);
+        assert!(result_x_oob.is_none(), "x out of bounds should return None");
+
+        let result_y_oob = read_cell_knowledge(&grid, 0, 100);
+        assert!(result_y_oob.is_none(), "y out of bounds should return None");
+
+        let result_both_oob = read_cell_knowledge(&grid, 1000, 1000);
+        assert!(
+            result_both_oob.is_none(),
+            "Both coords out of bounds should return None"
+        );
+    }
 }
