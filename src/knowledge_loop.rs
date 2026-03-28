@@ -232,6 +232,75 @@ impl KnowledgeLoop {
         delta_unique
     }
 
+    /// Build an NCA "continuous thought" summary (COCONUT-style).
+    ///
+    /// Implements a lightweight version of the COCONUT (Chain of Continuous Thought) approach:
+    /// 1. Encode the query into the grid (activates relevant cells)
+    /// 2. Run NCA for N freerun steps — the grid "thinks" about the query
+    /// 3. Extract the top-K most activated knowledge cells after NCA dynamics
+    /// 4. Decode them to text snippets via TextStore
+    /// 5. Return a formatted "NCA activation summary" for the prompt
+    ///
+    /// This is distinct from delta attention (which finds *changing* cells) — here we
+    /// find the *most activated* cells after query-seeded NCA dynamics, giving a dense
+    /// summary of what the network state "knows" about the query.
+    ///
+    /// Returns None if the grid has no significant activations.
+    pub fn build_nca_thought_summary(&mut self, query: &str, n_steps: usize, top_k: usize) -> Option<String> {
+        use crate::grid::KNOWLEDGE_ACTIVATION;
+
+        // Encode query to activate the grid (low confidence — we don't want to pollute the brain)
+        let query_pos = self.knowledge.encode(query, 0.5);
+
+        // Run NCA steps from the query-seeded state
+        self.knowledge.freerun_repair(query_pos, n_steps);
+
+        // Collect top candidates by activation strength (positions only — no text_store borrow yet)
+        let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+        for y in 0..self.knowledge.grid.height {
+            for x in 0..self.knowledge.grid.width {
+                let act = self.knowledge.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                if act > 0.1 {
+                    candidates.push((x, y, act));
+                }
+            }
+        }
+
+        // Sort by activation descending
+        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Decode top-K cells to text (now we can borrow text_store)
+        let mut top_texts: Vec<String> = Vec::new();
+        for (x, y, _act) in candidates.iter().take(top_k * 3) {
+            // Try more than top_k since many cells may have no text
+            if let Some(text) = self.knowledge.text_store.get(*x, *y) {
+                top_texts.push(text.to_string());
+                if top_texts.len() >= top_k {
+                    break;
+                }
+            }
+        }
+
+        if top_texts.is_empty() {
+            return None;
+        }
+
+        // Format as COCONUT-style activation summary
+        let mut summary = String::from("## NCA Activation Summary\n");
+        summary.push_str("(Dense summary of neural grid state after query-seeded NCA dynamics):\n\n");
+        for (i, text) in top_texts.iter().enumerate() {
+            // Truncate long texts to first 120 chars for prompt efficiency
+            let snippet = if text.len() > 120 {
+                format!("{}…", &text[..120])
+            } else {
+                text.clone()
+            };
+            summary.push_str(&format!("{}. {}\n", i + 1, snippet));
+        }
+
+        Some(summary)
+    }
+
     /// Write recency signal to the memory channel (channel 25) at a grid position.
     /// Decays all existing recency values by 0.95 first, then writes 1.0 at the new position.
     pub fn update_recency_channel(&mut self, pos: (usize, usize)) {
@@ -402,6 +471,11 @@ impl KnowledgeLoop {
             );
         }
 
+        // 3c. Continuous thought layer (COCONUT-style): dense NCA grid activation summary
+        // Run NCA from query-seeded state and extract top activated knowledge cells.
+        // This is a dense summary of grid state, not just delta-unique cells.
+        let nca_thought = self.build_nca_thought_summary(user_input, 3, 5);
+
         // 4. Build message history with knowledge-augmented system prompt
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
@@ -412,6 +486,10 @@ impl KnowledgeLoop {
             for text in &delta_unique {
                 system.push_str(&format!("- {}\n", text));
             }
+        }
+        if let Some(ref thought) = nca_thought {
+            system.push_str("\n\n");
+            system.push_str(thought);
         }
 
         let mut messages = vec![ChatMessage {
@@ -489,6 +567,9 @@ impl KnowledgeLoop {
         };
         let delta_unique = self.retrieve_delta_unique(&semantic_texts);
 
+        // 3c. Continuous thought layer
+        let nca_thought = self.build_nca_thought_summary(user_input, 3, 5);
+
         // 4. Build messages
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
@@ -499,6 +580,10 @@ impl KnowledgeLoop {
             for text in &delta_unique {
                 system.push_str(&format!("- {}\n", text));
             }
+        }
+        if let Some(ref thought) = nca_thought {
+            system.push_str("\n\n");
+            system.push_str(thought);
         }
 
         let mut messages = vec![ChatMessage {
