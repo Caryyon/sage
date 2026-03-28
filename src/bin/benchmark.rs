@@ -161,14 +161,16 @@ fn run_semantic_benchmark(store: &NCAKnowledge, use_ollama: bool) -> MethodResul
     }
 }
 
-fn run_delta_benchmark(store: &mut NCAKnowledge) -> MethodResult {
+fn run_delta_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResult {
     let mut hits = 0;
     let mut total_relevance = 0.0;
     let mut total_results = 0.0;
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    if !use_ollama {
+        config.ollama_url = None;
+    }
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
 
     for &(query, answer) in FACTS {
@@ -191,7 +193,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge) -> MethodResult {
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: "Delta Attention (NCA)",
+        name: if use_ollama { "Delta (Ollama)" } else { "Delta Attention (NCA)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -200,7 +202,7 @@ fn run_delta_benchmark(store: &mut NCAKnowledge) -> MethodResult {
     }
 }
 
-fn run_combined_benchmark(store: &mut NCAKnowledge) -> MethodResult {
+fn run_combined_benchmark(store: &mut NCAKnowledge, use_ollama: bool) -> MethodResult {
     // Combined: union of semantic results and delta results (deduped)
     let mut hits = 0;
     let mut total_relevance = 0.0;
@@ -208,7 +210,9 @@ fn run_combined_benchmark(store: &mut NCAKnowledge) -> MethodResult {
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    if !use_ollama {
+        config.ollama_url = None;
+    }
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
 
     for &(query, answer) in FACTS {
@@ -258,7 +262,7 @@ fn run_combined_benchmark(store: &mut NCAKnowledge) -> MethodResult {
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: "Combined (Semantic + Delta)",
+        name: if use_ollama { "Combined (Ollama)" } else { "Combined (hash)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -284,7 +288,7 @@ fn print_table(results: &[MethodResult]) {
     println!();
 }
 
-fn save_results(results: &[MethodResult], store_stats: &str) {
+fn save_results(results: &[MethodResult], store_stats: &str, ollama_available: bool) {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let dir = std::path::PathBuf::from(format!(
         "{}/clawd/sage-team/sage-daily-dev",
@@ -294,12 +298,14 @@ fn save_results(results: &[MethodResult], store_stats: &str) {
     ));
     std::fs::create_dir_all(&dir).ok();
 
-    let path = dir.join(format!("{}-benchmark-results.md", date));
+    // Use the requested filename with embeddings suffix
+    let path = dir.join(format!("{}-benchmark-with-embeddings.md", date));
 
     let mut md = String::new();
     md.push_str(&format!("# SAGE Retrieval Quality Benchmark — {}\n\n", date));
     md.push_str("## Setup\n\n");
-    md.push_str(&format!("{}\n\n", store_stats));
+    md.push_str(&format!("{}\n", store_stats));
+    md.push_str(&format!("- Ollama available: {}\n\n", if ollama_available { "Yes (nomic-embed-text)" } else { "No" }));
     md.push_str("## Results\n\n");
     md.push_str("| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |\n");
     md.push_str("|------------------------------|----------|----------------|--------------|----------|\n");
@@ -324,11 +330,12 @@ fn save_results(results: &[MethodResult], store_stats: &str) {
     }
 
     md.push_str("## Notes\n\n");
-    md.push_str("- Ollama embeddings disabled (hash fallback) for reproducibility\n");
     md.push_str("- 50 fact-pairs encoded as full Q→A sentences\n");
     md.push_str("- Hit = answer keyword found in top-5 retrieved results\n");
     md.push_str("- Delta Attention uses NCA freerun + per-cell L2 delta magnitude\n");
     md.push_str("- Combined = union of semantic + delta, deduped, top-5 by relevance\n");
+    md.push_str("- Ollama uses nomic-embed-text for semantic embeddings\n");
+    md.push_str("- Hash fallback uses n-gram feature hashing when Ollama unavailable\n");
 
     match std::fs::write(&path, &md) {
         Ok(()) => println!("📄 Results saved to: {}", path.display()),
@@ -340,14 +347,21 @@ fn main() {
     println!("🔬 SAGE Retrieval Quality Benchmark");
     println!("   Facts: {}", FACTS.len());
     println!("   Grid: 256×256");
-    println!("   Embeddings: hash fallback (Ollama disabled for reproducibility)");
+
+    // Check if Ollama is available
+    let ollama_available = check_ollama_available();
+    if ollama_available {
+        println!("   Embeddings: Ollama (nomic-embed-text) ✓");
+    } else {
+        println!("   Embeddings: hash fallback (Ollama unavailable)");
+    }
     println!();
 
-    // Build the knowledge store
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None; // reproducible benchmark
+    // Build the knowledge store with Ollama if available
+    let use_ollama = ollama_available;
 
-    println!("📝 Encoding {} fact-pairs...", FACTS.len());
+    println!("📝 Encoding {} fact-pairs{}...", FACTS.len(),
+        if use_ollama { " with Ollama embeddings" } else { " (hash fallback)" });
     let encode_start = Instant::now();
 
     let mut store = NCAKnowledge::new();
@@ -361,30 +375,45 @@ fn main() {
     println!("   Encoded in {:.1}ms ({:.1}ms/fact)", encode_ms, encode_ms / FACTS.len() as f64);
 
     let store_stats = format!(
-        "- Facts encoded: {}\n- Grid size: {}×{}\n- Encoding time: {:.1}ms",
+        "- Facts encoded: {}\n- Grid size: {}×{}\n- Encoding time: {:.1}ms\n- Embedding method: {}",
         FACTS.len(),
         store.grid.width,
         store.grid.height,
-        encode_ms
+        encode_ms,
+        if use_ollama { "Ollama (nomic-embed-text)" } else { "Hash fallback" }
     );
 
-    // Run benchmarks
-    println!("\n🏃 Running semantic benchmark...");
-    let semantic_result = run_semantic_benchmark(&store);
+    // Run benchmarks with both hash and Ollama if available
+    let mut results = Vec::new();
 
-    println!("🏃 Running delta-attention benchmark...");
-    let delta_result = run_delta_benchmark(&mut store);
+    // Always run hash-based benchmarks for baseline
+    println!("\n🏃 Running hash-based semantic benchmark...");
+    results.push(run_semantic_benchmark(&store, false));
 
-    println!("🏃 Running combined benchmark...");
-    let combined_result = run_combined_benchmark(&mut store);
+    println!("🏃 Running hash-based delta-attention benchmark...");
+    results.push(run_delta_benchmark(&mut store, false));
 
-    let results = vec![semantic_result, delta_result, combined_result];
+    println!("🏃 Running hash-based combined benchmark...");
+    results.push(run_combined_benchmark(&mut store, false));
+
+    // Run Ollama benchmarks if available
+    if ollama_available {
+        println!("\n🏃 Running Ollama semantic benchmark...");
+        results.push(run_semantic_benchmark(&store, true));
+
+        println!("🏃 Running Ollama delta-attention benchmark...");
+        results.push(run_delta_benchmark(&mut store, true));
+
+        println!("🏃 Running Ollama combined benchmark...");
+        results.push(run_combined_benchmark(&mut store, true));
+    }
 
     // Print table
     print_table(&results);
 
-    // Detailed breakdown
-    println!("## Per-fact hit report (Combined method)\n");
+    // Detailed breakdown using best available method
+    let method_label = if ollama_available { "Ollama" } else { "hash" };
+    println!("## Per-fact hit report (Combined method with {})\n", method_label);
     {
         let mut combined_store = NCAKnowledge::new();
         for &(query, answer) in FACTS {
@@ -395,7 +424,9 @@ fn main() {
         let decoder = AttentionDecoder::new(combined_store.grid.width, combined_store.grid.height);
         let enc_config = {
             let mut c = EncoderConfig::default();
-            c.ollama_url = None;
+            if !ollama_available {
+                c.ollama_url = None;
+            }
             c
         };
 
@@ -435,10 +466,10 @@ fn main() {
             println!("  {} sem={} delta={} | {:40} → {}", flag, sem_hit as u8, delta_hit as u8, query, answer);
         }
         println!();
-        println!("  Semantic hits:  {}/{}", semantic_hits, FACTS.len());
-        println!("  Combined hits:  {}/{}", combined_hits, FACTS.len());
-        println!("  Delta-unique:   {} (found by delta only)", combined_hits - semantic_hits);
+        println!("  Semantic hits ({}):\t{}/{}", method_label, semantic_hits, FACTS.len());
+        println!("  Combined hits ({}):\t{}/{}", method_label, combined_hits, FACTS.len());
+        println!("  Delta-unique:\t\t{} (found by delta only)", combined_hits - semantic_hits);
     }
 
-    save_results(&results, &store_stats);
+    save_results(&results, &store_stats, ollama_available);
 }

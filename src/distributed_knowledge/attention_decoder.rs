@@ -19,6 +19,20 @@ use super::encoder::{feature_to_position, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
 
+/// Safely read knowledge activation from a cell.
+/// Returns 0.0 if the channel doesn't exist (graceful degradation).
+#[inline]
+fn safe_knowledge_activation(cell: &[f64]) -> f64 {
+    cell.get(KNOWLEDGE_ACTIVATION).copied().unwrap_or(0.0)
+}
+
+/// Safely read knowledge confidence from a cell.
+/// Returns 0.0 if the channel doesn't exist (graceful degradation).
+#[inline]
+fn safe_knowledge_confidence(cell: &[f64]) -> f64 {
+    cell.get(KNOWLEDGE_CONFIDENCE).copied().unwrap_or(0.0)
+}
+
 /// A result from attention-based knowledge retrieval.
 #[derive(Clone, Debug)]
 pub struct AttentionResult {
@@ -67,10 +81,16 @@ impl AttentionDecoder {
     }
 
     /// Extract the 6-slot embedding vector from a grid cell.
+    /// Returns zeros if the cell doesn't have enough channels (graceful degradation).
     fn cell_embedding(&self, grid: &Grid, x: usize, y: usize) -> [f64; NUM_EMBED_SLOTS] {
         let mut v = [0.0f64; NUM_EMBED_SLOTS];
+        let cell = &grid.cells[y][x];
+        let cell_len = cell.len();
         for (i, slot) in v.iter_mut().enumerate() {
-            *slot = grid.cells[y][x][KNOWLEDGE_CHANNELS_START + i];
+            let ch = KNOWLEDGE_CHANNELS_START + i;
+            if ch < cell_len {
+                *slot = cell[ch];
+            }
         }
         v
     }
@@ -122,7 +142,7 @@ impl AttentionDecoder {
 
         for y in 0..grid.height.min(self.grid_height) {
             for x in 0..grid.width.min(self.grid_width) {
-                let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                let activation = safe_knowledge_activation(&grid.cells[y][x]);
                 if activation < self.activation_threshold {
                     continue;
                 }
@@ -229,7 +249,7 @@ impl AttentionDecoder {
 
         for y in 0..grid.height.min(self.grid_height) {
             for x in 0..grid.width.min(self.grid_width) {
-                let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                let activation = safe_knowledge_activation(&grid.cells[y][x]);
                 if activation < self.activation_threshold {
                     continue;
                 }
@@ -282,7 +302,7 @@ impl AttentionDecoder {
 
         for y in 0..grid.height.min(self.grid_height) {
             for x in 0..grid.width.min(self.grid_width) {
-                let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                let activation = safe_knowledge_activation(&grid.cells[y][x]);
                 if activation < self.activation_threshold {
                     continue;
                 }
@@ -449,7 +469,7 @@ impl AttentionDecoder {
         let mut candidates: Vec<(usize, usize, f32)> = Vec::new();
         for y in 0..grid.height {
             for x in 0..grid.width {
-                let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                let activation = safe_knowledge_activation(&grid.cells[y][x]);
                 if activation < 1e-6 {
                     continue;
                 }
@@ -479,12 +499,13 @@ impl AttentionDecoder {
                 seen_texts.insert(t.clone());
             }
 
+            let cell = &grid.cells[y][x];
             results.push(KnowledgeActivation {
                 position: (x, y),
-                activation: grid.cells[y][x][KNOWLEDGE_ACTIVATION],
-                confidence: grid.cells[y][x][KNOWLEDGE_CONFIDENCE],
+                activation: safe_knowledge_activation(cell),
+                confidence: safe_knowledge_confidence(cell),
                 timestamp: 0.0,
-                embedding: grid.cells[y][x][KNOWLEDGE_CHANNELS_START],
+                embedding: cell.get(KNOWLEDGE_CHANNELS_START).copied().unwrap_or(0.0),
                 relevance: delta as f64, // Use delta as relevance score
                 text,
             });

@@ -521,6 +521,20 @@ impl KnowledgeStore for NCAKnowledge {
                     let grid: Grid = bincode::deserialize(&data[header_size..])
                         .map_err(|e| format!("Grid deserialization error: {}", e))?;
 
+                    // Check channel count mismatch (most common migration issue)
+                    let grid_channels = if !grid.cells.is_empty() && !grid.cells[0].is_empty() {
+                        grid.cells[0][0].len()
+                    } else {
+                        0
+                    };
+
+                    if grid_channels != NUM_CHANNELS {
+                        return Err(format!(
+                            "Channel count mismatch: brain has {} channels, expected {}",
+                            grid_channels, NUM_CHANNELS
+                        ));
+                    }
+
                     if header.version < BRAIN_VERSION
                         || (header.grid_size as usize) < self.grid.width
                     {
@@ -552,6 +566,20 @@ impl KnowledgeStore for NCAKnowledge {
         // Fallback: legacy v1 file (no header)
         let grid: Grid =
             bincode::deserialize(&data).map_err(|e| format!("Deserialization error: {}", e))?;
+
+        // Check channel count mismatch
+        let grid_channels = if !grid.cells.is_empty() && !grid.cells[0].is_empty() {
+            grid.cells[0][0].len()
+        } else {
+            0
+        };
+
+        if grid_channels != NUM_CHANNELS {
+            return Err(format!(
+                "Channel count mismatch: brain has {} channels, expected {}",
+                grid_channels, NUM_CHANNELS
+            ));
+        }
 
         if grid.width != self.grid.width || grid.height != self.grid.height {
             eprintln!(

@@ -30,15 +30,37 @@ pub struct KnowledgeActivation {
 }
 
 /// Read the first embedding slot value for a cell (backward-compat helper).
+/// Returns 0.0 if the channel doesn't exist (graceful degradation).
 fn cell_embedding(grid: &Grid, y: usize, x: usize) -> f64 {
-    grid.cells[y][x][KNOWLEDGE_CHANNELS_START]
+    grid.cells[y][x].get(KNOWLEDGE_CHANNELS_START).copied().unwrap_or(0.0)
+}
+
+/// Safely read knowledge activation from a cell.
+/// Returns 0.0 if the channel doesn't exist (graceful degradation).
+#[inline]
+fn safe_knowledge_activation(cell: &[f64]) -> f64 {
+    cell.get(KNOWLEDGE_ACTIVATION).copied().unwrap_or(0.0)
+}
+
+/// Safely read knowledge confidence from a cell.
+/// Returns 0.0 if the channel doesn't exist (graceful degradation).
+#[inline]
+fn safe_knowledge_confidence(cell: &[f64]) -> f64 {
+    cell.get(KNOWLEDGE_CONFIDENCE).copied().unwrap_or(0.0)
 }
 
 /// Extract the 6-slot embedding vector from a cell.
+/// Returns zeros if the cell doesn't have enough channels (graceful degradation).
 pub fn cell_embedding_vec(grid: &Grid, y: usize, x: usize) -> [f64; NUM_EMBED_SLOTS] {
     let mut v = [0.0f64; NUM_EMBED_SLOTS];
+    let cell = &grid.cells[y][x];
+    let cell_len = cell.len();
     for (i, slot) in v.iter_mut().enumerate() {
-        *slot = grid.cells[y][x][KNOWLEDGE_CHANNELS_START + i];
+        let ch = KNOWLEDGE_CHANNELS_START + i;
+        if ch < cell_len {
+            *slot = cell[ch];
+        }
+        // else: leave as 0.0 (graceful degradation for old brains)
     }
     v
 }
@@ -68,7 +90,8 @@ pub fn read_cell_knowledge(grid: &Grid, x: usize, y: usize) -> Option<KnowledgeA
         return None;
     }
 
-    let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+    let cell = &grid.cells[y][x];
+    let activation = safe_knowledge_activation(cell);
     if activation < 1e-6 {
         return None;
     }
@@ -76,7 +99,7 @@ pub fn read_cell_knowledge(grid: &Grid, x: usize, y: usize) -> Option<KnowledgeA
     Some(KnowledgeActivation {
         position: (x, y),
         activation,
-        confidence: grid.cells[y][x][KNOWLEDGE_CONFIDENCE],
+        confidence: safe_knowledge_confidence(cell),
         timestamp: 0.0,
         embedding: cell_embedding(grid, y, x),
         relevance: activation,
@@ -90,12 +113,13 @@ pub fn scan_active_knowledge(grid: &Grid, min_activation: f64) -> Vec<KnowledgeA
 
     for y in 0..grid.height {
         for x in 0..grid.width {
-            let activation = grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+            let cell = &grid.cells[y][x];
+            let activation = safe_knowledge_activation(cell);
             if activation >= min_activation {
                 results.push(KnowledgeActivation {
                     position: (x, y),
                     activation,
-                    confidence: grid.cells[y][x][KNOWLEDGE_CONFIDENCE],
+                    confidence: safe_knowledge_confidence(cell),
                     timestamp: 0.0,
                     embedding: cell_embedding(grid, y, x),
                     relevance: activation,
@@ -162,14 +186,15 @@ pub fn query_knowledge_by_features_with_text(
             let nx = ((qx as i32 + dx).rem_euclid(grid.width as i32)) as usize;
             let ny = ((qy as i32 + dy).rem_euclid(grid.height as i32)) as usize;
 
-            let activation = grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
+            let cell = &grid.cells[ny][nx];
+            let activation = safe_knowledge_activation(cell);
             if activation < 1e-6 {
                 continue;
             }
 
             let dist = ((dx * dx + dy * dy) as f64).sqrt();
             let proximity = 1.0 / (1.0 + dist);
-            let confidence = grid.cells[ny][nx][KNOWLEDGE_CONFIDENCE];
+            let confidence = safe_knowledge_confidence(cell);
 
             // Cosine similarity between query embedding and cell embedding slots
             let cell_embed = cell_embedding_vec(grid, ny, nx);

@@ -3,12 +3,12 @@
 //! Trains on semantic pairs (cat→mammal, dog→mammal, oak→tree, etc.)
 //! Saves weights to ~/.sage/nca_weights.bin
 //!
-//! Usage: cargo run --bin train-nca [--epochs 50] [--verbose]
+//! Usage: cargo run --bin train-nca [--epochs 50] [--verbose] [--quick]
 
 use sage::inference::nca_predictor::{
-    default_weights_path, train_nca, NcaPredictor, NcaWeights, Optimizer, SimpleTokenizer,
-    TrainingConfig,
+    default_weights_path, train_nca, NcaPredictor, Optimizer, TrainingConfig,
 };
+use std::path::PathBuf;
 
 /// Synthetic word-association corpus.
 /// Repeated patterns teach the NCA that certain words co-occur.
@@ -39,6 +39,25 @@ dog paws dog tail dog fur dog teeth mammal
 oak wood oak bark oak ring oak acorn tree
 pine resin pine bark pine cone pine needle tree
 "#;
+
+/// Quick mode corpus — minimal 8 word-pairs for fast pipeline testing
+/// Should complete in under 30 seconds
+const QUICK_CORPUS: &str = r#"
+cat is a mammal cat mammal
+dog is a mammal dog mammal
+oak is a tree oak tree
+pine is a tree pine tree
+salmon is a fish salmon fish
+eagle is a bird eagle bird
+rust is a language rust language
+python is a language python language
+"#;
+
+/// Get the path for quick mode weights (separate from full weights)
+fn quick_weights_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(format!("{}/.sage/nca_weights_quick.bin", home))
+}
 
 /// Verify retrieval after training: query "cat" and check if related words score high
 fn verify_retrieval(predictor: &mut NcaPredictor) {
@@ -159,6 +178,7 @@ fn main() {
     let mut epochs = 50;
     let mut verbose = false;
     let mut population_size = 12;
+    let mut quick_mode = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -174,11 +194,15 @@ fn main() {
             "--verbose" | "-v" => {
                 verbose = true;
             }
+            "--quick" | "-q" => {
+                quick_mode = true;
+            }
             "--help" | "-h" => {
                 eprintln!("train-nca: Train NCA on word associations using CMA-ES");
                 eprintln!("  --epochs <n>      Number of training epochs (default: 50)");
                 eprintln!("  --population <n>  CMA-ES population size (default: 12)");
                 eprintln!("  --verbose/-v      Show per-epoch progress");
+                eprintln!("  --quick/-q        Quick mode: tiny grid, 8 word-pairs, ~30 seconds");
                 return;
             }
             _ => {}
@@ -186,11 +210,38 @@ fn main() {
         i += 1;
     }
 
+    // Quick mode overrides: 8×8 grid, max 30 epochs, minimal corpus
+    let (corpus, epochs, grid_size, max_examples, weights_path) = if quick_mode {
+        eprintln!("⚡ Quick mode: testing training pipeline with tiny grid");
+        eprintln!("   This should complete in under 30 seconds.");
+        eprintln!();
+        (
+            QUICK_CORPUS,
+            epochs.min(30), // max 30 generations
+            8,              // 8×8 grid (64 cells)
+            16,             // few examples
+            quick_weights_path(),
+        )
+    } else {
+        (
+            WORD_ASSOC_CORPUS,
+            epochs,
+            8,
+            50,
+            default_weights_path(),
+        )
+    };
+
     eprintln!("🧠 SAGE NCA Word-Association Trainer");
-    eprintln!("   Corpus: built-in word associations (cat/dog/mammal, oak/pine/tree)");
+    if quick_mode {
+        eprintln!("   Mode: QUICK (pipeline test)");
+        eprintln!("   Corpus: 8 word-pairs (cat/dog/oak/pine/salmon/eagle/rust/python)");
+    } else {
+        eprintln!("   Corpus: built-in word associations (cat/dog/mammal, oak/pine/tree)");
+    }
     eprintln!("   Optimizer: CMA-ES (separable diagonal)");
     eprintln!("   Epochs: {}", epochs);
-    eprintln!("   Grid size: 8×8 (64 cells, training mode)");
+    eprintln!("   Grid size: {}×{} ({} cells)", grid_size, grid_size, grid_size * grid_size);
     eprintln!();
 
     let config = TrainingConfig {
@@ -199,13 +250,13 @@ fn main() {
         learning_rate: 0.001,
         epochs,
         context_window: 3,
-        grid_size: 8, // small grid for fast training
+        grid_size,
         nca_steps: 5,
-        max_examples: 50,
+        max_examples,
         optimizer: Optimizer::CmaEs,
     };
 
-    match train_nca(WORD_ASSOC_CORPUS, &config, verbose) {
+    match train_nca(corpus, &config, verbose) {
         Ok((mut predictor, accuracy, random_baseline)) => {
             let ratio = if random_baseline > 0.0 {
                 accuracy / random_baseline
@@ -227,7 +278,7 @@ fn main() {
             }
 
             // Save weights
-            let path = default_weights_path();
+            let path = weights_path;
             match predictor.weights().save(&path) {
                 Ok(()) => {
                     let size_kb = path
