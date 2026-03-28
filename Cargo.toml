@@ -129,3 +129,7 @@ path = "src/bin/nca_timing.rs"
 [[bin]]
 name = "train-nca"
 path = "src/bin/train_nca.rs"
+
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
