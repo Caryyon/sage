@@ -31,6 +31,9 @@ pub enum GossipMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeerAnnounce {
     pub node_id: String,
+    /// Human-readable name like "swift-harbor"
+    #[serde(default)]
+    pub human_name: String,
     pub public_key: [u8; 32],
     /// Merkle hash of this node's current grid state.
     pub state_hash: [u8; 32],

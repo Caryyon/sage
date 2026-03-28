@@ -31,6 +31,8 @@ use validation::{DiffValidator, TrustStore, ValidationResult};
 #[derive(Debug, Clone)]
 pub struct PeerInfo {
     pub node_id: String,
+    /// Human-readable name like "swift-harbor"
+    pub human_name: String,
     pub public_key: [u8; 32],
     pub state_hash: [u8; 32],
     pub last_seen_ms: u64,
@@ -199,6 +201,7 @@ impl NetworkManager {
         let mut peers = self.peers.write().await;
         let info = PeerInfo {
             node_id: announce.node_id.clone(),
+            human_name: announce.human_name.clone(),
             public_key: announce.public_key,
             state_hash: announce.state_hash,
             last_seen_ms: announce.timestamp_ms,
@@ -224,6 +227,7 @@ impl NetworkManager {
 
         GossipMessage::PeerAnnounce(PeerAnnounce {
             node_id: self.identity.node_id.clone(),
+            human_name: self.identity.human_name.clone(),
             public_key: self.identity.public_key,
             state_hash: merkle_hash(grid),
             grid_width: width,

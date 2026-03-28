@@ -369,6 +369,8 @@ impl KnowledgeStore for NCAKnowledge {
         let pos = write_knowledge(&mut self.grid, &features, confidence, ts, &self.config);
         // Store original text for later retrieval
         self.text_store.insert(pos.0, pos.1, text.to_string());
+        // Update daily stats counter
+        update_daily_stats();
         pos
     }
 
@@ -636,6 +638,39 @@ pub fn brain_info(path: &str) -> Result<BrainHeader, String> {
 pub fn default_brain_path() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     format!("{}/.sage/brain.bin", home)
+}
+
+/// Update daily stats counter in ~/.sage/stats.json.
+/// Called every time a fact is encoded.
+fn update_daily_stats() {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let stats_path = format!("{}/.sage/stats.json", home);
+
+    // Get today's date as key
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+    // Load existing stats or create new
+    let mut stats: serde_json::Value = if let Ok(content) = std::fs::read_to_string(&stats_path) {
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({"daily_facts": {}}))
+    } else {
+        serde_json::json!({"daily_facts": {}})
+    };
+
+    // Increment today's counter
+    let daily_facts = stats
+        .get_mut("daily_facts")
+        .and_then(|d| d.as_object_mut());
+
+    if let Some(daily) = daily_facts {
+        let count = daily.get(&today).and_then(|v| v.as_u64()).unwrap_or(0);
+        daily.insert(today, serde_json::json!(count + 1));
+    }
+
+    // Save stats (best effort — don't fail encoding if stats can't be saved)
+    if let Some(parent) = std::path::Path::new(&stats_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&stats_path, serde_json::to_string_pretty(&stats).unwrap_or_default());
 }
 
 #[cfg(test)]

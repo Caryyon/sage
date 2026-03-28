@@ -2,11 +2,39 @@
 //!
 //! Each SAGE node has a unique identity derived from an Ed25519 keypair.
 //! The node ID is a short, human-readable hash of the public key: `sage-XXXXXX`.
+//! Additionally, each node has a human-readable name like "swift-harbor".
 
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+// ── Human-readable node names (adjective-noun pairs) ───────────────────────
+// 50 adjectives × 50 nouns = 2500 combinations
+
+const ADJECTIVES: &[&str] = &[
+    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure",
+    "rare", "sage", "warm", "wise", "zest", "amber", "azure", "coral", "dusty", "faded",
+    "golden", "hazy", "ivory", "jade", "lapis", "maple", "noble", "olive", "pearl", "quiet",
+    "rosy", "silken", "tawny", "urban", "velvet", "wild", "young", "agile", "brave", "clear",
+    "dusk", "eager", "fleet", "gentle", "humble", "inner", "jolly", "kindred", "lively", "merry",
+];
+
+const NOUNS: &[&str] = &[
+    "harbor", "ridge", "creek", "grove", "haven", "brook", "cliff", "delta", "forge", "glade",
+    "hill", "inlet", "knoll", "lake", "marsh", "nexus", "oasis", "peak", "quay", "river",
+    "shore", "trail", "vale", "wharf", "zenith", "anchor", "beacon", "canyon", "drift", "ember",
+    "fjord", "glacier", "hollow", "island", "jetty", "kelp", "ledge", "meadow", "north", "orbit",
+    "prism", "quest", "reef", "summit", "tundra", "union", "vista", "woods", "yard", "zone",
+];
+
+/// Generate a human-readable name from a seed (deterministic).
+pub fn generate_human_name(seed: &[u8; 32]) -> String {
+    // Use first two bytes to select adjective and noun
+    let adj_idx = seed[0] as usize % ADJECTIVES.len();
+    let noun_idx = seed[1] as usize % NOUNS.len();
+    format!("{}-{}", ADJECTIVES[adj_idx], NOUNS[noun_idx])
+}
 
 /// A SAGE node identity backed by an Ed25519 keypair (64-byte seed+public stored on disk).
 #[derive(Clone)]
@@ -17,13 +45,22 @@ pub struct NodeIdentity {
     pub public_key: [u8; 32],
     /// Short human-readable ID like `sage-7f3a2b`
     pub node_id: String,
+    /// Human-readable name like `swift-harbor`
+    pub human_name: String,
 }
 
 impl fmt::Debug for NodeIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeIdentity")
             .field("node_id", &self.node_id)
+            .field("human_name", &self.human_name)
             .finish()
+    }
+}
+
+impl fmt::Display for NodeIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.human_name, self.node_id)
     }
 }
 
@@ -56,10 +93,12 @@ impl NodeIdentity {
         // a hash-based derivation that's deterministic.
         let public_key = simple_pubkey_derive(&seed);
         let node_id = Self::derive_node_id(&public_key);
+        let human_name = generate_human_name(&public_key);
         Self {
             seed,
             public_key,
             node_id,
+            human_name,
         }
     }
 
@@ -98,10 +137,12 @@ impl NodeIdentity {
         seed.copy_from_slice(&data[..32]);
         public_key.copy_from_slice(&data[32..]);
         let node_id = Self::derive_node_id(&public_key);
+        let human_name = load_or_generate_human_name(&public_key);
         Ok(Self {
             seed,
             public_key,
             node_id,
+            human_name,
         })
     }
 
@@ -143,6 +184,39 @@ fn simple_pubkey_derive(seed: &[u8; 32]) -> [u8; 32] {
         pk[i] = seed[i].wrapping_mul(137).wrapping_add(seed[(i + 13) % 32]) ^ 0xA5;
     }
     pk
+}
+
+/// Default path for node name file.
+fn default_name_path() -> PathBuf {
+    let home = dirs::home_dir().expect("could not determine home directory");
+    home.join(".sage").join("node_name")
+}
+
+/// Load human name from disk or generate one from public key.
+/// The name is persisted to ~/.sage/node_name for consistency across restarts.
+fn load_or_generate_human_name(public_key: &[u8; 32]) -> String {
+    let path = default_name_path();
+
+    // Try to load existing name
+    if path.exists() {
+        if let Ok(name) = fs::read_to_string(&path) {
+            let name = name.trim().to_string();
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+
+    // Generate new name from public key
+    let name = generate_human_name(public_key);
+
+    // Persist the name
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&path, &name);
+
+    name
 }
 
 #[cfg(test)]
@@ -187,5 +261,32 @@ mod tests {
         let a = NodeIdentity::from_seed([1u8; 32]);
         let b = NodeIdentity::from_seed([2u8; 32]);
         assert_ne!(a.node_id, b.node_id);
+    }
+
+    #[test]
+    fn test_human_name_format() {
+        let seed = [42u8; 32];
+        let name = generate_human_name(&seed);
+        // Should be adjective-noun format
+        assert!(name.contains('-'), "human name should contain hyphen: {}", name);
+        let parts: Vec<_> = name.split('-').collect();
+        assert_eq!(parts.len(), 2, "human name should have exactly 2 parts");
+        assert!(!parts[0].is_empty(), "adjective should not be empty");
+        assert!(!parts[1].is_empty(), "noun should not be empty");
+    }
+
+    #[test]
+    fn test_human_name_deterministic() {
+        let seed = [123u8; 32];
+        let a = generate_human_name(&seed);
+        let b = generate_human_name(&seed);
+        assert_eq!(a, b, "same seed should produce same name");
+    }
+
+    #[test]
+    fn test_identity_has_human_name() {
+        let id = NodeIdentity::generate();
+        assert!(!id.human_name.is_empty(), "identity should have a human name");
+        assert!(id.human_name.contains('-'), "human name should be adjective-noun: {}", id.human_name);
     }
 }
