@@ -15,7 +15,7 @@
 //! matter for a given query, compared to pure cosine+proximity scoring.
 
 use super::decoder::KnowledgeActivation;
-use super::encoder::{FeatureVector, NUM_EMBED_SLOTS};
+use super::encoder::{feature_to_position, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
 
@@ -363,28 +363,77 @@ impl AttentionDecoder {
     /// and retrieves the cells with highest delta. These are what the grid "activated"
     /// in response to the query — the spreading activation front.
     ///
+    /// **Query conditioning**: If `query_features` is provided, injects the query
+    /// into the grid at low confidence (~0.1 weight) before running freerun steps.
+    /// This seeds the NCA dynamics so different queries activate different cells.
+    ///
     /// Returns results sorted by delta magnitude (descending).
     pub fn attend_with_delta(
         &self,
         grid: &mut Grid,
-        query_embedding: &[f32],
+        query_features: Option<&FeatureVector>,
         top_k: usize,
         text_store: Option<&TextStore>,
     ) -> Vec<KnowledgeActivation> {
-        // 1. Snapshot knowledge channels before NCA steps
+        // 1. If query features provided, inject into grid at low confidence to seed NCA dynamics
+        // This is the key fix: query-conditioning makes delta retrieval query-aware.
+        let query_center = if let Some(features) = query_features {
+            // Find position based on query features (same hashing as encoder)
+            let (qx, qy) = feature_to_position(features, grid.width, grid.height);
+
+            // Inject query signal at low confidence (~0.1) so it influences dynamics
+            // without overwriting existing knowledge
+            let inject_weight = 0.1;
+            let inject_radius = 2;
+
+            for dy in -(inject_radius as i32)..=(inject_radius as i32) {
+                for dx in -(inject_radius as i32)..=(inject_radius as i32) {
+                    let nx = ((qx as i32 + dx).rem_euclid(grid.width as i32)) as usize;
+                    let ny = ((qy as i32 + dy).rem_euclid(grid.height as i32)) as usize;
+
+                    let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                    if dist > inject_radius as f64 {
+                        continue;
+                    }
+                    let decay = 0.5_f64.powf(dist);
+
+                    // Write query embedding slots at low weight
+                    let feat_len = features.values.len().max(1);
+                    for slot in 0..NUM_EMBED_SLOTS {
+                        let feat_idx = (slot * feat_len / NUM_EMBED_SLOTS) % feat_len;
+                        let embedding_val = features.values[feat_idx];
+                        let ch = KNOWLEDGE_CHANNELS_START + slot;
+                        let existing = grid.cells[ny][nx][ch];
+                        // Blend: mostly existing, small query signal
+                        grid.cells[ny][nx][ch] = existing * (1.0 - inject_weight * decay)
+                            + embedding_val * inject_weight * decay;
+                    }
+
+                    // Bump activation slightly at query position to seed dynamics
+                    let existing_act = grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
+                    grid.cells[ny][nx][KNOWLEDGE_ACTIVATION] =
+                        (existing_act + inject_weight * decay * 0.3).clamp(0.0, 1.0);
+                }
+            }
+
+            Some((qx, qy))
+        } else {
+            None
+        };
+
+        // 2. Snapshot knowledge channels before NCA steps
         let before = grid.snapshot_knowledge_channels();
 
-        // 2. Run NCA freerun steps — let the grid react
-        // Use center of grid as anchor since we're doing a full-grid activation scan
-        let cx = grid.width / 2;
-        let cy = grid.height / 2;
+        // 3. Run NCA freerun steps — let the grid react to query-seeded state
+        // Center freerun around query position if available, otherwise grid center
+        let (cx, cy) = query_center.unwrap_or((grid.width / 2, grid.height / 2));
         let radius = grid.width / 2; // Full grid
         grid.freerun_repair(cx, cy, radius, 4);
 
-        // 3. Snapshot after NCA steps
+        // 4. Snapshot after NCA steps
         let after = grid.snapshot_knowledge_channels();
 
-        // 4. Compute delta magnitude per cell
+        // 5. Compute delta magnitude per cell
         let deltas = Grid::compute_delta_magnitude(&before, &after);
 
         // Compute grid energy signal (convergence metric)
@@ -396,7 +445,7 @@ impl AttentionDecoder {
             .sqrt();
         tracing::debug!("NCA grid energy after query: {:.4}", grid_energy);
 
-        // 5. Find top-K cells by delta magnitude, filtered by activation
+        // 6. Find top-K cells by delta magnitude, filtered by activation
         let mut candidates: Vec<(usize, usize, f32)> = Vec::new();
         for y in 0..grid.height {
             for x in 0..grid.width {
@@ -415,7 +464,7 @@ impl AttentionDecoder {
         candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
         candidates.truncate(top_k);
 
-        // 6. Build KnowledgeActivation results with text lookup
+        // 7. Build KnowledgeActivation results with text lookup
         let mut seen_texts = std::collections::HashSet::new();
         let mut results: Vec<KnowledgeActivation> = Vec::new();
 
@@ -659,10 +708,11 @@ mod tests {
             .collect();
         assert!(!active_before.is_empty(), "Should have active cells after encoding");
 
-        // Run delta retrieval
+        // Run delta retrieval with a query to test query-conditioning
+        let query_features = encode_text("rust programming", &config);
         let results = decoder.attend_with_delta(
             &mut grid,
-            &[],     // query_embedding unused
+            Some(&query_features),
             10,
             Some(&text_store),
         );
@@ -689,8 +739,8 @@ mod tests {
         let mut grid = Grid::new(32, 32);
         let decoder = AttentionDecoder::new(32, 32);
 
-        // Should not panic on empty grid
-        let results = decoder.attend_with_delta(&mut grid, &[], 5, None);
+        // Should not panic on empty grid (with no query features)
+        let results = decoder.attend_with_delta(&mut grid, None, 5, None);
         assert!(results.is_empty(), "Empty grid should return empty results");
     }
 }

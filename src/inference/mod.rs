@@ -1,8 +1,9 @@
 //! Inference engine abstraction
 //!
-//! Provides a unified trait for LLM inference, with two backends:
+//! Provides a unified trait for LLM inference, with multiple backends:
 //! - `EmbeddedLLM`: Runs a quantized GGUF model in-process via candle (default)
 //! - `OllamaEngine`: HTTP client to external Ollama process (optional fallback)
+//! - `OfflineEngine`: Graceful degradation when no LLM is available (Phase 3 groundwork)
 
 pub mod backprop_trainer;
 pub mod criticality;
@@ -11,6 +12,7 @@ pub mod embedded;
 pub mod embeddings;
 pub mod kan;
 pub mod nca_predictor;
+pub mod offline;
 pub mod ollama;
 pub mod reservoir;
 
@@ -62,7 +64,7 @@ pub enum ChatRole {
 }
 
 /// Create the default inference engine.
-/// Tries embedded LLM first, falls back to Ollama if available.
+/// Tries embedded LLM first, falls back to Ollama, then offline mode.
 pub fn default_engine() -> Box<dyn InferenceEngine> {
     // Try embedded first
     match embedded::EmbeddedLLM::new(None) {
@@ -82,9 +84,15 @@ pub fn default_engine() -> Box<dyn InferenceEngine> {
         return Box::new(ollama);
     }
 
-    eprintln!("❌ No inference engine available! Install a model or start Ollama.");
-    // Return Ollama anyway (will error on use)
-    Box::new(ollama)
+    // Final fallback: offline mode (knowledge retrieval only)
+    eprintln!("⚠️  No LLM available — using offline mode (knowledge retrieval only)");
+    eprintln!("   Start Ollama or install an embedded model for full responses.");
+    Box::new(offline::OfflineEngine::new())
+}
+
+/// Check if Ollama is available at the given URL (500ms timeout)
+pub fn is_ollama_available(url: &str) -> bool {
+    offline::is_ollama_available(url)
 }
 
 /// Create an engine with a specific preference
@@ -111,11 +119,10 @@ pub fn engine_with_preference(
             Box::new(engine)
         }
         Err(e) => {
-            eprintln!("❌ No inference engine available: {}", e);
-            Box::new(ollama::OllamaEngine::new(
-                model.map(|s| s.to_string()),
-                ollama_url.map(|s| s.to_string()),
-            ))
+            eprintln!("⚠️  Embedded LLM unavailable: {}", e);
+            // Final fallback: offline mode
+            eprintln!("⚠️  No LLM available — using offline mode (knowledge retrieval only)");
+            Box::new(offline::OfflineEngine::new())
         }
     }
 }

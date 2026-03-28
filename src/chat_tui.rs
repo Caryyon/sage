@@ -585,6 +585,8 @@ fn ui(f: &mut Frame, state: &AppState) {
     // Status bar
     let engine_color = if state.engine_name.contains("Ollama") {
         CYAN
+    } else if state.engine_name.contains("Offline") {
+        Color::Rgb(0xaa, 0x55, 0x55) // Muted red for offline mode
     } else {
         ORANGE
     };

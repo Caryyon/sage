@@ -5,15 +5,22 @@
 //!   - Hit rate (exact answer in top-5 results)
 //!   - Mean relevance score
 //!   - Semantic-only vs delta-attention vs combined retrieval
+//!   - Hash fallback vs Ollama embeddings comparison
 //!
 //! Usage: cargo run --bin benchmark
 //! Results saved to ~/clawd/sage-team/sage-daily-dev/<date>-benchmark-results.md
 
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::distributed_knowledge::decoder::{KnowledgeActivation, query_knowledge_with_text};
-use sage::distributed_knowledge::encoder::EncoderConfig;
+use sage::distributed_knowledge::encoder::{EncoderConfig, get_ollama_embedding};
 use sage::distributed_knowledge::attention_decoder::AttentionDecoder;
 use std::time::Instant;
+
+/// Check if Ollama is available and can generate embeddings
+fn check_ollama_available() -> bool {
+    let config = EncoderConfig::default();
+    get_ollama_embedding("test", &config).is_some()
+}
 
 /// The 50 fact-pairs used for benchmarking.
 /// Format: (query, answer) — answer must appear in the encoded text to count as a hit.
@@ -116,14 +123,16 @@ fn mean_relevance(results: &[KnowledgeActivation]) -> f64 {
     results.iter().map(|r| r.relevance).sum::<f64>() / results.len() as f64
 }
 
-fn run_semantic_benchmark(store: &NCAKnowledge) -> MethodResult {
+fn run_semantic_benchmark(store: &NCAKnowledge, use_ollama: bool) -> MethodResult {
     let mut hits = 0;
     let mut total_relevance = 0.0;
     let mut total_results = 0.0;
     let start = Instant::now();
 
     let mut config = EncoderConfig::default();
-    config.ollama_url = None; // Force hash fallback for reproducibility
+    if !use_ollama {
+        config.ollama_url = None; // Force hash fallback
+    }
 
     for &(query, answer) in FACTS {
         let results = query_knowledge_with_text(
@@ -143,7 +152,7 @@ fn run_semantic_benchmark(store: &NCAKnowledge) -> MethodResult {
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: "Semantic (hash)",
+        name: if use_ollama { "Semantic (Ollama)" } else { "Semantic (hash)" },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -158,13 +167,17 @@ fn run_delta_benchmark(store: &mut NCAKnowledge) -> MethodResult {
     let mut total_results = 0.0;
     let start = Instant::now();
 
+    let mut config = EncoderConfig::default();
+    config.ollama_url = None;
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
 
     for &(query, answer) in FACTS {
+        // Encode query to get features for query-conditioned delta retrieval
+        let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
         // Use delta-attention retrieval (NCA freerun + delta magnitude)
         let results = decoder.attend_with_delta(
             &mut store.grid,
-            &[], // no Ollama embedding — use pure delta
+            Some(&query_features),
             5,
             Some(&store.text_store),
         );
@@ -207,9 +220,11 @@ fn run_combined_benchmark(store: &mut NCAKnowledge) -> MethodResult {
             Some(&store.text_store),
         );
 
+        // Encode query for query-conditioned delta retrieval
+        let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
         let delta = decoder.attend_with_delta(
             &mut store.grid,
-            &[],
+            Some(&query_features),
             5,
             Some(&store.text_store),
         );
@@ -395,9 +410,11 @@ fn main() {
                 5,
                 Some(&combined_store.text_store),
             );
+            // Encode query for query-conditioned delta retrieval
+            let query_features = sage::distributed_knowledge::encoder::encode_text(query, &enc_config);
             let delta = decoder.attend_with_delta(
                 &mut combined_store.grid,
-                &[],
+                Some(&query_features),
                 5,
                 Some(&combined_store.text_store),
             );

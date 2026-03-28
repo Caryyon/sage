@@ -1,0 +1,68 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Target triples for dependency checking
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+# RustSec advisory database
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Fail on vulnerabilities
+vulnerability = "deny"
+# Warn on unmaintained crates
+unmaintained = "warn"
+# Warn on yanked crates
+yanked = "warn"
+# Ignore advisories (use sparingly, with justification)
+ignore = []
+
+[licenses]
+# Allow these licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Unlicense",
+]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+# Warn on crates with no license
+unlicensed = "warn"
+
+[bans]
+# Deny multiple versions of the same crate
+multiple-versions = "deny"
+# Warn on wildcard dependencies
+wildcards = "warn"
+# Allow workspace duplicates (common in large projects)
+workspace-default-features = "allow"
+# Highlight duplicate crate graphs
+highlight = "all"
+# Skip certain crates from duplicate checks (use sparingly)
+skip = []
+# Skip specific versions of crates from duplicate checks
+skip-tree = []
+
+[sources]
+# Only allow crates from crates.io
+unknown-registry = "deny"
+# Only allow git sources from known hosts
+unknown-git = "deny"
+# Allowed registries
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allowed git sources (add if needed)
+allow-git = []

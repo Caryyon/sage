@@ -12,6 +12,7 @@ use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, MEM
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
+use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -33,6 +34,9 @@ const N_FREERUN_STEPS: usize = 3;
 /// Number of NCA update steps to run BEFORE retrieval (post-encode, pre-query).
 /// This lets the grid "react" to newly encoded input before we read from it.
 const N_PRE_RETRIEVE_STEPS: usize = 3;
+
+/// Feature dimension for retrieval feedback (matches encoder config num_features)
+const RETRIEVAL_FEATURE_DIM: usize = 64;
 
 /// The core SAGE knowledge loop: encode → retrieve → generate → encode → dream.
 ///
@@ -63,6 +67,14 @@ pub struct KnowledgeLoop {
     attention_decoder: AttentionDecoder,
     /// Encoder config for embedding queries.
     encoder_config: EncoderConfig,
+    /// Retrieval feedback loop — accumulates relevance signals and fine-tunes readout.
+    retrieval_feedback: RetrievalFeedback,
+    /// Binary relevance readout — trained on retrieval feedback signals.
+    relevance_readout: BinaryRelevanceReadout,
+    /// Query features from the last retrieval (for backfilling relevance signals).
+    last_retrieval_features: Option<Vec<f64>>,
+    /// Retrieved text from the last retrieval (for logging).
+    last_retrieved_text: Option<String>,
 }
 
 impl KnowledgeLoop {
@@ -82,6 +94,10 @@ impl KnowledgeLoop {
             nca_load_attempted: false,
             attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE),
             encoder_config: EncoderConfig::default(),
+            retrieval_feedback: RetrievalFeedback::new(RETRIEVAL_FEATURE_DIM),
+            relevance_readout: BinaryRelevanceReadout::new(RETRIEVAL_FEATURE_DIM),
+            last_retrieval_features: None,
+            last_retrieved_text: None,
         }
     }
 
@@ -120,8 +136,11 @@ impl KnowledgeLoop {
     /// Uses cross-attention (arXiv:2603.10055) when semantic embeddings are available,
     /// falling back to cosine+proximity scoring for hash-based queries.
     ///
+    /// Records a retrieval event for feedback learning (optimistic `was_relevant: true`).
+    /// Call `mark_last_retrieval_irrelevant()` to correct this if the user signals irrelevance.
+    ///
     /// Returns formatted context string, or None if nothing relevant found.
-    pub fn retrieve_knowledge(&self, query: &str) -> Option<String> {
+    pub fn retrieve_knowledge(&mut self, query: &str) -> Option<String> {
         // Encode the query to determine if we have semantic embeddings
         let query_features = encode_text(query, &self.encoder_config);
 
@@ -169,8 +188,30 @@ impl KnowledgeLoop {
                 .collect()
         };
 
+        // Store query features for retrieval feedback (even if no results)
+        self.last_retrieval_features = Some(query_features.values.clone());
+        self.last_retrieved_text = relevant_texts.first().cloned();
+
         if relevant_texts.is_empty() {
             return None;
+        }
+
+        // Record retrieval event with optimistic relevance (we'll correct later if needed)
+        let combined_text = relevant_texts.join(" | ");
+        self.retrieval_feedback.record(
+            query_features.values.clone(),
+            combined_text.clone(),
+            true, // Optimistic default — correct via mark_last_retrieval_irrelevant()
+        );
+
+        // Check if we should train the relevance readout
+        if let Some((loss, accuracy)) = self.retrieval_feedback.maybe_train(&mut self.relevance_readout) {
+            tracing::info!(
+                "Retrieval feedback training round {}: loss={:.4}, accuracy={:.1}%",
+                self.retrieval_feedback.rounds_completed,
+                loss,
+                accuracy * 100.0
+            );
         }
 
         let mut context = String::from(
@@ -187,18 +228,50 @@ impl KnowledgeLoop {
         Some(context)
     }
 
+    /// Mark the last retrieval as irrelevant.
+    ///
+    /// Call this when user feedback signals that the retrieved knowledge was not helpful.
+    /// This corrects the optimistic `was_relevant: true` recorded during retrieval,
+    /// enabling the feedback loop to learn from negative examples.
+    pub fn mark_last_retrieval_irrelevant(&mut self) {
+        if let (Some(features), Some(text)) = (
+            self.last_retrieval_features.take(),
+            self.last_retrieved_text.take(),
+        ) {
+            // Record the corrected (irrelevant) event
+            self.retrieval_feedback.record(features, text, false);
+            tracing::debug!("Marked last retrieval as irrelevant for feedback training");
+        }
+    }
+
+    /// Get the current retrieval feedback statistics.
+    pub fn retrieval_feedback_stats(&self) -> (usize, f64, usize) {
+        (
+            self.retrieval_feedback.event_count(),
+            self.retrieval_feedback.relevance_rate(),
+            self.retrieval_feedback.rounds_completed,
+        )
+    }
+
     /// Delta-based retrieval using NCA spreading activation.
     ///
     /// Snapshots knowledge channels, runs NCA steps, finds cells with highest
     /// delta magnitude. These are the "activated" concepts — what the NCA grid
     /// thought about in response to the current input.
     ///
+    /// The query is injected into the grid at low confidence before freerun steps,
+    /// making delta retrieval query-conditioned (different queries activate different cells).
+    ///
     /// Returns unique texts found by delta that were NOT in `already_found`.
-    pub fn retrieve_delta_unique(&mut self, already_found: &[String]) -> Vec<String> {
+    pub fn retrieve_delta_unique(&mut self, query: &str, already_found: &[String]) -> Vec<String> {
         let top_k = self.max_results;
+
+        // Encode query to get features for query-conditioned delta retrieval
+        let query_features = encode_text(query, &self.encoder_config);
+
         let delta_results = self.attention_decoder.attend_with_delta(
             &mut self.knowledge.grid,
-            &[], // query_embedding unused for now (delta is query-agnostic)
+            Some(&query_features),
             top_k,
             Some(&self.knowledge.text_store),
         );
@@ -235,31 +308,40 @@ impl KnowledgeLoop {
     /// Build an NCA "continuous thought" summary (COCONUT-style).
     ///
     /// Implements a lightweight version of the COCONUT (Chain of Continuous Thought) approach:
-    /// 1. Encode the query into the grid (activates relevant cells)
-    /// 2. Run NCA for N freerun steps — the grid "thinks" about the query
-    /// 3. Extract the top-K most activated knowledge cells after NCA dynamics
-    /// 4. Decode them to text snippets via TextStore
-    /// 5. Return a formatted "NCA activation summary" for the prompt
+    /// 1. Clone the grid into a scratch copy (main grid stays untouched)
+    /// 2. Encode the query into the scratch grid (activates relevant cells)
+    /// 3. Run NCA for N freerun steps on the scratch grid — it "thinks" about the query
+    /// 4. Extract the top-K most activated knowledge cells from the scratch grid
+    /// 5. Decode them to text snippets via the main grid's TextStore
+    /// 6. Return a formatted "NCA activation summary" for the prompt
     ///
     /// This is distinct from delta attention (which finds *changing* cells) — here we
     /// find the *most activated* cells after query-seeded NCA dynamics, giving a dense
     /// summary of what the network state "knows" about the query.
     ///
+    /// IMPORTANT: Uses a scratch copy of the grid so that thought experiments don't
+    /// pollute the main knowledge store.
+    ///
     /// Returns None if the grid has no significant activations.
     pub fn build_nca_thought_summary(&mut self, query: &str, n_steps: usize, top_k: usize) -> Option<String> {
+        use crate::distributed_knowledge::encoder::write_knowledge;
         use crate::grid::KNOWLEDGE_ACTIVATION;
 
-        // Encode query to activate the grid (low confidence — we don't want to pollute the brain)
-        let query_pos = self.knowledge.encode(query, 0.5);
+        // Clone the grid into a scratch copy — the main grid stays untouched
+        let mut scratch_grid = self.knowledge.grid.clone();
 
-        // Run NCA steps from the query-seeded state
-        self.knowledge.freerun_repair(query_pos, n_steps);
+        // Encode query into the scratch grid (low confidence)
+        let query_features = encode_text(query, &self.encoder_config);
+        let query_pos = write_knowledge(&mut scratch_grid, &query_features, 0.5, 0.0, &self.encoder_config);
 
-        // Collect top candidates by activation strength (positions only — no text_store borrow yet)
+        // Run NCA steps on the scratch grid from the query-seeded state
+        scratch_grid.freerun_repair(query_pos.0, query_pos.1, 8, n_steps);
+
+        // Collect top candidates by activation strength from the scratch grid
         let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
-        for y in 0..self.knowledge.grid.height {
-            for x in 0..self.knowledge.grid.width {
-                let act = self.knowledge.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+        for y in 0..scratch_grid.height {
+            for x in 0..scratch_grid.width {
+                let act = scratch_grid.cells[y][x][KNOWLEDGE_ACTIVATION];
                 if act > 0.1 {
                     candidates.push((x, y, act));
                 }
@@ -462,7 +544,7 @@ impl KnowledgeLoop {
             Vec::new()
         };
 
-        let delta_unique = self.retrieve_delta_unique(&semantic_texts);
+        let delta_unique = self.retrieve_delta_unique(user_input, &semantic_texts);
         let n_delta_unique = delta_unique.len();
         if n_delta_unique > 0 {
             tracing::debug!(
@@ -565,7 +647,7 @@ impl KnowledgeLoop {
         } else {
             Vec::new()
         };
-        let delta_unique = self.retrieve_delta_unique(&semantic_texts);
+        let delta_unique = self.retrieve_delta_unique(user_input, &semantic_texts);
 
         // 3c. Continuous thought layer
         let nca_thought = self.build_nca_thought_summary(user_input, 3, 5);
