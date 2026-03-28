@@ -666,11 +666,26 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let brain_path = default_brain_path();
     let mut knowledge = NCAKnowledge::new();
-    // Load existing brain if available
+    let mut is_first_run = true;
+
+    // Load existing brain if available — graceful error handling
     if std::path::Path::new(&brain_path).exists() {
         match knowledge.load(&brain_path) {
-            Ok(()) => eprintln!("🧠 Loaded brain from {}", brain_path),
-            Err(e) => eprintln!("⚠️  Failed to load brain: {}", e),
+            Ok(()) => {
+                is_first_run = false;
+            }
+            Err(e) => {
+                // Backup the old brain before starting fresh
+                let backup_path = format!("{}.bak", brain_path);
+                if let Err(copy_err) = std::fs::copy(&brain_path, &backup_path) {
+                    eprintln!("⚠️  Could not backup old brain: {}", copy_err);
+                }
+                // Delete the old brain so we can start fresh
+                let _ = std::fs::remove_file(&brain_path);
+                eprintln!("⚠️  Brain file version mismatch — starting fresh. (Old brain backed up to {})", backup_path);
+                eprintln!("    Reason: {}", e);
+                // knowledge is already a fresh NCAKnowledge::new()
+            }
         }
     }
 
@@ -844,6 +859,48 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
         });
     }
 
+    // Show onboarding message for new users or status for returning users
+    if is_first_run {
+        let version = env!("CARGO_PKG_VERSION");
+        let ollama_status = if state.engine_name.contains("Ollama") {
+            format!("🔗 Ollama detected: {}", state.engine_name)
+        } else {
+            "⚠️  Ollama not found — running in offline mode".to_string()
+        };
+        let welcome_msg = format!(
+            "╔══════════════════════════════════════════════════════════╗\n\
+             ║             Welcome to SAGE v{}                       ║\n\
+             ║      The People's AI — Free. Local. Decentralized.       ║\n\
+             ╚══════════════════════════════════════════════════════════╝\n\n\
+             🧠 Fresh brain initialized ({}×{} NCA grid, {} channels)\n\
+             {}\n\
+             💾 Brain will auto-save to: {}\n\
+             🌐 To join the mesh network: sage node start\n\n\
+             Type your first message below, or /help for commands.",
+            version,
+            crate::grid::GRID_SIZE,
+            crate::grid::GRID_SIZE,
+            crate::grid::NUM_CHANNELS,
+            ollama_status,
+            state.brain_path
+        );
+        state.messages.push(TuiChatMessage {
+            role: Role::System,
+            content: welcome_msg,
+        });
+    } else {
+        // Returning user — short status line
+        let facts = state.active_cells;
+        let status_msg = format!(
+            "🧠 Brain loaded ({} active cells) | {} | /help for commands",
+            facts, state.engine_name
+        );
+        state.messages.push(TuiChatMessage {
+            role: Role::System,
+            content: status_msg,
+        });
+    }
+
     // Channel for streaming inference tokens
     enum InferenceMsg {
         Token(String),
@@ -958,7 +1015,15 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                         state.cursor_pos = 0;
 
                         if input.starts_with('/') {
-                            handle_command(&mut state, &input);
+                            match handle_command(&mut state, &input, &knowledge) {
+                                CommandResult::Handled => {}
+                                CommandResult::NeedsResetConfirmation => {
+                                    state.messages.push(TuiChatMessage {
+                                        role: Role::System,
+                                        content: "⚠️  This will erase all learned knowledge. Type /reset-confirm to proceed.".to_string(),
+                                    });
+                                }
+                            }
                         } else {
                             state.messages.push(TuiChatMessage {
                                 role: Role::User,
@@ -1138,27 +1203,105 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
     Ok(())
 }
 
-fn handle_command(state: &mut AppState, cmd: &str) {
+/// Command result — some commands need special handling by the caller
+enum CommandResult {
+    /// Command handled, no special action needed
+    Handled,
+    /// /reset command needs confirmation — caller should prompt
+    NeedsResetConfirmation,
+}
+
+fn handle_command(
+    state: &mut AppState,
+    cmd: &str,
+    knowledge: &std::sync::Arc<std::sync::Mutex<NCAKnowledge>>,
+) -> CommandResult {
     let parts: Vec<&str> = cmd.trim().splitn(2, ' ').collect();
     match parts[0] {
-        "/quit" | "/q" => state.quit = true,
+        "/quit" | "/exit" | "/q" => {
+            state.quit = true;
+            CommandResult::Handled
+        }
         "/help" | "/h" => {
             state.messages.push(TuiChatMessage {
                 role: Role::System,
-                content: "Commands:\n  /status  — Engine and brain info\n  /help    — This message\n  /quit    — Exit".into(),
+                content: "SAGE Commands:\n\
+                    \n  /help          Show this message\
+                    \n  /status        Show brain stats (active cells, version)\
+                    \n  /save          Force save brain to disk\
+                    \n  /reset         Clear brain and start fresh (asks for confirmation)\
+                    \n  /node          Show network status\
+                    \n  /quit or /exit Exit SAGE\
+                    \n\nEverything else is a chat message.".into(),
             });
+            CommandResult::Handled
         }
         "/status" | "/s" => {
+            let version = env!("CARGO_PKG_VERSION");
             state.messages.push(TuiChatMessage {
                 role: Role::System,
                 content: format!(
-                    "┌─ SAGE Status ──────────────────\n│ Engine:     {}\n│ Grid:       {}×{}\n│ Knowledge:  {} active cells\n│ Brain:      {}\n└────────────────────────────────",
+                    "┌─ SAGE Status v{} ────────────────\n\
+                     │ Engine:     {}\n\
+                     │ Grid:       {}×{} ({} channels)\n\
+                     │ Knowledge:  {} active cells\n\
+                     │ Brain:      {}\n\
+                     └────────────────────────────────────",
+                    version,
                     state.engine_name,
                     crate::grid::GRID_SIZE, crate::grid::GRID_SIZE,
+                    crate::grid::NUM_CHANNELS,
                     state.active_cells,
                     state.brain_path,
                 ),
             });
+            CommandResult::Handled
+        }
+        "/save" => {
+            let k = knowledge.lock().unwrap();
+            match k.save(&state.brain_path) {
+                Ok(()) => {
+                    state.messages.push(TuiChatMessage {
+                        role: Role::System,
+                        content: format!("💾 Brain saved to {}", state.brain_path),
+                    });
+                }
+                Err(e) => {
+                    state.messages.push(TuiChatMessage {
+                        role: Role::System,
+                        content: format!("⚠️  Failed to save brain: {}", e),
+                    });
+                }
+            }
+            CommandResult::Handled
+        }
+        "/reset" => {
+            // Return signal that we need confirmation
+            CommandResult::NeedsResetConfirmation
+        }
+        "/reset-confirm" => {
+            // Actually perform the reset
+            let mut k = knowledge.lock().unwrap();
+            *k = NCAKnowledge::new();
+            state.active_cells = 0;
+            state.messages.push(TuiChatMessage {
+                role: Role::System,
+                content: "🧠 Brain reset to fresh state. Starting over!".to_string(),
+            });
+            CommandResult::Handled
+        }
+        "/node" | "/network" => {
+            state.messages.push(TuiChatMessage {
+                role: Role::System,
+                content: format!(
+                    "🌐 Network Status:\n\
+                     │ Peers connected: {}\n\
+                     │ To start a node: sage node start\n\
+                     │ (Network features coming soon)",
+                    state.peer_count
+                ),
+            });
+            CommandResult::Handled
         }
         _ => {
             state.messages.push(TuiChatMessage {
@@ -1168,6 +1311,7 @@ fn handle_command(state: &mut AppState, cmd: &str) {
                     parts[0]
                 ),
             });
+            CommandResult::Handled
         }
     }
 }
