@@ -1,0 +1,8 @@
+FROM nginx:alpine
+
+COPY static/ /usr/share/nginx/html/
+
+# Serve dashboard at /network as well
+RUN cp -r /usr/share/nginx/html/dashboard /usr/share/nginx/html/network
+
+EXPOSE 80
