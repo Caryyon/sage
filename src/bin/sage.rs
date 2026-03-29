@@ -147,6 +147,9 @@ enum NodeCommands {
         /// Internal flag: running as daemon (hidden)
         #[arg(long, hide = true)]
         daemon_internal: bool,
+        /// Disable stats beacon (don't post to whatssage.ai)
+        #[arg(long)]
+        no_beacon: bool,
     },
     /// Stop the running SAGE node
     Stop,
@@ -281,6 +284,7 @@ fn main() {
                 foreground,
                 daemon,
                 daemon_internal,
+                no_beacon,
             } => {
                 if foreground || daemon_internal {
                     // Run directly (foreground mode or we ARE the daemon)
@@ -290,17 +294,17 @@ fn main() {
                         let _ = std::fs::create_dir_all(sage_home());
                         let _ = std::fs::write(&pid_file, std::process::id().to_string());
                     }
-                    run_node_start(port, chat_port, sync_interval, no_mdns, foreground);
+                    run_node_start(port, chat_port, sync_interval, no_mdns, foreground, no_beacon);
                     if daemon_internal {
                         // Clean up PID file on exit
                         let _ = std::fs::remove_file(sage_home().join("node.pid"));
                     }
                 } else if daemon {
                     // Explicit --daemon flag: daemonize
-                    daemonize_node(port, chat_port, sync_interval, no_mdns);
+                    daemonize_node(port, chat_port, sync_interval, no_mdns, no_beacon);
                 } else {
                     // Default: daemonize (original behavior)
-                    daemonize_node(port, chat_port, sync_interval, no_mdns);
+                    daemonize_node(port, chat_port, sync_interval, no_mdns, no_beacon);
                 }
             }
             NodeCommands::Stop => {
@@ -337,7 +341,7 @@ fn run_chat(engine_mode: sage::chat_tui::EngineMode, model: &str, ollama_url: &s
 }
 
 /// Daemonize: re-exec self with --daemon-internal, redirect output to log file.
-fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) {
+fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, no_beacon: bool) {
     use sage::network::identity::NodeIdentity;
 
     let home = sage_home();
@@ -406,6 +410,9 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool) 
         .arg(sync_interval.to_string());
     if no_mdns {
         cmd.arg("--no-mdns");
+    }
+    if no_beacon {
+        cmd.arg("--no-beacon");
     }
     cmd.stdout(log)
         .stderr(log_err)
@@ -477,7 +484,7 @@ impl LiveNodeStats {
 }
 
 /// Start the SAGE node with live knowledge feed.
-fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, foreground: bool) {
+fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, foreground: bool, no_beacon: bool) {
     use sage::network::contribution::ContributionStats;
     use sage::network::identity::NodeIdentity;
     use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
@@ -763,9 +770,92 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             }
         });
 
+        // Stats beacon task - posts to whatssage.ai every 60 seconds
+        let beacon_task = if !no_beacon {
+            let identity_beacon = identity.clone();
+            let contrib_beacon = contrib.clone();
+            let knowledge_beacon = knowledge.clone();
+            Some(tokio::spawn(async move {
+                const BEACON_URL: &str = "https://api.whatssage.ai/api/stats";
+                let client = reqwest::Client::new();
+
+                // Wait 10 seconds before first beacon to let node stabilize
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+                loop {
+                    // Gather stats
+                    let (active_cells, grid_utilization) = {
+                        let k = knowledge_beacon.lock().await;
+                        let active = k.active_knowledge(0.01).len();
+                        let total = k.grid.width * k.grid.height;
+                        let util = active as f64 / total as f64;
+                        (active, util)
+                    };
+
+                    let (patterns_sent, patterns_received, peer_count, tier_name) = {
+                        let c = contrib_beacon.lock().await;
+                        (c.patterns_sent, c.patterns_received, c.peer_count(), c.tier().name().to_string())
+                    };
+
+                    // Calculate uptime from PID file
+                    let uptime_secs: u64 = {
+                        let pid_file = sage_home().join("node.pid");
+                        if pid_file.exists() {
+                            if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+                                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        std::fs::metadata(format!("/proc/{}", pid))
+                                            .ok()
+                                            .and_then(|stat| stat.modified().ok())
+                                            .and_then(|t| t.elapsed().ok())
+                                            .map(|d| d.as_secs())
+                                            .unwrap_or(0)
+                                    }
+                                    #[cfg(not(target_os = "linux"))]
+                                    {
+                                        let _ = pid;
+                                        0
+                                    }
+                                } else { 0 }
+                            } else { 0 }
+                        } else { 0 }
+                    };
+
+                    let stats = serde_json::json!({
+                        "node_name": identity_beacon.human_name,
+                        "node_id": identity_beacon.node_id,
+                        "version": VERSION,
+                        "uptime_seconds": uptime_secs,
+                        "patterns_sent": patterns_sent,
+                        "patterns_received": patterns_received,
+                        "peer_count": peer_count,
+                        "active_cells": active_cells,
+                        "grid_utilization": grid_utilization,
+                        "contribution_tier": tier_name
+                    });
+
+                    // POST to beacon endpoint - fail silently
+                    let _ = client.post(BEACON_URL)
+                        .json(&stats)
+                        .timeout(std::time::Duration::from_secs(10))
+                        .send()
+                        .await;
+
+                    // Wait 60 seconds before next beacon
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                }
+            }))
+        } else {
+            None
+        };
+
         // Wait for ctrl+c
         tokio::signal::ctrl_c().await.ok();
         discovery_task.abort();
+        if let Some(task) = beacon_task {
+            task.abort();
+        }
 
         println!();
         println!();
