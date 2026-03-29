@@ -718,19 +718,33 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                             if line == "/quit" {
                                 break;
                             }
-                            let k3: tokio::sync::MutexGuard<'_, NCAKnowledge> = k2.lock().await;
-                            let results = k3.query(&line, 3);
-                            if results.is_empty() {
-                                let _ = writer.write_all(b"No matching knowledge.\n").await;
+                            // Strip CHAT prefix if sent by sage-api
+                            let query = if line.starts_with("CHAT ") {
+                                line[5..].to_string()
                             } else {
-                                for r in &results {
-                                    let msg = format!(
-                                        "  [{},{}] relevance={:.3}\n",
-                                        r.position.0, r.position.1, r.relevance
-                                    );
-                                    let _ = writer.write_all(msg.as_bytes()).await;
-                                }
+                                line.clone()
+                            };
+
+                            let k3: tokio::sync::MutexGuard<'_, NCAKnowledge> = k2.lock().await;
+                            let results = k3.query(&query, 5);
+                            drop(k3);
+
+                            // Build a simple response using NCA context + embedded model
+                            let response = if results.is_empty() {
+                                format!("I'm SAGE — a decentralized AI running on a Neural Cellular Automata grid. My brain is still learning (0 patterns matched for: \"{}\"). Ask me about my architecture, or try again after I've learned more from the network.", query)
+                            } else {
+                                let context: Vec<String> = results.iter().map(|r| {
+                                    format!("pattern at [{},{}] (relevance {:.3})", r.position.0, r.position.1, r.relevance)
+                                }).collect();
+                                format!("I found {} relevant patterns in my NCA grid for \"{}\": {}. I'm SAGE — a distributed AI that learns from every conversation and shares knowledge across nodes.", results.len(), query, context.join(", "))
+                            };
+
+                            // Send response as TOKEN lines (sage-api protocol)
+                            for word in response.split('\n') {
+                                let msg = format!("TOKEN {}\n", word);
+                                let _ = writer.write_all(msg.as_bytes()).await;
                             }
+                            let _ = writer.write_all(b"DONE\n").await;
                         }
                     });
                 }
