@@ -93,7 +93,53 @@ struct ChatCompletionRequest {
 #[derive(Deserialize)]
 struct MessageInput {
     role: String,
+    #[serde(deserialize_with = "deserialize_content")]
     content: String,
+}
+
+/// Accept content as either a plain string or an array of content parts
+/// (OpenAI multi-modal format: [{"type": "text", "text": "..."}])
+fn deserialize_content<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    use serde::de::{self, Visitor, SeqAccess};
+    use std::fmt;
+
+    struct ContentVisitor;
+
+    impl<'de> Visitor<'de> for ContentVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or array of content parts")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<String, E> {
+            Ok(v)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<String, A::Error> {
+            #[derive(serde::Deserialize)]
+            struct ContentPart {
+                #[serde(rename = "type")]
+                kind: String,
+                text: Option<String>,
+            }
+            let mut parts = Vec::new();
+            while let Some(part) = seq.next_element::<ContentPart>()? {
+                if part.kind == "text" {
+                    if let Some(text) = part.text {
+                        parts.push(text);
+                    }
+                }
+            }
+            Ok(parts.join(" "))
+        }
+    }
+
+    d.deserialize_any(ContentVisitor)
 }
 
 #[derive(Serialize)]
