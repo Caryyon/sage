@@ -17,31 +17,153 @@ use std::path::PathBuf;
 /// Synthetic word-association corpus.
 /// Repeated patterns teach the NCA that certain words co-occur.
 /// The repetition gives the CMA-ES a clear gradient to follow.
+/// Expanded to cover all semantic clusters in SYNONYM_PAIRS.
 const WORD_ASSOC_CORPUS: &str = r#"
-cat is a mammal cat is a mammal cat is a mammal
-dog is a mammal dog is a mammal dog is a mammal
-cat and dog are both mammals cat dog mammal
-mammal cat mammal dog mammal cat mammal dog
-oak is a tree oak is a tree oak is a tree
-pine is a tree pine is a tree pine is a tree
-oak and pine are both trees oak pine tree
-tree oak tree pine tree oak tree pine
-cat mammal dog mammal cat mammal dog mammal
-oak tree pine tree oak tree pine tree
-mammal includes cat mammal includes dog
-tree includes oak tree includes pine
-animal mammal cat animal mammal dog
-plant tree oak plant tree pine
-cat meows cat purrs cat sleeps cat hunts
-dog barks dog runs dog sleeps dog plays
-oak grows oak tall oak leaves oak acorn
-pine grows pine tall pine needles pine cone
-mammal warm blood mammal breathe air mammal have fur
-tree has bark tree has roots tree has leaves tree grows tall
-cat whiskers cat tail cat paws cat fur mammal
-dog paws dog tail dog fur dog teeth mammal
-oak wood oak bark oak ring oak acorn tree
-pine resin pine bark pine cone pine needle tree
+# Animals cluster
+cat is a mammal cat is a mammal cat is a pet animal
+dog is a mammal dog is a mammal dog is a pet animal
+cat and dog are both mammals cat dog mammal pet
+wolf is a mammal wolf is a predator animal
+bear is a mammal bear is a predator animal
+deer is a mammal deer is a wild animal
+rabbit is a mammal rabbit is a pet animal
+horse is a mammal horse is a large animal
+eagle is a bird eagle is a predator animal
+bird is an animal bird flies bird has wings
+fish is an animal salmon is a fish shark is a fish
+shark is a predator whale is a mammal animal
+lion is a mammal lion is a predator tiger is a mammal tiger is a predator
+lion and tiger are both predators mammal
+elephant is a mammal elephant is a large animal
+
+# Nature and terrain cluster
+mountain is terrain mountain has a peak hill is smaller than mountain
+river is water river is a stream creek flows into river
+ocean is water ocean is like a sea lake is water
+forest is terrain forest is like woods trees grow in forest
+desert is terrain valley is terrain glacier is ice
+volcano is a mountain cliff is terrain canyon is a valley
+island is land coast is a shore beach is on the shore
+beach and coast are near the ocean
+
+# Weather cluster
+rain is weather rain brings water storm has rain
+snow is weather snow is frozen ice snow falls in winter
+wind is weather storm is weather
+thunder comes with lightning storm has thunder
+lightning strikes during storm fog is weather mist is like fog
+frost is ice frost comes with cold drought is dry weather
+flood brings water flood is a disaster
+hurricane is a storm tornado is a storm hurricane and tornado are dangerous
+
+# Plants cluster
+tree is a plant oak is a tree pine is a tree
+maple is a tree birch is a tree
+flower is a plant rose is a flower tulip is a flower
+grass is a plant moss is a plant fern is a plant
+vine is a plant shrub is a plant shrub is like a bush
+mushroom is a fungus cactus is a plant
+leaf grows on plant root is part of plant seed grows into plant
+pollen comes from flower
+
+# Food cluster
+bread is food bread is made from grain
+fruit is food apple is a fruit orange is a fruit banana is a fruit
+meat is food beef is meat pork is meat chicken is meat
+rice is food rice is a grain soup is food
+cheese is food cheese is dairy milk is dairy
+grain is food wheat is a grain
+bean is food spice is food herb is a plant herb is a spice
+vegetable is food carrot is a vegetable potato is a vegetable
+
+# Colors cluster
+red is a color blue is a color green is a color
+yellow is a color orange is a color purple is a color
+black is a color white is a color brown is a color gray is a color
+red is like crimson blue is like azure
+green is like emerald purple is like violet
+pink is a color pink is similar to red
+
+# Emotions cluster
+joy is an emotion joy is happiness happiness is an emotion
+fear is an emotion fear is like terror
+anger is an emotion anger is like rage
+sadness is an emotion sadness is like grief
+love is an emotion love is like affection
+surprise is an emotion disgust is an emotion
+trust is an emotion hope is an emotion hope is like optimism
+shame is an emotion guilt is like shame
+anxiety is fear anxiety is an emotion
+peace is calm calm is an emotion
+
+# Actions and movement cluster
+run is movement run is like sprint walk is movement
+run and walk are both movement jump is movement jump is like leap
+leap is movement swim is movement fly is movement
+climb is movement crawl is movement dive is movement dive is like swim
+sprint is movement sprint is like dash
+dance is movement skip is movement skip is like hop
+
+# Science cluster
+atom is a particle atom is matter molecule is made of atoms
+molecule is matter cell is biology
+energy is physics energy is power
+force is physics gravity is a force
+light is energy light is made of photons
+heat is energy heat is temperature
+pressure is a force mass is matter mass is like weight
+electron is a particle proton is a particle neutron is a particle
+electron and proton are particles wave is physics frequency describes wave
+
+# Technology cluster
+code is software code is a program
+data is information network is like internet
+server is a computer memory is in a computer memory is storage
+processor is a computer chip processor is in a computer
+algorithm is code software is a program
+hardware is part of computer database stores data database is storage
+rust is a language python is a language
+javascript is a language java is a language
+compiler is software browser is software api is software
+
+# Geography cluster
+city is a place city is like a town town is a place
+country is a nation country is a place
+continent is land island is land peninsula is land
+coast is land border is a boundary
+capital is a city region is an area
+province is a region state is a region
+village is a small town metropolis is a large city
+
+# Time cluster
+second is time minute is time hour is time
+day is time week is time month is time
+year is time decade is time century is time era is time
+moment is time instant is a moment
+dawn is time dusk is time dawn and dusk are opposite
+morning is time evening is time morning and evening are opposite
+
+# Materials cluster
+wood is a material metal is a material
+stone is a material stone is like rock
+glass is a material plastic is a material
+fabric is a material fabric is like cloth
+paper is a material rubber is a material
+clay is a material sand is a material
+steel is a metal iron is a metal
+gold is a metal silver is a metal gold and silver are precious
+copper is a metal bronze is a metal
+leather is a material cotton is a fabric silk is a fabric
+
+# Relationships cluster
+friend is a companion friend is an ally
+family includes relatives parent is family
+parent is mother or father mother and father are parents
+child is family child is offspring
+partner is a companion spouse is a partner
+teacher is a mentor student is a learner teacher and student interact
+colleague is a coworker neighbor is a person stranger is a person
+sibling is family brother is a sibling sister is a sibling
 "#;
 
 /// Quick mode corpus — minimal 8 word-pairs for fast pipeline testing
@@ -180,35 +302,360 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
 // Linear projection (embedding) training via contrastive learning
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Synonym / similar-word pairs extracted from WORD_ASSOC_CORPUS.
+/// Synonym / similar-word pairs for contrastive embedding training.
 /// Used to train the linear projection to pull similar words closer together.
+/// Organized by semantic cluster with dense intra-cluster pairings.
 const SYNONYM_PAIRS: &[(&str, &str)] = &[
-    ("cat", "mammal"),
-    ("dog", "mammal"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Animals (mammals, pets, wildlife)
+    // ═══════════════════════════════════════════════════════════════════════
     ("cat", "dog"),
+    ("cat", "mammal"),
+    ("cat", "animal"),
+    ("cat", "pet"),
+    ("dog", "mammal"),
+    ("dog", "animal"),
+    ("dog", "pet"),
+    ("dog", "wolf"),
+    ("wolf", "mammal"),
+    ("wolf", "animal"),
+    ("wolf", "predator"),
+    ("bear", "mammal"),
+    ("bear", "animal"),
+    ("bear", "predator"),
+    ("deer", "mammal"),
+    ("deer", "animal"),
+    ("rabbit", "mammal"),
+    ("rabbit", "animal"),
+    ("rabbit", "pet"),
+    ("horse", "mammal"),
+    ("horse", "animal"),
+    ("eagle", "bird"),
+    ("eagle", "animal"),
+    ("eagle", "predator"),
+    ("bird", "animal"),
+    ("fish", "animal"),
+    ("salmon", "fish"),
+    ("shark", "fish"),
+    ("shark", "predator"),
+    ("whale", "mammal"),
+    ("whale", "animal"),
+    ("lion", "mammal"),
+    ("lion", "predator"),
+    ("tiger", "mammal"),
+    ("tiger", "predator"),
+    ("lion", "tiger"),
+    ("elephant", "mammal"),
+    ("elephant", "animal"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Nature / Terrain
+    // ═══════════════════════════════════════════════════════════════════════
+    ("mountain", "terrain"),
+    ("mountain", "peak"),
+    ("mountain", "hill"),
+    ("river", "water"),
+    ("river", "stream"),
+    ("river", "creek"),
+    ("ocean", "water"),
+    ("ocean", "sea"),
+    ("lake", "water"),
+    ("forest", "terrain"),
+    ("forest", "woods"),
+    ("desert", "terrain"),
+    ("valley", "terrain"),
+    ("glacier", "ice"),
+    ("volcano", "mountain"),
+    ("cliff", "terrain"),
+    ("canyon", "valley"),
+    ("canyon", "terrain"),
+    ("island", "land"),
+    ("coast", "shore"),
+    ("beach", "shore"),
+    ("beach", "coast"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Weather / Climate
+    // ═══════════════════════════════════════════════════════════════════════
+    ("rain", "weather"),
+    ("rain", "water"),
+    ("rain", "storm"),
+    ("snow", "weather"),
+    ("snow", "ice"),
+    ("snow", "winter"),
+    ("wind", "weather"),
+    ("storm", "weather"),
+    ("storm", "thunder"),
+    ("thunder", "lightning"),
+    ("thunder", "storm"),
+    ("lightning", "storm"),
+    ("fog", "weather"),
+    ("fog", "mist"),
+    ("frost", "ice"),
+    ("frost", "cold"),
+    ("drought", "weather"),
+    ("flood", "water"),
+    ("flood", "disaster"),
+    ("hurricane", "storm"),
+    ("tornado", "storm"),
+    ("hurricane", "tornado"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Plants / Vegetation
+    // ═══════════════════════════════════════════════════════════════════════
+    ("tree", "plant"),
     ("oak", "tree"),
     ("pine", "tree"),
     ("oak", "pine"),
-    ("cat", "animal"),
-    ("dog", "animal"),
-    ("mammal", "animal"),
-    ("oak", "plant"),
-    ("pine", "plant"),
-    ("tree", "plant"),
-    ("cat", "fur"),
-    ("dog", "fur"),
-    ("mammal", "warm"),
-    ("tree", "bark"),
-    ("oak", "bark"),
-    ("oak", "acorn"),
-    ("pine", "cone"),
-    ("cat", "meow"),
-    ("dog", "bark"),
+    ("maple", "tree"),
+    ("birch", "tree"),
+    ("flower", "plant"),
+    ("rose", "flower"),
+    ("tulip", "flower"),
+    ("rose", "tulip"),
+    ("grass", "plant"),
+    ("moss", "plant"),
+    ("fern", "plant"),
+    ("vine", "plant"),
+    ("shrub", "plant"),
+    ("shrub", "bush"),
+    ("mushroom", "fungus"),
+    ("cactus", "plant"),
+    ("leaf", "plant"),
+    ("root", "plant"),
+    ("seed", "plant"),
+    ("pollen", "flower"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Food / Cuisine
+    // ═══════════════════════════════════════════════════════════════════════
+    ("bread", "food"),
+    ("bread", "grain"),
+    ("fruit", "food"),
+    ("apple", "fruit"),
+    ("orange", "fruit"),
+    ("banana", "fruit"),
+    ("apple", "orange"),
+    ("meat", "food"),
+    ("beef", "meat"),
+    ("pork", "meat"),
+    ("chicken", "meat"),
+    ("rice", "food"),
+    ("rice", "grain"),
+    ("soup", "food"),
+    ("cheese", "food"),
+    ("cheese", "dairy"),
+    ("milk", "dairy"),
+    ("grain", "food"),
+    ("wheat", "grain"),
+    ("bean", "food"),
+    ("spice", "food"),
+    ("herb", "plant"),
+    ("herb", "spice"),
+    ("vegetable", "food"),
+    ("carrot", "vegetable"),
+    ("potato", "vegetable"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Colors
+    // ═══════════════════════════════════════════════════════════════════════
+    ("red", "color"),
+    ("blue", "color"),
+    ("green", "color"),
+    ("yellow", "color"),
+    ("orange", "color"),
+    ("purple", "color"),
+    ("black", "color"),
+    ("white", "color"),
+    ("brown", "color"),
+    ("gray", "color"),
+    ("red", "crimson"),
+    ("blue", "azure"),
+    ("green", "emerald"),
+    ("purple", "violet"),
+    ("pink", "color"),
+    ("pink", "red"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Emotions / Feelings
+    // ═══════════════════════════════════════════════════════════════════════
+    ("joy", "emotion"),
+    ("joy", "happiness"),
+    ("happiness", "emotion"),
+    ("fear", "emotion"),
+    ("fear", "terror"),
+    ("anger", "emotion"),
+    ("anger", "rage"),
+    ("sadness", "emotion"),
+    ("sadness", "grief"),
+    ("love", "emotion"),
+    ("love", "affection"),
+    ("surprise", "emotion"),
+    ("disgust", "emotion"),
+    ("trust", "emotion"),
+    ("hope", "emotion"),
+    ("hope", "optimism"),
+    ("shame", "emotion"),
+    ("guilt", "shame"),
+    ("anxiety", "fear"),
+    ("anxiety", "emotion"),
+    ("peace", "calm"),
+    ("calm", "emotion"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Actions / Verbs (movement)
+    // ═══════════════════════════════════════════════════════════════════════
+    ("run", "movement"),
+    ("run", "sprint"),
+    ("walk", "movement"),
+    ("run", "walk"),
+    ("jump", "movement"),
+    ("jump", "leap"),
+    ("leap", "movement"),
+    ("swim", "movement"),
+    ("fly", "movement"),
+    ("climb", "movement"),
+    ("crawl", "movement"),
+    ("dive", "movement"),
+    ("dive", "swim"),
+    ("sprint", "movement"),
+    ("sprint", "dash"),
+    ("dance", "movement"),
+    ("skip", "movement"),
+    ("skip", "hop"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Science / Physics
+    // ═══════════════════════════════════════════════════════════════════════
+    ("atom", "particle"),
+    ("atom", "matter"),
+    ("molecule", "atom"),
+    ("molecule", "matter"),
+    ("cell", "biology"),
+    ("energy", "physics"),
+    ("energy", "power"),
+    ("force", "physics"),
+    ("gravity", "force"),
+    ("light", "energy"),
+    ("light", "photon"),
+    ("heat", "energy"),
+    ("heat", "temperature"),
+    ("pressure", "force"),
+    ("mass", "matter"),
+    ("mass", "weight"),
+    ("electron", "particle"),
+    ("proton", "particle"),
+    ("electron", "proton"),
+    ("neutron", "particle"),
+    ("wave", "physics"),
+    ("frequency", "wave"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Technology / Computing
+    // ═══════════════════════════════════════════════════════════════════════
+    ("code", "software"),
+    ("code", "program"),
+    ("data", "information"),
+    ("network", "internet"),
+    ("server", "computer"),
+    ("memory", "computer"),
+    ("memory", "storage"),
+    ("processor", "computer"),
+    ("processor", "chip"),
+    ("algorithm", "code"),
+    ("software", "program"),
+    ("hardware", "computer"),
+    ("database", "storage"),
+    ("database", "data"),
     ("rust", "language"),
     ("python", "language"),
     ("rust", "python"),
-    ("salmon", "fish"),
-    ("eagle", "bird"),
+    ("javascript", "language"),
+    ("java", "language"),
+    ("compiler", "software"),
+    ("browser", "software"),
+    ("api", "software"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Geography / Places
+    // ═══════════════════════════════════════════════════════════════════════
+    ("city", "place"),
+    ("city", "town"),
+    ("town", "place"),
+    ("country", "nation"),
+    ("country", "place"),
+    ("continent", "land"),
+    ("island", "land"),
+    ("peninsula", "land"),
+    ("coast", "land"),
+    ("border", "boundary"),
+    ("capital", "city"),
+    ("region", "area"),
+    ("province", "region"),
+    ("state", "region"),
+    ("village", "town"),
+    ("metropolis", "city"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Time / Duration
+    // ═══════════════════════════════════════════════════════════════════════
+    ("second", "time"),
+    ("minute", "time"),
+    ("hour", "time"),
+    ("day", "time"),
+    ("week", "time"),
+    ("month", "time"),
+    ("year", "time"),
+    ("decade", "time"),
+    ("century", "time"),
+    ("era", "time"),
+    ("moment", "time"),
+    ("instant", "moment"),
+    ("dawn", "time"),
+    ("dusk", "time"),
+    ("dawn", "dusk"),
+    ("morning", "time"),
+    ("evening", "time"),
+    ("morning", "evening"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Materials / Substances
+    // ═══════════════════════════════════════════════════════════════════════
+    ("wood", "material"),
+    ("metal", "material"),
+    ("stone", "material"),
+    ("stone", "rock"),
+    ("glass", "material"),
+    ("plastic", "material"),
+    ("fabric", "material"),
+    ("fabric", "cloth"),
+    ("paper", "material"),
+    ("rubber", "material"),
+    ("clay", "material"),
+    ("sand", "material"),
+    ("steel", "metal"),
+    ("iron", "metal"),
+    ("gold", "metal"),
+    ("silver", "metal"),
+    ("gold", "silver"),
+    ("copper", "metal"),
+    ("bronze", "metal"),
+    ("leather", "material"),
+    ("cotton", "fabric"),
+    ("silk", "fabric"),
+    ("cotton", "silk"),
+    // ═══════════════════════════════════════════════════════════════════════
+    // Relationships / People
+    // ═══════════════════════════════════════════════════════════════════════
+    ("friend", "companion"),
+    ("friend", "ally"),
+    ("family", "relative"),
+    ("parent", "family"),
+    ("parent", "mother"),
+    ("parent", "father"),
+    ("mother", "father"),
+    ("child", "family"),
+    ("child", "offspring"),
+    ("partner", "companion"),
+    ("spouse", "partner"),
+    ("teacher", "mentor"),
+    ("student", "learner"),
+    ("teacher", "student"),
+    ("colleague", "coworker"),
+    ("neighbor", "person"),
+    ("stranger", "person"),
+    ("sibling", "family"),
+    ("brother", "sibling"),
+    ("sister", "sibling"),
+    ("brother", "sister"),
 ];
 
 /// Contrastive training for the linear projection W.
