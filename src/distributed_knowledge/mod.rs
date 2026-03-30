@@ -27,6 +27,9 @@ use crate::grid::{
 };
 use decoder::{scan_active_knowledge, KnowledgeActivation};
 use encoder::{encode_text, write_knowledge, EncoderConfig};
+pub use encoder::{
+    encode_text_with_projection, LinearProjection, PROJECTION_WEIGHTS_PATH,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

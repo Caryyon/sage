@@ -4,7 +4,11 @@
 //! Saves weights to ~/.sage/nca_weights.bin
 //!
 //! Usage: cargo run --bin train-nca [--epochs 50] [--verbose] [--quick]
+//!                                   [--train-embeddings [--embed-epochs N] [--embed-lr F]]
 
+use sage::distributed_knowledge::encoder::{
+    encode_text_hash, EncoderConfig, LinearProjection, PROJECTION_WEIGHTS_PATH,
+};
 use sage::inference::nca_predictor::{
     default_weights_path, train_nca, NcaPredictor, Optimizer, TrainingConfig,
 };
@@ -172,6 +176,176 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Linear projection (embedding) training via contrastive learning
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Synonym / similar-word pairs extracted from WORD_ASSOC_CORPUS.
+/// Used to train the linear projection to pull similar words closer together.
+const SYNONYM_PAIRS: &[(&str, &str)] = &[
+    ("cat", "mammal"),
+    ("dog", "mammal"),
+    ("cat", "dog"),
+    ("oak", "tree"),
+    ("pine", "tree"),
+    ("oak", "pine"),
+    ("cat", "animal"),
+    ("dog", "animal"),
+    ("mammal", "animal"),
+    ("oak", "plant"),
+    ("pine", "plant"),
+    ("tree", "plant"),
+    ("cat", "fur"),
+    ("dog", "fur"),
+    ("mammal", "warm"),
+    ("tree", "bark"),
+    ("oak", "bark"),
+    ("oak", "acorn"),
+    ("pine", "cone"),
+    ("cat", "meow"),
+    ("dog", "bark"),
+    ("rust", "language"),
+    ("python", "language"),
+    ("rust", "python"),
+    ("salmon", "fish"),
+    ("eagle", "bird"),
+];
+
+/// Contrastive training for the linear projection W.
+///
+/// For each positive pair (a, b): push W·h(a) closer to W·h(b).
+/// Negatives are formed by pairing a with a random unrelated word.
+///
+/// Loss = Σ_{pos} ||W·h(a) - W·h(b)||² - λ · Σ_{neg} ||W·h(a) - W·h(c)||²
+/// Gradient computed analytically; weights updated via SGD.
+fn train_embedding_projection(
+    epochs: usize,
+    lr: f64,
+    verbose: bool,
+) -> LinearProjection {
+    let config = EncoderConfig::default();
+    let dim = config.num_features; // 64
+
+    // Start from identity (safe, no-op initially)
+    let mut proj = LinearProjection::identity(dim);
+
+    // Precompute hash vectors for all unique words
+    let mut all_words: Vec<&str> = SYNONYM_PAIRS
+        .iter()
+        .flat_map(|(a, b)| [*a, *b])
+        .collect();
+    all_words.sort_unstable();
+    all_words.dedup();
+
+    let hash_vecs: std::collections::HashMap<&str, Vec<f64>> = all_words
+        .iter()
+        .map(|&w| {
+            let fv = encode_text_hash(w, &config);
+            (w, fv.values)
+        })
+        .collect();
+
+    // Negative words: anything not in the positive pair
+    let neg_words: Vec<&str> = all_words.clone();
+
+    let lambda_neg = 0.3_f64; // negative margin weight
+
+    for epoch in 0..epochs {
+        let mut total_pos_loss = 0.0_f64;
+        let mut total_neg_loss = 0.0_f64;
+        let mut total_grad = vec![0.0_f64; dim * dim];
+
+        for &(wa, wb) in SYNONYM_PAIRS {
+            let ha = &hash_vecs[wa];
+            let hb = &hash_vecs[wb];
+
+            // Projected embeddings
+            let pa = proj.forward(ha);
+            let pb = proj.forward(hb);
+
+            // Positive gradient: d/dW ||W·ha - W·hb||² = 2(W·ha - W·hb)·ha^T - 2(W·ha - W·hb)·hb^T
+            let diff_pos: Vec<f64> = pa.iter().zip(pb.iter()).map(|(a, b)| a - b).collect();
+            let pos_loss: f64 = diff_pos.iter().map(|d| d * d).sum();
+            total_pos_loss += pos_loss;
+
+            // Add positive gradient: grad += 2 * diff * ha^T - 2 * diff * hb^T
+            for row in 0..dim {
+                for col in 0..dim {
+                    total_grad[row * dim + col] +=
+                        2.0 * diff_pos[row] * (ha[col] - hb[col]);
+                }
+            }
+
+            // Pick a negative: word with low similarity to wa
+            // Simple deterministic selection: use index hash
+            let neg_idx = {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                (wa, wb, epoch).hash(&mut hasher);
+                (hasher.finish() as usize) % neg_words.len()
+            };
+            let wc = neg_words[neg_idx];
+            if wc == wa || wc == wb {
+                continue; // skip same-word negatives
+            }
+            let hc = &hash_vecs[wc];
+            let pc = proj.forward(hc);
+
+            // Negative gradient: push apart — subtract contribution
+            let diff_neg: Vec<f64> = pa.iter().zip(pc.iter()).map(|(a, c)| a - c).collect();
+            let neg_loss: f64 = diff_neg.iter().map(|d| d * d).sum();
+            total_neg_loss += neg_loss;
+
+            // grad -= 2 * lambda * diff_neg * (ha - hc)^T
+            for row in 0..dim {
+                for col in 0..dim {
+                    total_grad[row * dim + col] -=
+                        2.0 * lambda_neg * diff_neg[row] * (ha[col] - hc[col]);
+                }
+            }
+        }
+
+        // Clip gradient norm to avoid explosion
+        let grad_norm: f64 = total_grad.iter().map(|g| g * g).sum::<f64>().sqrt();
+        let clip = 10.0_f64;
+        let scale = if grad_norm > clip { clip / grad_norm } else { 1.0 };
+        for g in &mut total_grad {
+            *g *= scale;
+        }
+
+        proj.apply_gradient(&total_grad, lr);
+
+        let combined_loss = total_pos_loss - lambda_neg * total_neg_loss;
+        if verbose || epoch % (epochs / 10).max(1) == 0 {
+            eprintln!(
+                "   epoch {:>4}/{} | pos_loss={:.4} neg_loss={:.4} combined={:.4} grad_norm={:.4}",
+                epoch + 1,
+                epochs,
+                total_pos_loss,
+                total_neg_loss,
+                combined_loss,
+                grad_norm,
+            );
+        }
+    }
+
+    // Verify: cat and mammal should be closer than cat and pine
+    let cat = proj.forward(&hash_vecs["cat"]);
+    let mammal = proj.forward(&hash_vecs["mammal"]);
+    let pine = proj.forward(&hash_vecs["pine"]);
+    let sim_cat_mammal: f64 = cat.iter().zip(mammal.iter()).map(|(a, b)| a * b).sum();
+    let sim_cat_pine: f64 = cat.iter().zip(pine.iter()).map(|(a, b)| a * b).sum();
+    eprintln!(
+        "\n📊 Verification: sim(cat,mammal)={:.4}  sim(cat,pine)={:.4}  {}",
+        sim_cat_mammal,
+        sim_cat_pine,
+        if sim_cat_mammal > sim_cat_pine { "✅ pulled similar closer" } else { "⚠ not improving yet" }
+    );
+
+    proj
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
@@ -179,6 +353,9 @@ fn main() {
     let mut verbose = false;
     let mut population_size = 12;
     let mut quick_mode = false;
+    let mut train_embeddings = false;
+    let mut embed_epochs = 500_usize;
+    let mut embed_lr = 0.001_f64;
 
     let mut i = 1;
     while i < args.len() {
@@ -197,17 +374,57 @@ fn main() {
             "--quick" | "-q" => {
                 quick_mode = true;
             }
+            "--train-embeddings" => {
+                train_embeddings = true;
+            }
+            "--embed-epochs" => {
+                i += 1;
+                embed_epochs = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(500);
+            }
+            "--embed-lr" => {
+                i += 1;
+                embed_lr = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(0.001);
+            }
             "--help" | "-h" => {
                 eprintln!("train-nca: Train NCA on word associations using CMA-ES");
-                eprintln!("  --epochs <n>      Number of training epochs (default: 50)");
-                eprintln!("  --population <n>  CMA-ES population size (default: 12)");
-                eprintln!("  --verbose/-v      Show per-epoch progress");
-                eprintln!("  --quick/-q        Quick mode: tiny grid, 8 word-pairs, ~30 seconds");
+                eprintln!("  --epochs <n>         Number of NCA training epochs (default: 50)");
+                eprintln!("  --population <n>     CMA-ES population size (default: 12)");
+                eprintln!("  --verbose/-v         Show per-epoch progress");
+                eprintln!("  --quick/-q           Quick mode: tiny grid, 8 word-pairs, ~30 seconds");
+                eprintln!("  --train-embeddings   Also train linear projection W for hash→semantic");
+                eprintln!("  --embed-epochs <n>   Projection training epochs (default: 500)");
+                eprintln!("  --embed-lr <f>       Projection learning rate (default: 0.001)");
                 return;
             }
             _ => {}
         }
         i += 1;
+    }
+
+    // ── Embedding projection training (fast, runs standalone or combined) ───
+    if train_embeddings {
+        eprintln!("🔢 Training linear embedding projection W ∈ ℝ^{{64×64}}");
+        eprintln!("   Contrastive pairs: {} synonym pairs", SYNONYM_PAIRS.len());
+        eprintln!("   Epochs: {}   LR: {}", embed_epochs, embed_lr);
+        eprintln!();
+
+        let proj = train_embedding_projection(embed_epochs, embed_lr, verbose);
+
+        let save_path = PROJECTION_WEIGHTS_PATH;
+        match proj.save(save_path) {
+            Ok(()) => {
+                eprintln!("\n💾 Projection saved → {}", save_path);
+            }
+            Err(e) => {
+                eprintln!("\n❌ Failed to save projection: {}", e);
+                std::process::exit(1);
+            }
+        }
+
+        if !args.iter().any(|a| a.starts_with("--epochs") || a == "--quick") {
+            // Only ran embedding training — done.
+            return;
+        }
     }
 
     // Quick mode overrides: 8×8 grid, max 30 epochs, minimal corpus
