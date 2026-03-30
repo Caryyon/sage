@@ -15,9 +15,20 @@
 //! matter for a given query, compared to pure cosine+proximity scoring.
 
 use super::decoder::KnowledgeActivation;
-use super::encoder::{feature_to_position, FeatureVector, NUM_EMBED_SLOTS};
+use super::encoder::{feature_to_position, load_projection, LinearProjection, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
+use std::sync::OnceLock;
+
+/// Lazily-loaded projection matrix, shared across all AttentionDecoder instances.
+static CACHED_PROJECTION: OnceLock<Option<LinearProjection>> = OnceLock::new();
+
+/// Get the cached projection, loading it once from disk.
+fn get_cached_projection() -> Option<&'static LinearProjection> {
+    CACHED_PROJECTION
+        .get_or_init(load_projection)
+        .as_ref()
+}
 
 /// Safely read knowledge activation from a cell.
 /// Returns 0.0 if the channel doesn't exist (graceful degradation).
@@ -95,13 +106,35 @@ impl AttentionDecoder {
         v
     }
 
-    /// Extract query slots from feature vector (same projection as encoder).
+    /// Extract query slots from feature vector.
+    ///
+    /// If a non-identity projection is available, the query features are first
+    /// projected to match the encoding space, then slots are extracted.
+    /// This ensures encode and decode live in the same embedding space.
     fn query_slots(&self, query_features: &FeatureVector) -> [f64; NUM_EMBED_SLOTS] {
-        let feat_len = query_features.values.len().max(1);
+        self.query_slots_with_projection(query_features, get_cached_projection())
+    }
+
+    /// Extract query slots with an explicit projection (for testing or override).
+    fn query_slots_with_projection(
+        &self,
+        query_features: &FeatureVector,
+        projection: Option<&LinearProjection>,
+    ) -> [f64; NUM_EMBED_SLOTS] {
+        // If projection available, project the query features first
+        let projected_values: Vec<f64>;
+        let values = if let Some(proj) = projection {
+            projected_values = proj.forward(&query_features.values);
+            &projected_values
+        } else {
+            &query_features.values
+        };
+
+        let feat_len = values.len().max(1);
         let mut slots = [0.0f64; NUM_EMBED_SLOTS];
         for (i, slot) in slots.iter_mut().enumerate() {
             let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
-            *slot = query_features.values[feat_idx];
+            *slot = values[feat_idx];
         }
         slots
     }
