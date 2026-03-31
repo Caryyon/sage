@@ -78,18 +78,25 @@ pub fn cell_embedding_vec(grid: &Grid, y: usize, x: usize) -> [f64; NUM_EMBED_SL
 
 /// Cosine similarity between a feature vector and a cell's 6 embedding slots.
 ///
-/// If a projection is provided, the query features are first projected to match
-/// the encoding space before extracting slots and computing similarity.
+/// If a projection is provided AND the query is NOT already semantic (fastembed/Ollama),
+/// the query features are projected to match the encoding space before comparison.
+/// Projection is skipped for semantic features because they already live in the
+/// full-dimensional embedding space (384-dim reduced), not the hash space.
 fn cosine_sim_query_cell(
     query_features: &FeatureVector,
     cell_embed: &[f64; NUM_EMBED_SLOTS],
     projection: Option<&LinearProjection>,
 ) -> f64 {
-    // If projection available, project the query features first
+    // Only apply projection to hash-based features — semantic features (fastembed/Ollama)
+    // must NOT be projected since they are already in the target embedding space.
     let projected_values: Vec<f64>;
-    let values = if let Some(proj) = projection {
-        projected_values = proj.forward(&query_features.values);
-        &projected_values
+    let values = if !query_features.is_semantic {
+        if let Some(proj) = projection {
+            projected_values = proj.forward(&query_features.values);
+            &projected_values
+        } else {
+            &query_features.values
+        }
     } else {
         &query_features.values
     };
@@ -207,14 +214,20 @@ pub fn query_knowledge_by_features_with_text(
     // Load projection (cached after first call)
     let projection = get_cached_projection();
 
-    // Project query features if projection is available, for position calculation
+    // Project query features if projection is available AND query is hash-based.
+    // Semantic features (fastembed/Ollama) must NOT be projected — they already
+    // exist in the target embedding space (reduced from 384-dim, not hash space).
     let projected_features: FeatureVector;
-    let features_for_position = if let Some(proj) = projection {
-        projected_features = FeatureVector {
-            values: proj.forward(&query_features.values),
-            is_semantic: true,
-        };
-        &projected_features
+    let features_for_position = if !query_features.is_semantic {
+        if let Some(proj) = projection {
+            projected_features = FeatureVector {
+                values: proj.forward(&query_features.values),
+                is_semantic: false,
+            };
+            &projected_features
+        } else {
+            query_features
+        }
     } else {
         query_features
     };

@@ -121,11 +121,17 @@ impl AttentionDecoder {
         query_features: &FeatureVector,
         projection: Option<&LinearProjection>,
     ) -> [f64; NUM_EMBED_SLOTS] {
-        // If projection available, project the query features first
+        // Only apply projection to hash-based features.
+        // Semantic features (fastembed/Ollama, is_semantic=true) must NOT be projected —
+        // they already live in the target embedding space, not the hash space.
         let projected_values: Vec<f64>;
-        let values = if let Some(proj) = projection {
-            projected_values = proj.forward(&query_features.values);
-            &projected_values
+        let values = if !query_features.is_semantic {
+            if let Some(proj) = projection {
+                projected_values = proj.forward(&query_features.values);
+                &projected_values
+            } else {
+                &query_features.values
+            }
         } else {
             &query_features.values
         };
