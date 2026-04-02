@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.3.1 — 2026-04-02
+
+The `sage chat` TUI now runs retrieval through `KnowledgeLoop`, wiring in the `BinaryRelevanceReadout` feedback loop that was previously trained-but-never-applied in the chat interface. Every retrieval in the TUI now uses the trained readout to re-rank results (0.5×–2.0× scaling based on historical relevance signals), and users can type `/bad` after an unhelpful response to record a negative training signal for that query type. A new `/feedback` command shows how many retrieval events have been recorded, the current relevance rate, and how many training rounds have completed. This closes the feedback loop from ML engineer analysis 2026-03-31: the readout was training in isolation but never influencing live chat retrieval. Also fixed a double-encode bug where user input was encoded into the NCA grid twice per turn.
+
 ## v0.3.0 — 2026-03-28
 
 Bundled LLM generation via llama.cpp — SAGE is now fully self-contained. Download a GGUF model once with `sage model download phi3-mini` and SAGE runs entirely on your machine with no external dependencies. Ollama remains supported as an alternative backend.
