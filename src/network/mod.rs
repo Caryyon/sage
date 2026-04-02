@@ -5,6 +5,7 @@
 
 pub mod contribution;
 pub mod diff;
+pub mod direct_protocol;
 pub mod gossip;
 pub mod identity;
 pub mod invite;

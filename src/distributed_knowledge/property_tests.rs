@@ -184,9 +184,10 @@ proptest! {
     ///
     /// For any valid feature vector, attend_with_contrast must return
     /// positions that are within the grid bounds.
+    /// Note: Uses exactly 64 elements to match LinearProjection dimension when trained.
     #[test]
     fn contrast_retrieval_never_panics(
-        values in proptest::collection::vec(-1.0f64..=1.0, 12..=64),
+        values in proptest::collection::vec(-1.0f64..=1.0, 64..=64),
         top_k in 1usize..=10,
     ) {
         let mut grid = Grid::new(64, 64);

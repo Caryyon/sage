@@ -498,6 +498,9 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
+        // Capture start time for accurate uptime calculation
+        let node_start_time = std::time::Instant::now();
+
         let brain_path = default_brain_path();
         let mut knowledge = NCAKnowledge::new();
         let _ = knowledge.load(&brain_path); // load existing if available
@@ -789,6 +792,7 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             let identity_beacon = identity.clone();
             let contrib_beacon = contrib.clone();
             let knowledge_beacon = knowledge.clone();
+            let beacon_start_time = node_start_time;
             Some(tokio::spawn(async move {
                 const BEACON_URL: &str = "https://api.whatssage.ai/api/stats";
                 let client = reqwest::Client::new();
@@ -797,13 +801,13 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
                 loop {
-                    // Gather stats
-                    let (active_cells, grid_utilization) = {
+                    // Gather stats (use lower threshold 0.001 to capture more cells for beacon)
+                    let (active_cells, knowledge_cells_total, grid_utilization) = {
                         let k = knowledge_beacon.lock().await;
-                        let active = k.active_knowledge(0.01).len();
+                        let active = k.active_knowledge(0.001).len();
                         let total = k.grid.width * k.grid.height;
                         let util = active as f64 / total as f64;
-                        (active, util)
+                        (active, total, util)
                     };
 
                     let (patterns_sent, patterns_received, peer_count, tier_name) = {
@@ -811,30 +815,8 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                         (c.patterns_sent, c.patterns_received, c.peer_count(), c.tier().name().to_string())
                     };
 
-                    // Calculate uptime from PID file
-                    let uptime_secs: u64 = {
-                        let pid_file = sage_home().join("node.pid");
-                        if pid_file.exists() {
-                            if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
-                                if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                                    #[cfg(target_os = "linux")]
-                                    {
-                                        std::fs::metadata(format!("/proc/{}", pid))
-                                            .ok()
-                                            .and_then(|stat| stat.modified().ok())
-                                            .and_then(|t| t.elapsed().ok())
-                                            .map(|d| d.as_secs())
-                                            .unwrap_or(0)
-                                    }
-                                    #[cfg(not(target_os = "linux"))]
-                                    {
-                                        let _ = pid;
-                                        0
-                                    }
-                                } else { 0 }
-                            } else { 0 }
-                        } else { 0 }
-                    };
+                    // Calculate uptime from captured start time (works on all platforms)
+                    let uptime_secs = beacon_start_time.elapsed().as_secs();
 
                     let stats = serde_json::json!({
                         "node_name": identity_beacon.human_name,
@@ -845,6 +827,7 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                         "patterns_received": patterns_received,
                         "peer_count": peer_count,
                         "active_cells": active_cells,
+                        "knowledge_cells_total": knowledge_cells_total,
                         "grid_utilization": grid_utilization,
                         "contribution_tier": tier_name
                     });

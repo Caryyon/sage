@@ -1,6 +1,6 @@
 [package]
 name = "sage"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "SAGE - Distributed Intelligence System with NCA-based knowledge propagation"
 default-run = "sage-cli"
@@ -143,6 +143,10 @@ path = "tests/integration/gossip_two_node.rs"
 [[test]]
 name = "node_lifecycle"
 path = "tests/integration/node_lifecycle.rs"
+
+[[test]]
+name = "libp2p_direct_send"
+path = "tests/integration/libp2p_direct_send.rs"
 
 [[test]]
 name = "e2e_local_llm"

@@ -144,6 +144,25 @@ impl KnowledgeLoop {
         // Encode the query to determine if we have semantic embeddings
         let query_features = encode_text(query, &self.encoder_config);
 
+        // Compute relevance readout score — a learned P(relevant) for this query type.
+        // Only applied after training has started (rounds_completed > 0); otherwise neutral (1.0).
+        // This re-scales per-result scores so that query types historically returning
+        // irrelevant results are down-weighted, and good query types are boosted.
+        let readout_scale = if self.retrieval_feedback.rounds_completed > 0 {
+            let raw = self.relevance_readout.score(&query_features.values);
+            // Rescale from [0.0, 1.0] to [0.5, 2.0] so untrained (0.5) → 1.0x,
+            // confident relevant (1.0) → 2.0x, confident irrelevant (0.0) → 0.5x.
+            // This avoids zeroing out results entirely on cold-start.
+            0.5 + raw * 1.5
+        } else {
+            1.0
+        };
+        tracing::debug!(
+            "Retrieval readout: scale={:.3} (rounds_trained={})",
+            readout_scale,
+            self.retrieval_feedback.rounds_completed
+        );
+
         let relevant_texts: Vec<String> = if query_features.is_semantic {
             // Use AttentionDecoder for semantic queries (cross-attention readout)
             let attention_results = self.attention_decoder.attend_with_spatial_gate_and_text(
@@ -161,11 +180,11 @@ impl KnowledgeLoop {
                     .iter()
                     .map(|r| KnowledgeActivation {
                         position: r.position,
-                        activation: r.attention_weight,
+                        activation: r.attention_weight * readout_scale,
                         confidence: r.attention_weight,
                         timestamp: 0.0,
                         embedding: 0.0,
-                        relevance: r.attention_weight,
+                        relevance: r.attention_weight * readout_scale,
                         text: r.text.clone(),
                     })
                     .collect();
@@ -174,7 +193,7 @@ impl KnowledgeLoop {
 
             attention_results
                 .into_iter()
-                .filter(|r| r.attention_weight > self.relevance_threshold && r.text.is_some())
+                .filter(|r| r.attention_weight * readout_scale > self.relevance_threshold && r.text.is_some())
                 .filter_map(|r| r.text)
                 .collect()
         } else {
@@ -183,7 +202,7 @@ impl KnowledgeLoop {
             let results = self.knowledge.query(query, self.max_results);
             results
                 .into_iter()
-                .filter(|r| r.relevance > self.relevance_threshold && r.text.is_some())
+                .filter(|r| r.relevance * readout_scale > self.relevance_threshold && r.text.is_some())
                 .filter_map(|r| r.text)
                 .collect()
         };
@@ -322,39 +341,37 @@ impl KnowledgeLoop {
     ///
     /// Returns None if the grid has no significant activations.
     pub fn build_nca_thought_summary(&mut self, query: &str, n_steps: usize, top_k: usize) -> Option<String> {
-        use crate::distributed_knowledge::encoder::write_knowledge;
-        use crate::grid::KNOWLEDGE_ACTIVATION;
+        use crate::distributed_knowledge::decoder::query_knowledge_by_features_with_text;
 
-        // Clone the grid into a scratch copy — the main grid stays untouched
-        let mut scratch_grid = self.knowledge.grid.clone();
-
-        // Encode query into the scratch grid (low confidence)
+        // Encode query — this is the only NCA-coherent way to find relevant cells.
         let query_features = encode_text(query, &self.encoder_config);
-        let query_pos = write_knowledge(&mut scratch_grid, &query_features, 0.5, 0.0, &self.encoder_config);
 
-        // Run NCA steps on the scratch grid from the query-seeded state
-        scratch_grid.freerun_repair(query_pos.0, query_pos.1, 8, n_steps);
+        // Previous implementation: cloned the grid, seeded the query, ran freerun_repair,
+        // then sorted by KNOWLEDGE_ACTIVATION. This was query-independent because
+        // freerun_repair only updates hidden channels 4..15 — not KNOWLEDGE_ACTIVATION.
+        // Fix: rank cells by cosine similarity to the query's feature vector directly.
+        // This makes the "thought" genuinely query-dependent without requiring NCA dynamics
+        // to propagate into knowledge channels (which would require energy constraints).
+        //
+        // The n_steps parameter is unused for now but kept in signature for future
+        // NCA-based knowledge propagation once that path is properly designed.
+        let _ = n_steps;
 
-        // Collect top candidates by activation strength from the scratch grid
-        let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
-        for y in 0..scratch_grid.height {
-            for x in 0..scratch_grid.width {
-                let act = scratch_grid.cells[y][x][KNOWLEDGE_ACTIVATION];
-                if act > 0.1 {
-                    candidates.push((x, y, act));
-                }
-            }
-        }
+        // Use the main grid (not a scratch copy) — query_knowledge scans cosine sim
+        // and returns the top matching cells with their text from the text_store.
+        let results = query_knowledge_by_features_with_text(
+            &self.knowledge.grid,
+            &query_features,
+            &self.encoder_config,
+            top_k * 2, // fetch more than needed; filter below
+            Some(&self.knowledge.text_store),
+        );
 
-        // Sort by activation descending
-        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Decode top-K cells to text (now we can borrow text_store)
+        // Decode top-K cells to text
         let mut top_texts: Vec<String> = Vec::new();
-        for (x, y, _act) in candidates.iter().take(top_k * 3) {
-            // Try more than top_k since many cells may have no text
-            if let Some(text) = self.knowledge.text_store.get(*x, *y) {
-                top_texts.push(text.to_string());
+        for ka in results.iter() {
+            if let Some(ref text) = ka.text {
+                top_texts.push(text.clone());
                 if top_texts.len() >= top_k {
                     break;
                 }

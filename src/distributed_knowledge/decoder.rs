@@ -4,11 +4,22 @@
 //! Uses cosine similarity for semantic matching when embeddings are available.
 //! Returns actual text snippets via the TextStore.
 
-use super::encoder::{encode_text, feature_to_position, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
+use super::encoder::{encode_text, feature_to_position, load_projection, LinearProjection, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
 use crate::grid::{
     Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
 };
+use std::sync::OnceLock;
+
+/// Lazily-loaded projection matrix, shared across all decoder calls.
+static CACHED_PROJECTION: OnceLock<Option<LinearProjection>> = OnceLock::new();
+
+/// Get the cached projection, loading it once from disk.
+fn get_cached_projection() -> Option<&'static LinearProjection> {
+    CACHED_PROJECTION
+        .get_or_init(load_projection)
+        .as_ref()
+}
 
 /// A knowledge activation result from querying the grid
 #[derive(Clone, Debug)]
@@ -66,13 +77,36 @@ pub fn cell_embedding_vec(grid: &Grid, y: usize, x: usize) -> [f64; NUM_EMBED_SL
 }
 
 /// Cosine similarity between a feature vector and a cell's 6 embedding slots.
-fn cosine_sim_query_cell(query_features: &FeatureVector, cell_embed: &[f64; NUM_EMBED_SLOTS]) -> f64 {
-    // Extract the first NUM_EMBED_SLOTS values from the query feature vector
-    let feat_len = query_features.values.len().max(1);
+///
+/// If a projection is provided AND the query is NOT already semantic (fastembed/Ollama),
+/// the query features are projected to match the encoding space before comparison.
+/// Projection is skipped for semantic features because they already live in the
+/// full-dimensional embedding space (384-dim reduced), not the hash space.
+fn cosine_sim_query_cell(
+    query_features: &FeatureVector,
+    cell_embed: &[f64; NUM_EMBED_SLOTS],
+    projection: Option<&LinearProjection>,
+) -> f64 {
+    // Only apply projection to hash-based features — semantic features (fastembed/Ollama)
+    // must NOT be projected since they are already in the target embedding space.
+    let projected_values: Vec<f64>;
+    let values = if !query_features.is_semantic {
+        if let Some(proj) = projection {
+            projected_values = proj.forward(&query_features.values);
+            &projected_values
+        } else {
+            &query_features.values
+        }
+    } else {
+        &query_features.values
+    };
+
+    // Extract the first NUM_EMBED_SLOTS values from the (possibly projected) feature vector
+    let feat_len = values.len().max(1);
     let mut query_slots = [0.0f64; NUM_EMBED_SLOTS];
     for (i, slot) in query_slots.iter_mut().enumerate() {
         let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
-        *slot = query_features.values[feat_idx];
+        *slot = values[feat_idx];
     }
 
     let dot: f64 = query_slots.iter().zip(cell_embed.iter()).map(|(a, b)| a * b).sum();
@@ -167,6 +201,9 @@ pub fn query_knowledge_by_features(
 
 /// Query with pre-computed features and optional text store.
 /// Uses cosine similarity (70%) + proximity (30%) for semantic retrieval.
+///
+/// If a learned projection is available (from `~/.sage/embedding_projection.bin`),
+/// the query features are projected to match the encoding space before comparison.
 pub fn query_knowledge_by_features_with_text(
     grid: &Grid,
     query_features: &FeatureVector,
@@ -174,7 +211,28 @@ pub fn query_knowledge_by_features_with_text(
     max_results: usize,
     text_store: Option<&TextStore>,
 ) -> Vec<KnowledgeActivation> {
-    let (qx, qy) = feature_to_position(query_features, grid.width, grid.height);
+    // Load projection (cached after first call)
+    let projection = get_cached_projection();
+
+    // Project query features if projection is available AND query is hash-based.
+    // Semantic features (fastembed/Ollama) must NOT be projected — they already
+    // exist in the target embedding space (reduced from 384-dim, not hash space).
+    let projected_features: FeatureVector;
+    let features_for_position = if !query_features.is_semantic {
+        if let Some(proj) = projection {
+            projected_features = FeatureVector {
+                values: proj.forward(&query_features.values),
+                is_semantic: false,
+            };
+            &projected_features
+        } else {
+            query_features
+        }
+    } else {
+        query_features
+    };
+
+    let (qx, qy) = feature_to_position(features_for_position, grid.width, grid.height);
 
     let search_radius = (config.spread_radius * 4) as i32;
     let mut results = Vec::new();
@@ -197,8 +255,9 @@ pub fn query_knowledge_by_features_with_text(
             let confidence = safe_knowledge_confidence(cell);
 
             // Cosine similarity between query embedding and cell embedding slots
+            // Use projection if available to match the encoded embedding space
             let cell_embed = cell_embedding_vec(grid, ny, nx);
-            let cos_sim = cosine_sim_query_cell(query_features, &cell_embed);
+            let cos_sim = cosine_sim_query_cell(query_features, &cell_embed, projection);
             // Clamp to [0, 1] for scoring (negative similarity → 0)
             let cos_sim_pos = cos_sim.max(0.0);
 

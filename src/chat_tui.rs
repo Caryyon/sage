@@ -52,38 +52,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 extern crate reqwest;
-use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
+use crate::distributed_knowledge::{default_brain_path, KnowledgeStore};
 use crate::inference::ollama::OllamaEngine;
 use crate::inference::{self, ChatMessage, ChatRole, InferenceEngine};
-
-/// Query the NCA brain for knowledge relevant to the user's input.
-/// Returns a context string to prepend to the system prompt, or None if nothing useful found.
-fn retrieve_brain_knowledge(knowledge: &NCAKnowledge, query: &str) -> Option<String> {
-    let results = knowledge.query(query, 5);
-    if results.is_empty() {
-        return None;
-    }
-
-    // Filter to results that have actual text and meaningful relevance
-    let relevant: Vec<_> = results
-        .iter()
-        .filter(|r| r.text.is_some() && r.relevance > 0.3)
-        .collect();
-
-    if relevant.is_empty() {
-        return None;
-    }
-
-    let mut context =
-        String::from("The following context from previous conversations may be relevant:\n\n");
-    for r in relevant.iter() {
-        if let Some(ref text) = r.text {
-            context.push_str(&format!("- {}\n", text));
-        }
-    }
-    context.push_str("\nUse the above context naturally if relevant. Do NOT mention relevance scores, NCA internals, brain cells, or any technical details about how you recalled this information. Never include metadata or scoring in your responses.\n");
-    Some(context)
-}
+use crate::knowledge_loop::KnowledgeLoop;
 
 /// Engine selection mode for the TUI
 #[derive(Clone, Debug)]
@@ -743,29 +715,7 @@ pub fn run(
     ollama_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let brain_path = default_brain_path();
-    let mut knowledge = NCAKnowledge::new();
     let mut is_first_run = true;
-
-    // Load existing brain if available — graceful error handling
-    if std::path::Path::new(&brain_path).exists() {
-        match knowledge.load(&brain_path) {
-            Ok(()) => {
-                is_first_run = false;
-            }
-            Err(e) => {
-                // Backup the old brain before starting fresh
-                let backup_path = format!("{}.bak", brain_path);
-                if let Err(copy_err) = std::fs::copy(&brain_path, &backup_path) {
-                    eprintln!("⚠️  Could not backup old brain: {}", copy_err);
-                }
-                // Delete the old brain so we can start fresh
-                let _ = std::fs::remove_file(&brain_path);
-                eprintln!("⚠️  Brain file version mismatch — starting fresh. (Old brain backed up to {})", backup_path);
-                eprintln!("    Reason: {}", e);
-                // knowledge is already a fresh NCAKnowledge::new()
-            }
-        }
-    }
 
     let engine: Arc<dyn InferenceEngine> = Arc::from(match engine_mode {
         EngineMode::ForceOllama => {
@@ -808,13 +758,36 @@ pub fn run(
     });
 
     let engine_name = engine.name().to_string();
-    let knowledge = Arc::new(std::sync::Mutex::new(knowledge));
-    let active_cells = knowledge.lock().unwrap().active_knowledge(0.01).len();
-    let retrieval_stats = knowledge.lock().unwrap().stats_handle();
+
+    // Build KnowledgeLoop — wraps NCAKnowledge with retrieval feedback learning.
+    // The loop is the single source of truth for brain state; the TUI's inference
+    // engine is kept separately for streaming chat.
+    let mut kloop = KnowledgeLoop::new(Arc::clone(&engine)).with_brain_path(&brain_path);
+    if std::path::Path::new(&brain_path).exists() {
+        match kloop.load_brain() {
+            Ok(()) => {
+                is_first_run = false;
+            }
+            Err(e) => {
+                let backup_path = format!("{}.bak", brain_path);
+                if let Err(copy_err) = std::fs::copy(&brain_path, &backup_path) {
+                    eprintln!("⚠️  Could not backup old brain: {}", copy_err);
+                }
+                let _ = std::fs::remove_file(&brain_path);
+                eprintln!("⚠️  Brain file version mismatch — starting fresh. (Old brain backed up to {})", backup_path);
+                eprintln!("    Reason: {}", e);
+                kloop = KnowledgeLoop::new(Arc::clone(&engine)).with_brain_path(&brain_path);
+            }
+        }
+    }
+
+    let knowledge = Arc::new(std::sync::Mutex::new(kloop));
+    let active_cells = knowledge.lock().unwrap().active_cells();
+    let retrieval_stats = knowledge.lock().unwrap().knowledge().stats_handle();
 
     // Build brain grid from NCA knowledge
     let mut brain_grid = vec![vec![0.0f64; BRAIN_VIZ_SIZE]; BRAIN_VIZ_SIZE];
-    let active = knowledge.lock().unwrap().active_knowledge(0.01);
+    let active = knowledge.lock().unwrap().knowledge().active_knowledge(0.01);
     for entry in &active {
         let (x, y) = entry.position;
         if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
@@ -1043,7 +1016,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                                 );
                             }
                             // Update active cell count
-                            state.active_cells = k.active_knowledge(0.01).len();
+                            state.active_cells = k.active_cells();
                         }
                     }
                     InferenceMsg::Error(e) => {
@@ -1066,7 +1039,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
         // Refresh brain grid visualization periodically (every 60 frames ≈ 3s)
         if state.frame_counter.is_multiple_of(60) {
             if let Ok(k) = knowledge.try_lock() {
-                let active = k.active_knowledge(0.01);
+                let active = k.knowledge().active_knowledge(0.01);
                 // Reset grid
                 for row in state.brain_grid.iter_mut() {
                     for cell in row.iter_mut() {
@@ -1086,7 +1059,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
         let elapsed_since_save = state.last_save.elapsed().as_secs();
         if elapsed_since_save >= state.autosave_interval_secs && state.autosave_interval_secs > 0 {
             if let Ok(k) = knowledge.try_lock() {
-                if let Ok(()) = k.save(&brain_path) {
+                if let Ok(()) = k.save_brain() {
                     state.last_save = Instant::now();
                     state.messages.push(TuiChatMessage {
                         role: Role::System,
@@ -1115,7 +1088,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                         state.cursor_pos = 0;
 
                         if input.starts_with('/') {
-                            match handle_command(&mut state, &input, &knowledge) {
+                            match handle_command(&mut state, &input, &knowledge, &engine) {
                                 CommandResult::Handled => {}
                                 CommandResult::NeedsResetConfirmation => {
                                     state.messages.push(TuiChatMessage {
@@ -1137,27 +1110,15 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                             state.scroll_offset = 0; // auto-scroll to bottom
                             state.brain_mode = BrainMode::Encoding;
 
-                            // Encode user input into the NCA brain
+                            // Retrieve then encode — one combined lock acquisition.
+                            // retrieve_knowledge() uses the trained BinaryRelevanceReadout
+                            // to re-rank results; encode() writes user input to the NCA grid.
                             {
                                 let mut k = knowledge.lock().unwrap();
-                                let (cx, cy) = k.encode(&input, 0.6);
-                                if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
-                                    flash_nearby_cells(
-                                        &mut state.brain_flashes,
-                                        cx,
-                                        cy,
-                                        BrainMode::Encoding,
-                                    );
-                                }
-                                // Update knowledge count after encoding user input
-                                state.active_cells = k.active_knowledge(0.01).len();
-                            }
 
-                            // Retrieve brain knowledge and augment system prompt
-                            {
-                                let k = knowledge.lock().unwrap();
-                                if let Some(brain_context) = retrieve_brain_knowledge(&k, &input) {
-                                    // Augment the system message with retrieved knowledge
+                                // Retrieval: feeds BinaryRelevanceReadout feedback loop
+                                if let Some(brain_context) = k.retrieve_knowledge(&input) {
+                                    // Augment the system message with recalled knowledge
                                     if let Some(sys) = history.first_mut() {
                                         if sys.role == ChatRole::System
                                             && !sys.content.contains("## Recalled Knowledge")
@@ -1177,7 +1138,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                                     }
 
                                     // Flash retrieval cells in the brain visualization
-                                    let results = k.query(&input, 3);
+                                    let results = k.knowledge().query(&input, 3);
                                     for r in &results {
                                         let (rx, ry) = r.position;
                                         if rx < BRAIN_VIZ_SIZE && ry < BRAIN_VIZ_SIZE {
@@ -1190,11 +1151,8 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                                         }
                                     }
                                 }
-                            }
 
-                            // Encode user query into brain
-                            {
-                                let mut k = knowledge.lock().unwrap();
+                                // Encode user input into the NCA grid
                                 let (cx, cy) = k.encode(&input, 0.7);
                                 if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
                                     flash_nearby_cells(
@@ -1204,6 +1162,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                                         BrainMode::Encoding,
                                     );
                                 }
+                                state.active_cells = k.active_cells();
                             }
 
                             // Run streaming inference in background thread
@@ -1288,11 +1247,15 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
     // Save brain before exit
     {
         let k = knowledge.lock().unwrap();
-        match k.save(&brain_path) {
+        match k.save_brain() {
             Ok(()) => eprintln!("🧠 Brain saved to {}", brain_path),
             Err(e) => eprintln!("⚠️  Failed to save brain: {}", e),
         }
-        eprintln!("📊 Retrieval stats: {}", k.retrieval_stats.summary());
+        eprintln!("📊 Retrieval stats: {}", k.knowledge().retrieval_stats.summary());
+        let (events, rel_rate, rounds) = k.retrieval_feedback_stats();
+        if events > 0 {
+            eprintln!("🎯 Feedback: {} events, {:.0}% relevant, {} training rounds", events, rel_rate * 100.0, rounds);
+        }
     }
 
     // Restore terminal
@@ -1364,7 +1327,8 @@ enum CommandResult {
 fn handle_command(
     state: &mut AppState,
     cmd: &str,
-    knowledge: &std::sync::Arc<std::sync::Mutex<NCAKnowledge>>,
+    knowledge: &std::sync::Arc<std::sync::Mutex<KnowledgeLoop>>,
+    engine: &Arc<dyn InferenceEngine>,
 ) -> CommandResult {
     let parts: Vec<&str> = cmd.trim().splitn(2, ' ').collect();
     match parts[0] {
@@ -1380,6 +1344,8 @@ fn handle_command(
                     \n  /status        Show brain stats (active cells, version)\
                     \n  /save          Force save brain to disk\
                     \n  /reset         Clear brain and start fresh (asks for confirmation)\
+                    \n  /bad           Mark last response as not helpful (trains retrieval)\
+                    \n  /feedback      Show retrieval feedback training stats\
                     \n  /node          Show network status\
                     \n  /quit or /exit Exit SAGE\
                     \n\nEverything else is a chat message.".into(),
@@ -1409,7 +1375,7 @@ fn handle_command(
         }
         "/save" => {
             let k = knowledge.lock().unwrap();
-            match k.save(&state.brain_path) {
+            match k.save_brain() {
                 Ok(()) => {
                     state.messages.push(TuiChatMessage {
                         role: Role::System,
@@ -1430,13 +1396,46 @@ fn handle_command(
             CommandResult::NeedsResetConfirmation
         }
         "/reset-confirm" => {
-            // Actually perform the reset
+            // Actually perform the reset — recreate KnowledgeLoop with same engine
+            let brain_path = state.brain_path.clone();
             let mut k = knowledge.lock().unwrap();
-            *k = NCAKnowledge::new();
+            *k = KnowledgeLoop::new(Arc::clone(engine)).with_brain_path(&brain_path);
             state.active_cells = 0;
             state.messages.push(TuiChatMessage {
                 role: Role::System,
                 content: "🧠 Brain reset to fresh state. Starting over!".to_string(),
+            });
+            CommandResult::Handled
+        }
+        "/bad" => {
+            // Mark the last retrieval as irrelevant — trains the BinaryRelevanceReadout
+            // to down-weight this type of query in future retrievals.
+            let mut k = knowledge.lock().unwrap();
+            k.mark_last_retrieval_irrelevant();
+            state.messages.push(TuiChatMessage {
+                role: Role::System,
+                content: "👎 Marked last retrieval as not helpful. Retrieval will improve over time.".to_string(),
+            });
+            CommandResult::Handled
+        }
+        "/feedback" => {
+            // Show retrieval feedback training statistics
+            let k = knowledge.lock().unwrap();
+            let (events, rel_rate, rounds) = k.retrieval_feedback_stats();
+            state.messages.push(TuiChatMessage {
+                role: Role::System,
+                content: format!(
+                    "🎯 Retrieval Feedback Stats:\n\
+                     │ Total events:    {}\n\
+                     │ Relevance rate:  {:.0}%\n\
+                     │ Training rounds: {}\n\
+                     │\n\
+                     │ Use /bad after a response to mark it as not helpful.\n\
+                     │ The readout trains after 100 events.",
+                    events,
+                    rel_rate * 100.0,
+                    rounds
+                ),
             });
             CommandResult::Handled
         }

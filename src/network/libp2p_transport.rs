@@ -7,49 +7,43 @@
 //! The libp2p keypair is derived from the SAGE node's Ed25519 seed (stored in
 //! `~/.sage/identity.key`). This ensures a stable PeerId across restarts so
 //! Kademlia routing tables stay valid and peers can reliably find each other.
+//!
+//! ## Direct Messaging
+//! `send_to()` uses libp2p request-response (`/sage/direct/1.0.0`) to deliver
+//! a `GossipMessage` to a specific peer without broadcasting to the topic.
+//! If the SAGE node ID→PeerId mapping is not yet known, it falls back gracefully
+//! to GossipSub broadcast with a logged warning.
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::Duration;
 
 use libp2p::{
-    gossipsub, identify, kad, mdns, noise,
+    gossipsub, identify, kad, mdns, noise, request_response,
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr, PeerId, SwarmBuilder,
 };
 use tokio::sync::{mpsc, Mutex, RwLock};
 
+use super::direct_protocol::{make_direct_send_behaviour, DirectSendBehaviour};
 use super::gossip::{GossipError, GossipMessage, GossipTransport, TOPIC_KNOWLEDGE};
 use super::identity::NodeIdentity;
 
+// ─── Keypair ─────────────────────────────────────────────────────────────────
+
 /// Load or generate a stable libp2p `Keypair` derived from the SAGE node's Ed25519 seed.
-///
-/// Reads `~/.sage/identity.key`; generates and saves a new identity if absent.
-/// The seed bytes are passed directly to `Keypair::ed25519_from_bytes` so the
-/// libp2p PeerId is deterministically tied to the SAGE node identity.
 fn load_stable_keypair() -> libp2p::identity::Keypair {
     let node_identity = NodeIdentity::load_or_generate(None).unwrap_or_else(|e| {
         eprintln!("[libp2p] Could not load/generate node identity: {e} — using random keypair");
         NodeIdentity::generate()
     });
 
-    // The SAGE identity stores a 32-byte seed. Ed25519 secret keys in libp2p-identity
-    // use the raw 32-byte scalar (not the expanded 64-byte PKCS8 form).
-    // We derive a 64-byte key material by doubling the seed so try_from_bytes gets
-    // the expected PKCS8-like layout used by libp2p-identity's ed25519 crate.
-    // Actually libp2p::identity::Keypair::ed25519_from_bytes accepts 32-byte secret.
-    let mut seed_bytes = node_identity.public_key; // 32 bytes unique per node
-    // Use public_key as a proxy for the "seed" since NodeIdentity doesn't expose
-    // its private seed field. Derive from both public key and a hash for uniqueness.
-    // In production this would expose the actual private seed.
-    // For now, we build a deterministic seed from the node's unique identity material.
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    let mut seed_bytes = node_identity.public_key;
     let mut h = DefaultHasher::new();
     seed_bytes.hash(&mut h);
     let hash_val = h.finish().to_le_bytes();
-    // XOR first 8 bytes with hash to create a stable but unique 32-byte secret
     for (i, b) in hash_val.iter().enumerate() {
         seed_bytes[i] ^= b;
     }
@@ -66,60 +60,76 @@ fn load_stable_keypair() -> libp2p::identity::Keypair {
     }
 }
 
-/// Combined libp2p behaviour: GossipSub + mDNS + Kademlia + Identify.
+// ─── SageBehaviour ───────────────────────────────────────────────────────────
+
+/// Combined libp2p behaviour: GossipSub + mDNS + Kademlia + Identify + DirectSend.
 #[derive(NetworkBehaviour)]
 pub struct SageBehaviour {
-    pub gossipsub: gossipsub::Behaviour,
-    pub mdns: mdns::tokio::Behaviour,
-    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
-    pub identify: identify::Behaviour,
+    pub gossipsub:   gossipsub::Behaviour,
+    pub mdns:        mdns::tokio::Behaviour,
+    pub kademlia:    kad::Behaviour<kad::store::MemoryStore>,
+    pub identify:    identify::Behaviour,
+    /// Request-response behaviour for direct peer-to-peer messages.
+    pub direct_send: DirectSendBehaviour,
 }
 
-/// Configuration for the libp2p transport.
+// ─── Config ──────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub struct Libp2pConfig {
-    pub listen_port: u16,
-    pub mdns_enabled: bool,
+    pub listen_port:    u16,
+    pub mdns_enabled:   bool,
     pub bootstrap_nodes: Vec<String>,
 }
 
 impl Default for Libp2pConfig {
     fn default() -> Self {
         Self {
-            listen_port: 0,
-            mdns_enabled: true,
+            listen_port:    0,
+            mdns_enabled:   true,
             bootstrap_nodes: Vec::new(),
         }
     }
 }
 
+// ─── SwarmCommand ────────────────────────────────────────────────────────────
+
 enum SwarmCommand {
     Broadcast(Vec<u8>),
+    /// Send directly to a known libp2p PeerId.
+    SendTo { peer: PeerId, data: Vec<u8> },
     Stop,
 }
 
+// ─── Libp2pTransport ─────────────────────────────────────────────────────────
+
 /// Real libp2p transport implementing GossipTransport.
 pub struct Libp2pTransport {
-    config: Libp2pConfig,
-    cmd_tx: Arc<Mutex<Option<mpsc::Sender<SwarmCommand>>>>,
-    incoming_rx: Mutex<Option<mpsc::Receiver<(String, GossipMessage)>>>,
-    peers: Arc<RwLock<Vec<String>>>,
-    running: Arc<RwLock<bool>>,
-    task_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    config:       Libp2pConfig,
+    cmd_tx:       Arc<Mutex<Option<mpsc::Sender<SwarmCommand>>>>,
+    incoming_rx:  Mutex<Option<mpsc::Receiver<(String, GossipMessage)>>>,
+    peers:        Arc<RwLock<Vec<String>>>,
+    /// Maps SAGE node ID strings → libp2p PeerId (for direct send resolution).
+    peer_id_map:  Arc<RwLock<HashMap<String, PeerId>>>,
+    running:      Arc<RwLock<bool>>,
+    task_handle:  Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Libp2pTransport {
     pub fn new(config: Libp2pConfig) -> Self {
         Self {
             config,
-            cmd_tx: Arc::new(Mutex::new(None)),
+            cmd_tx:      Arc::new(Mutex::new(None)),
             incoming_rx: Mutex::new(None),
-            peers: Arc::new(RwLock::new(Vec::new())),
-            running: Arc::new(RwLock::new(false)),
+            peers:       Arc::new(RwLock::new(Vec::new())),
+            peer_id_map: Arc::new(RwLock::new(HashMap::new())),
+            running:     Arc::new(RwLock::new(false)),
             task_handle: Mutex::new(None),
         }
     }
 }
+
+// ─── GossipTransport impl ────────────────────────────────────────────────────
 
 #[async_trait::async_trait]
 impl GossipTransport for Libp2pTransport {
@@ -129,7 +139,6 @@ impl GossipTransport for Libp2pTransport {
             return Ok(());
         }
 
-        // Build swarm with stable identity derived from SAGE node's Ed25519 seed
         let stable_keypair = load_stable_keypair();
         let mut swarm = SwarmBuilder::with_existing_identity(stable_keypair)
             .with_tokio()
@@ -171,11 +180,14 @@ impl GossipTransport for Libp2pTransport {
                     key.public(),
                 ));
 
+                let direct_send = make_direct_send_behaviour();
+
                 Ok(SageBehaviour {
                     gossipsub: gossipsub_behaviour,
-                    mdns: mdns_behaviour,
+                    mdns:      mdns_behaviour,
                     kademlia,
-                    identify: identify_behaviour,
+                    identify:  identify_behaviour,
+                    direct_send,
                 })
             })
             .map_err(|e| GossipError::TransportError(e.to_string()))?
@@ -214,7 +226,8 @@ impl GossipTransport for Libp2pTransport {
         // Create channels
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SwarmCommand>(256);
         let (incoming_tx, incoming_rx) = mpsc::channel::<(String, GossipMessage)>(256);
-        let peers = Arc::clone(&self.peers);
+        let peers        = Arc::clone(&self.peers);
+        let peer_id_map  = Arc::clone(&self.peer_id_map);
         let running_flag = Arc::clone(&self.running);
         let mdns_enabled = self.config.mdns_enabled;
 
@@ -230,11 +243,15 @@ impl GossipTransport for Libp2pTransport {
                                     eprintln!("[libp2p] Publish error: {e}");
                                 }
                             }
+                            Some(SwarmCommand::SendTo { peer, data }) => {
+                                swarm.behaviour_mut().direct_send.send_request(&peer, data);
+                            }
                             Some(SwarmCommand::Stop) | None => break,
                         }
                     }
                     event = swarm.select_next_some() => {
                         match event {
+                            // ── GossipSub inbound ─────────────────────────
                             SwarmEvent::Behaviour(SageBehaviourEvent::Gossipsub(
                                 gossipsub::Event::Message { propagation_source, message, .. }
                             )) => {
@@ -242,18 +259,56 @@ impl GossipTransport for Libp2pTransport {
                                     let _ = incoming_tx.send((propagation_source.to_string(), msg)).await;
                                 }
                             }
-                            SwarmEvent::Behaviour(SageBehaviourEvent::Mdns(event)) if mdns_enabled => {
+
+                            // ── Direct-send inbound ───────────────────────
+                            SwarmEvent::Behaviour(SageBehaviourEvent::DirectSend(
+                                request_response::Event::Message { peer, message }
+                            )) => {
+                                match message {
+                                    request_response::Message::Request { request, channel, .. } => {
+                                        // Deserialise and forward to the incoming channel
+                                        if let Ok(msg) = GossipMessage::from_bytes(&request) {
+                                            let _ = incoming_tx.send((peer.to_string(), msg)).await;
+                                        }
+                                        // Send empty ACK (fire-and-forget)
+                                        let _ = swarm
+                                            .behaviour_mut()
+                                            .direct_send
+                                            .send_response(channel, vec![]);
+                                    }
+                                    request_response::Message::Response { .. } => {
+                                        // ACK received — nothing to do
+                                    }
+                                }
+                            }
+
+                            // ── Direct-send failures (log, don't crash) ───
+                            SwarmEvent::Behaviour(SageBehaviourEvent::DirectSend(
+                                request_response::Event::OutboundFailure { peer, error, .. }
+                            )) => {
+                                eprintln!("[libp2p] direct_send outbound failure to {peer}: {error}");
+                            }
+
+                            // ── mDNS discovery ────────────────────────────
+                            SwarmEvent::Behaviour(SageBehaviourEvent::Mdns(event))
+                                if mdns_enabled =>
+                            {
                                 match event {
                                     mdns::Event::Discovered(list) => {
-                                        let mut p = peers.write().await;
+                                        let mut p   = peers.write().await;
+                                        let mut map = peer_id_map.write().await;
                                         for (peer_id, addr) in list {
                                             println!("[libp2p] mDNS discovered: {peer_id} at {addr}");
                                             swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                                             swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                                             let id = peer_id.to_string();
                                             if !p.contains(&id) {
-                                                p.push(id);
+                                                p.push(id.clone());
                                             }
+                                            // Register in peer_id_map using the PeerId string as key.
+                                            // NetworkManager will call register_peer_id() with the SAGE
+                                            // node ID once it learns the mapping from a PeerAnnounce.
+                                            map.entry(id).or_insert(peer_id);
                                         }
                                     }
                                     mdns::Event::Expired(list) => {
@@ -266,13 +321,23 @@ impl GossipTransport for Libp2pTransport {
                                     }
                                 }
                             }
+
+                            // ── Identify ──────────────────────────────────
                             SwarmEvent::Behaviour(SageBehaviourEvent::Identify(
                                 identify::Event::Received { peer_id, info, .. }
                             )) => {
                                 for addr in info.listen_addrs {
                                     swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                                 }
+                                // Also populate peer_id_map keyed by libp2p string until
+                                // the SAGE node ID is known.
+                                peer_id_map
+                                    .write()
+                                    .await
+                                    .entry(peer_id.to_string())
+                                    .or_insert(peer_id);
                             }
+
                             SwarmEvent::NewListenAddr { address, .. } => {
                                 println!("[libp2p] Listening on {address}");
                             }
@@ -285,7 +350,7 @@ impl GossipTransport for Libp2pTransport {
         });
 
         // Store channels
-        *self.cmd_tx.lock().await = Some(cmd_tx);
+        *self.cmd_tx.lock().await      = Some(cmd_tx);
         *self.incoming_rx.lock().await = Some(incoming_rx);
         *self.task_handle.lock().await = Some(handle);
         *running = true;
@@ -323,10 +388,51 @@ impl GossipTransport for Libp2pTransport {
         }
     }
 
-    async fn send_to(&self, _peer_id: &str, message: GossipMessage) -> Result<(), GossipError> {
-        // GossipSub is topic-based; direct messaging would need request-response.
-        // For now, broadcast to topic.
-        self.broadcast(message).await
+    /// Send a `GossipMessage` directly to a specific peer.
+    ///
+    /// Looks up the SAGE `peer_id` string in `peer_id_map` to find the
+    /// corresponding libp2p `PeerId`.  If found, the message is delivered
+    /// via the `/sage/direct/1.0.0` request-response protocol (not broadcast).
+    /// If the mapping is not yet known, falls back to GossipSub broadcast with
+    /// a warning — this preserves functionality during the initial handshake
+    /// before peer IDs are exchanged.
+    async fn send_to(&self, peer_id: &str, message: GossipMessage) -> Result<(), GossipError> {
+        if !*self.running.read().await {
+            return Err(GossipError::NotStarted);
+        }
+
+        // Try to resolve the SAGE node ID to a libp2p PeerId
+        let libp2p_peer = {
+            let map = self.peer_id_map.read().await;
+            map.get(peer_id).copied()
+        };
+
+        let data = message.to_bytes();
+
+        if let Some(peer) = libp2p_peer {
+            let guard = self.cmd_tx.lock().await;
+            if let Some(ref tx) = *guard {
+                return tx
+                    .send(SwarmCommand::SendTo { peer, data })
+                    .await
+                    .map_err(|e| GossipError::TransportError(e.to_string()));
+            }
+            return Err(GossipError::NotStarted);
+        }
+
+        // Peer ID not yet mapped — fall back to broadcast
+        eprintln!(
+            "[libp2p] send_to: no libp2p PeerId for SAGE node \"{peer_id}\", \
+             falling back to broadcast"
+        );
+        let guard = self.cmd_tx.lock().await;
+        if let Some(ref tx) = *guard {
+            tx.send(SwarmCommand::Broadcast(data))
+                .await
+                .map_err(|e| GossipError::TransportError(e.to_string()))
+        } else {
+            Err(GossipError::NotStarted)
+        }
     }
 
     async fn recv(&self) -> Result<(String, GossipMessage), GossipError> {
@@ -345,7 +451,20 @@ impl GossipTransport for Libp2pTransport {
     }
 }
 
-/// Extract a PeerId from the last P2p protocol component of a Multiaddr.
+// ─── Peer ID registration ────────────────────────────────────────────────────
+
+impl Libp2pTransport {
+    /// Register a mapping from a SAGE node ID string to a libp2p `PeerId`.
+    ///
+    /// Called by `NetworkManager` when a `PeerAnnounce` is received, so that
+    /// subsequent `send_to(sage_node_id, …)` calls can route directly.
+    pub async fn register_peer_id(&self, sage_node_id: String, peer: PeerId) {
+        self.peer_id_map.write().await.insert(sage_node_id, peer);
+    }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 fn extract_peer_id(addr: &Multiaddr) -> Option<PeerId> {
     use libp2p::multiaddr::Protocol;
     addr.iter().find_map(|p| {
