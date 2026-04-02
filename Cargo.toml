@@ -145,6 +145,10 @@ name = "node_lifecycle"
 path = "tests/integration/node_lifecycle.rs"
 
 [[test]]
+name = "libp2p_direct_send"
+path = "tests/integration/libp2p_direct_send.rs"
+
+[[test]]
 name = "e2e_local_llm"
 path = "tests/e2e_local_llm.rs"
 
