@@ -454,7 +454,18 @@ impl KnowledgeLoop {
     /// After encoding a response, this finds the most-activated cells and runs
     /// the NcaPredictor on that neighbourhood, writing hidden-channel updates
     /// back to the main grid. Knowledge channels are left untouched.
-    pub fn step_knowledge(&mut self, center: (usize, usize)) {
+    pub fn step_knowledge(&mut self, _center: (usize, usize)) {
+        // DISABLED (2026-04-06): Dream cycle is architecturally incoherent.
+        // The NcaPredictor grid (16-channel, token-prediction) and KnowledgeLoop
+        // grid (38-channel, knowledge) are entirely separate systems. The
+        // position→token mapping has no semantic grounding; blending hidden
+        // channels from a token-prediction grid into knowledge organization
+        // channels injects noise rather than improving retrieval quality.
+        // See: sage-ml-engineer analysis 2026-03-31-flags-for-sage-lead.md
+        return;
+
+        // Original implementation preserved below for future principled design.
+        /*
         self.ensure_nca_predictor();
         let predictor = match self.nca_predictor.as_mut() {
             Some(p) => p,
@@ -520,6 +531,7 @@ impl KnowledgeLoop {
             "Dream step must not corrupt KNOWLEDGE_ACTIVATION"
         );
         let _ = KNOWLEDGE_CHANNELS_START; // suppress unused warning in release builds
+        */
     }
 
     /// Run one turn of the knowledge loop:
@@ -529,8 +541,11 @@ impl KnowledgeLoop {
     /// 4. Build prompt with knowledge context
     /// 5. Generate response via inference engine
     /// 6. Encode response into NCA grid
-    /// 7. Dream cycle: NCA predictor runs on response region
-    /// 8. Freerun repair: consolidate via local rules
+    /// 7. Freerun repair: consolidate via local rules
+    ///
+    /// Note: The "dream cycle" (NCA predictor on response region) was disabled
+    /// on 2026-04-06 pending a principled design connecting token-prediction
+    /// dynamics to knowledge organization.
     ///
     /// Returns the assistant's response.
     pub fn chat(&mut self, user_input: &str) -> Result<String, Box<dyn Error>> {
@@ -614,11 +629,8 @@ impl KnowledgeLoop {
         // 6b. Write recency signal to memory channel 25
         self.update_recency_channel(response_pos);
 
-        // 7. Dream cycle: run NCA update steps on recently-written region
-        self.step_knowledge(response_pos);
-
-        // 8. Freerun repair: consolidate knowledge via local rules (rNCA paper)
-        // This lets the grid "settle" its activation patterns after the dream cycle
+        // 7. Consolidate knowledge via local rules (rNCA paper)
+        // Note: Dream cycle disabled — see step_knowledge() docstring.
         self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
 
         // Update history
@@ -717,10 +729,8 @@ impl KnowledgeLoop {
         // 6b. Write recency signal to memory channel 25
         self.update_recency_channel(response_pos);
 
-        // 7. Dream cycle
-        self.step_knowledge(response_pos);
-
-        // 8. Freerun repair: consolidate knowledge via local rules (rNCA paper)
+        // 7. Consolidate knowledge via local rules (rNCA paper)
+        // Note: Dream cycle disabled — see step_knowledge() docstring.
         self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
 
         // Update history
