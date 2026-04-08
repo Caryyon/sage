@@ -96,6 +96,10 @@ name = "sage-criticality"
 path = "src/bin/sage_criticality.rs"
 
 [[bin]]
+name = "sage-network-server"
+path = "src/bin/sage_network_server.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 
