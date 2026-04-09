@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.3.2 — 2026-04-09
+
+Network observability: new `sage-network-server` binary exposes HTTP endpoints for the whatssage.ai/network dashboard. Provides `/api/stats`, `/api/peers`, `/api/identity`, and `/api/health` routes that aggregate real-time data from running SAGE nodes. Also fixes an architecturally incoherent dream cycle that was blending hidden channels from a token-prediction NCA grid into the knowledge grid — removed pending a principled redesign.
+
 ## v0.3.1 — 2026-04-02
 
 The `sage chat` TUI now runs retrieval through `KnowledgeLoop`, wiring in the `BinaryRelevanceReadout` feedback loop that was previously trained-but-never-applied in the chat interface. Every retrieval in the TUI now uses the trained readout to re-rank results (0.5×–2.0× scaling based on historical relevance signals), and users can type `/bad` after an unhelpful response to record a negative training signal for that query type. A new `/feedback` command shows how many retrieval events have been recorded, the current relevance rate, and how many training rounds have completed. This closes the feedback loop from ML engineer analysis 2026-03-31: the readout was training in isolation but never influencing live chat retrieval. Also fixed a double-encode bug where user input was encoded into the NCA grid twice per turn.
