@@ -14,9 +14,8 @@
 //! Optimizer: Adam with gradient clipping.
 
 use super::nca_predictor::{
-    default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer, TrainingConfig, NCA_CHANNELS,
+    NcaPredictor, NcaWeights, SimpleTokenizer, TrainingConfig, NCA_CHANNELS,
 };
-use rand::Rng;
 
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
 const HIDDEN1_SIZE: usize = 384;
@@ -176,6 +175,7 @@ impl AdamState {
 // ---------------------------------------------------------------------------
 
 /// Per-cell intermediate values for one NCA step
+#[allow(dead_code)]
 struct CellTrace {
     input: Vec<f64>,     // [PERCEPTION_SIZE] - perception input
     pre_h1: Vec<f64>,    // [HIDDEN1_SIZE] - before relu
@@ -188,6 +188,7 @@ struct CellTrace {
 }
 
 /// All traces for one NCA step across the whole grid
+#[allow(dead_code)]
 struct StepTrace {
     cells: Vec<Vec<CellTrace>>,                 // [grid_size][grid_size]
     grid_before: Vec<Vec<[f64; NCA_CHANNELS]>>, // grid state before this step
