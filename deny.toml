@@ -13,10 +13,8 @@ targets = [
 # RustSec advisory database
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-# Fail on vulnerabilities
-vulnerability = "deny"
-# Warn on unmaintained crates
-unmaintained = "warn"
+# Only fail on unmaintained crates that are direct dependencies
+unmaintained = "workspace"
 # Warn on yanked crates
 yanked = "warn"
 # Ignore advisories (use sparingly, with justification)
