@@ -8,7 +8,7 @@
 use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
 use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
-use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, MEMORY_RECENCY, NUM_BASE_CHANNELS};
+use crate::grid::{GRID_SIZE, MEMORY_RECENCY};
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
@@ -58,8 +58,10 @@ pub struct KnowledgeLoop {
     pub response_encode_confidence: f64,
     /// Lazily-initialized NcaPredictor for the dream cycle.
     /// None if weights not found on disk (graceful skip).
+    #[allow(dead_code)]
     nca_predictor: Option<NcaPredictor>,
     /// Whether we've already attempted to load the predictor.
+    #[allow(dead_code)]
     nca_load_attempted: bool,
     /// Cross-attention decoder for semantic knowledge retrieval.
     /// Based on arXiv:2603.10055 (Lee et al.): attention layers are the
@@ -420,6 +422,7 @@ impl KnowledgeLoop {
     }
 
     /// Lazily load the NcaPredictor from disk. Silently skips if weights absent.
+    #[allow(dead_code)]
     fn ensure_nca_predictor(&mut self) {
         if self.nca_load_attempted {
             return;

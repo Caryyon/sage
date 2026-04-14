@@ -6,7 +6,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use super::diff::{CellChange, KnowledgeDiff};
+use super::diff::KnowledgeDiff;
 
 // ─── Privacy Configuration ──────────────────────────────────────────────────
 
@@ -268,6 +268,7 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::diff::CellChange;
 
     fn make_diff(changes: Vec<CellChange>) -> KnowledgeDiff {
         KnowledgeDiff {
