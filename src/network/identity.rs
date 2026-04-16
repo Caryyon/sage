@@ -1,9 +1,13 @@
 //! Node Identity — Ed25519 keypair generation and management.
 //!
-//! Each SAGE node has a unique identity derived from an Ed25519 keypair.
+//! Each SAGE node has a unique identity derived from a real Ed25519 keypair.
 //! The node ID is a short, human-readable hash of the public key: `sage-XXXXXX`.
 //! Additionally, each node has a human-readable name like "swift-harbor".
+//!
+//! The libp2p PeerId is cryptographically derived from the same seed via
+//! `to_libp2p_keypair()`, ensuring a stable, authentic network identity across restarts.
 
+use ed25519_dalek::{Signer, SigningKey};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -85,13 +89,10 @@ impl NodeIdentity {
         Self::from_seed(seed)
     }
 
-    /// Create identity from a 32-byte seed.
+    /// Create identity from a 32-byte seed using real Ed25519 scalar multiplication.
     pub fn from_seed(seed: [u8; 32]) -> Self {
-        // Derive public key: for now we store seed and derive a "public key"
-        // using a simple deterministic transform. In production this would use
-        // actual Ed25519 scalar multiplication. For the foundation we'll use
-        // a hash-based derivation that's deterministic.
-        let public_key = simple_pubkey_derive(&seed);
+        let signing_key = SigningKey::from_bytes(&seed);
+        let public_key = *signing_key.verifying_key().as_bytes();
         let node_id = Self::derive_node_id(&public_key);
         let human_name = generate_human_name(&public_key);
         Self {
@@ -100,6 +101,30 @@ impl NodeIdentity {
             node_id,
             human_name,
         }
+    }
+
+    /// Convert this node identity to a libp2p Keypair.
+    ///
+    /// The resulting libp2p PeerId is deterministically derived from this node's seed,
+    /// so the same `~/.sage/identity.key` always produces the same peer on the network.
+    /// This replaces the previous `load_stable_keypair()` workaround in libp2p_transport.rs.
+    pub fn to_libp2p_keypair(&self) -> libp2p::identity::Keypair {
+        // libp2p's ed25519::Keypair::try_from_bytes expects 64 bytes:
+        // first 32 = secret scalar, last 32 = public key (compressed point)
+        let mut kp_bytes = [0u8; 64];
+        let signing_key = SigningKey::from_bytes(&self.seed);
+        kp_bytes[..32].copy_from_slice(signing_key.as_bytes());
+        kp_bytes[32..].copy_from_slice(signing_key.verifying_key().as_bytes());
+
+        libp2p::identity::Keypair::from(
+            libp2p::identity::ed25519::Keypair::try_from_bytes(&mut kp_bytes)
+                .expect("seed is always a valid Ed25519 secret key"),
+        )
+    }
+
+    /// The stable libp2p PeerId for this node (same across restarts, same seed).
+    pub fn peer_id(&self) -> libp2p::PeerId {
+        libp2p::PeerId::from_public_key(&self.to_libp2p_keypair().public())
     }
 
     /// Default path for the identity key file.
@@ -164,27 +189,15 @@ impl NodeIdentity {
         Ok(())
     }
 
-    /// Sign a message (placeholder — returns seed-based HMAC-like tag).
-    pub fn sign(&self, message: &[u8]) -> [u8; 32] {
-        // Placeholder: XOR seed with message hash
-        let mut tag = self.seed;
-        for (i, &b) in message.iter().enumerate() {
-            tag[i % 32] ^= b;
-        }
-        tag
+    /// Sign a message with this node's Ed25519 private key.
+    ///
+    /// Returns a 64-byte Ed25519 signature. Verify against `self.public_key`.
+    pub fn sign(&self, message: &[u8]) -> [u8; 64] {
+        let signing_key = SigningKey::from_bytes(&self.seed);
+        signing_key.sign(message).to_bytes()
     }
 }
 
-/// Simple deterministic "public key" derivation from seed.
-/// NOT cryptographically secure — placeholder until we add ed25519-dalek.
-fn simple_pubkey_derive(seed: &[u8; 32]) -> [u8; 32] {
-    let mut pk = [0u8; 32];
-    for i in 0..32 {
-        // Deterministic scramble
-        pk[i] = seed[i].wrapping_mul(137).wrapping_add(seed[(i + 13) % 32]) ^ 0xA5;
-    }
-    pk
-}
 
 /// Default path for node name file.
 fn default_name_path() -> PathBuf {
@@ -222,7 +235,6 @@ fn load_or_generate_human_name(public_key: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_generate_deterministic_from_seed() {
@@ -288,5 +300,65 @@ mod tests {
         let id = NodeIdentity::generate();
         assert!(!id.human_name.is_empty(), "identity should have a human name");
         assert!(id.human_name.contains('-'), "human name should be adjective-noun: {}", id.human_name);
+    }
+
+    /// Public key must be the real Ed25519 verifying key for the given seed.
+    #[test]
+    fn test_real_ed25519_public_key() {
+        let seed = [42u8; 32];
+        let id = NodeIdentity::from_seed(seed);
+        let expected_pk = *SigningKey::from_bytes(&seed).verifying_key().as_bytes();
+        assert_eq!(id.public_key, expected_pk, "public_key must be real Ed25519 verifying key");
+    }
+
+    /// `to_libp2p_keypair()` must produce the same PeerId every time for the same seed.
+    #[test]
+    fn test_to_libp2p_keypair_deterministic() {
+        let id = NodeIdentity::from_seed([7u8; 32]);
+        let kp1 = id.to_libp2p_keypair();
+        let kp2 = id.to_libp2p_keypair();
+        assert_eq!(
+            kp1.public().to_peer_id(),
+            kp2.public().to_peer_id(),
+            "same seed → same PeerId always",
+        );
+    }
+
+    /// `peer_id()` must be stable across calls.
+    #[test]
+    fn test_peer_id_stable() {
+        let id = NodeIdentity::from_seed([99u8; 32]);
+        assert_eq!(id.peer_id(), id.peer_id(), "peer_id() must be idempotent");
+    }
+
+    /// Different seeds → different PeerIds.
+    #[test]
+    fn test_different_seeds_different_peer_ids() {
+        let id_a = NodeIdentity::from_seed([1u8; 32]);
+        let id_b = NodeIdentity::from_seed([2u8; 32]);
+        assert_ne!(id_a.peer_id(), id_b.peer_id());
+    }
+
+    /// `sign()` must produce a valid Ed25519 signature verifiable with the public key.
+    #[test]
+    fn test_sign_verifies() {
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+        let id = NodeIdentity::from_seed([55u8; 32]);
+        let message = b"hello sage network";
+        let sig_bytes = id.sign(message);
+
+        let sig = Signature::from_bytes(&sig_bytes);
+        let vk = VerifyingKey::from_bytes(&id.public_key).expect("valid Ed25519 public key");
+        assert!(vk.verify(message, &sig).is_ok(), "signature must verify");
+    }
+
+    /// `sign()` must produce different signatures for different messages.
+    #[test]
+    fn test_sign_is_deterministic_and_unique() {
+        let id = NodeIdentity::from_seed([33u8; 32]);
+        let sig1 = id.sign(b"message one");
+        let sig2 = id.sign(b"message two");
+        assert_ne!(sig1, sig2, "different messages → different signatures");
     }
 }

@@ -597,7 +597,7 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             mdns_enabled: !no_mdns,
             bootstrap_nodes: all_bootstrap,
         };
-        let transport = Arc::new(Libp2pTransport::new(libp2p_config));
+        let transport = Arc::new(Libp2pTransport::new(libp2p_config, Some(identity.to_libp2p_keypair())));
 
         match transport.start().await {
             Ok(()) => {}
