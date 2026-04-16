@@ -158,6 +158,8 @@ mod tests {
             state_hash: [0u8; 32],
             confidence: 0.8,
             timestamp_ms: 0,
+            signer_public_key: None,
+            signature: None,
         }
     }
 
