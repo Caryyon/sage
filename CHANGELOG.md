@@ -1,6 +1,8 @@
 # CHANGELOG
 
-## v0.3.2 — 2026-04-09
+## v0.3.3 — 2026-04-16
+
+Signed KnowledgeDiffs close a network poisoning vulnerability. Every diff now carries an Ed25519 signature over (source_node || sequence || state_hash), verified on receipt by NetworkManager. Missing signatures are tolerated for backward compatibility with legacy peers; invalid signatures trigger hard rejection. This completes the cryptographic identity chain: NodeIdentity (real Ed25519 keypair from PR #2) → KnowledgeDiff signing → verified acceptance in the network layer. Five new signature tests cover roundtrip, missing, tampered payload, sequence replay, and serialization cases.
 
 Network observability: new `sage-network-server` binary exposes HTTP endpoints for the whatssage.ai/network dashboard. Provides `/api/stats`, `/api/peers`, `/api/identity`, and `/api/health` routes that aggregate real-time data from running SAGE nodes. Also fixes an architecturally incoherent dream cycle that was blending hidden channels from a token-prediction NCA grid into the knowledge grid — removed pending a principled redesign.
 
