@@ -196,6 +196,11 @@ impl NodeIdentity {
         let signing_key = SigningKey::from_bytes(&self.seed);
         signing_key.sign(message).to_bytes()
     }
+
+    /// Get the 32-byte seed bytes (for signing diffs).
+    pub fn seed_bytes(&self) -> &[u8; 32] {
+        &self.seed
+    }
 }
 
 
