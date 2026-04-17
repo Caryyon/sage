@@ -252,7 +252,7 @@ impl GossipTransport for Libp2pTransport {
 
                             // ── Direct-send inbound ───────────────────────
                             SwarmEvent::Behaviour(SageBehaviourEvent::DirectSend(
-                                request_response::Event::Message { peer, message }
+                                request_response::Event::Message { peer, message, .. }
                             )) => {
                                 match message {
                                     request_response::Message::Request { request, channel, .. } => {
