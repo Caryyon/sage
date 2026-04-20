@@ -8,10 +8,10 @@
 use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
 use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
-use crate::grid::{GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, MEMORY_RECENCY, NUM_BASE_CHANNELS};
-use crate::inference::nca_predictor::{
-    default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
-};
+use crate::grid::{GRID_SIZE, MEMORY_RECENCY};
+// NCA predictor imports removed — dream cycle disabled (2026-04-08)
+// The step_knowledge() function has a return statement at the start because
+// the dream cycle was architecturally incoherent. See PR #14 for rationale.
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
 use std::error::Error;
@@ -25,11 +25,7 @@ static TOTAL_RETRIEVALS: AtomicUsize = AtomicUsize::new(0);
 /// not already found by semantic/hash retrieval.
 static DELTA_UNIQUE_HITS: AtomicUsize = AtomicUsize::new(0);
 
-/// Number of NCA dream steps to run after encoding a response.
-const N_DREAM_STEPS: usize = 3;
-/// Window half-size for the region fed into the dream predictor.
-const DREAM_WINDOW: usize = 8; // 16×16 region
-/// Number of freerun repair steps after dream cycle.
+/// Number of freerun repair steps after encoding.
 const N_FREERUN_STEPS: usize = 3;
 /// Number of NCA update steps to run BEFORE retrieval (post-encode, pre-query).
 /// This lets the grid "react" to newly encoded input before we read from it.
@@ -56,11 +52,6 @@ pub struct KnowledgeLoop {
     pub user_encode_confidence: f64,
     /// Confidence level for encoding assistant responses (0.0-1.0)
     pub response_encode_confidence: f64,
-    /// Lazily-initialized NcaPredictor for the dream cycle.
-    /// None if weights not found on disk (graceful skip).
-    nca_predictor: Option<NcaPredictor>,
-    /// Whether we've already attempted to load the predictor.
-    nca_load_attempted: bool,
     /// Cross-attention decoder for semantic knowledge retrieval.
     /// Based on arXiv:2603.10055 (Lee et al.): attention layers are the
     /// most transferable component when extracting knowledge from NCA states.
@@ -90,8 +81,6 @@ impl KnowledgeLoop {
             max_results: 5,
             user_encode_confidence: 0.7,
             response_encode_confidence: 0.8,
-            nca_predictor: None,
-            nca_load_attempted: false,
             attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE),
             encoder_config: EncoderConfig::default(),
             retrieval_feedback: RetrievalFeedback::new(RETRIEVAL_FEATURE_DIM),
@@ -419,119 +408,17 @@ impl KnowledgeLoop {
         self.knowledge.encode(text, confidence)
     }
 
-    /// Lazily load the NcaPredictor from disk. Silently skips if weights absent.
-    fn ensure_nca_predictor(&mut self) {
-        if self.nca_load_attempted {
-            return;
-        }
-        self.nca_load_attempted = true;
-
-        let path = default_weights_path();
-        if !path.exists() {
-            return; // No trained weights — skip dream cycle gracefully
-        }
-
-        match NcaWeights::load(&path) {
-            Ok(weights) => {
-                // Build a minimal tokenizer (empty corpus is fine — we only use run_and_get_state)
-                let tokenizer = SimpleTokenizer::from_corpus("", 100);
-                let predictor = NcaPredictor::with_grid_size(
-                    tokenizer,
-                    weights,
-                    N_DREAM_STEPS,
-                    DREAM_WINDOW * 2, // 16-cell grid for the dream window
-                );
-                self.nca_predictor = Some(predictor);
-            }
-            Err(e) => {
-                eprintln!("[SAGE dream] Could not load NCA weights: {e} — dream cycle disabled");
-            }
-        }
-    }
-
     /// Run NCA dream steps on the recently-written knowledge region.
     ///
-    /// After encoding a response, this finds the most-activated cells and runs
-    /// the NcaPredictor on that neighbourhood, writing hidden-channel updates
-    /// back to the main grid. Knowledge channels are left untouched.
+    /// DISABLED (2026-04-06): Dream cycle was architecturally incoherent.
+    /// The NcaPredictor grid (16-channel, token-prediction) and KnowledgeLoop
+    /// grid (38-channel, knowledge) are entirely separate systems. The
+    /// position→token mapping has no semantic grounding; blending hidden
+    /// channels from a token-prediction grid into knowledge organization
+    /// channels injects noise rather than improving retrieval quality.
+    /// See: sage-ml-engineer analysis 2026-03-31-flags-for-sage-lead.md
     pub fn step_knowledge(&mut self, _center: (usize, usize)) {
-        // DISABLED (2026-04-06): Dream cycle is architecturally incoherent.
-        // The NcaPredictor grid (16-channel, token-prediction) and KnowledgeLoop
-        // grid (38-channel, knowledge) are entirely separate systems. The
-        // position→token mapping has no semantic grounding; blending hidden
-        // channels from a token-prediction grid into knowledge organization
-        // channels injects noise rather than improving retrieval quality.
-        // See: sage-ml-engineer analysis 2026-03-31-flags-for-sage-lead.md
-        return;
-
-        // Original implementation preserved below for future principled design.
-        /*
-        self.ensure_nca_predictor();
-        let predictor = match self.nca_predictor.as_mut() {
-            Some(p) => p,
-            None => return, // No predictor — skip silently
-        };
-
-        let (cx, cy) = center;
-        let w = self.knowledge.grid.width;
-        let h = self.knowledge.grid.height;
-        let win = DREAM_WINDOW;
-
-        // Collect cells with high activation in the window
-        let mut active_tokens: Vec<usize> = Vec::new();
-        for dy in 0..win * 2 {
-            for dx in 0..win * 2 {
-                let nx = (cx + dx).saturating_sub(win).min(w - 1);
-                let ny = (cy + dy).saturating_sub(win).min(h - 1);
-                let act = self.knowledge.grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
-                if act > 0.1 {
-                    // Map grid position to a token index for the predictor
-                    let token_id = (ny * (win * 2) + nx) % 100;
-                    active_tokens.push(token_id);
-                }
-            }
-        }
-
-        if active_tokens.is_empty() {
-            return;
-        }
-
-        // Run the predictor for N_DREAM_STEPS on the activated tokens
-        let state = predictor.run_and_get_state(&active_tokens);
-
-        // Write hidden channel updates back to the main grid
-        // Only touch base hidden channels (4..NUM_BASE_CHANNELS), not knowledge channels
-        let pred_size = state.len();
-        for dy in 0..win * 2 {
-            for dx in 0..win * 2 {
-                let nx = (cx + dx).saturating_sub(win).min(w - 1);
-                let ny = (cy + dy).saturating_sub(win).min(h - 1);
-
-                // Map grid position to predictor grid position
-                let pr = (dy * pred_size / (win * 2)).min(pred_size.saturating_sub(1));
-                let pc = (dx * pred_size / (win * 2)).min(pred_size.saturating_sub(1));
-                if pr >= state.len() || pc >= state[pr].len() {
-                    continue;
-                }
-
-                let pred_cell = &state[pr][pc];
-                // Update hidden channels (4..16) — leave RGBA (0..4) and knowledge channels alone
-                let num_pred_ch = pred_cell.len().min(NUM_BASE_CHANNELS);
-                for ch in 4..num_pred_ch {
-                    // Blend: 80% existing + 20% dream influence
-                    self.knowledge.grid.cells[ny][nx][ch] =
-                        self.knowledge.grid.cells[ny][nx][ch] * 0.8 + pred_cell[ch] * 0.2;
-                }
-            }
-        }
-
-        // Verify we didn't clobber knowledge channels (safety check)
-        debug_assert!(
-            self.knowledge.grid.cells[cy][cx][KNOWLEDGE_ACTIVATION] >= 0.0,
-            "Dream step must not corrupt KNOWLEDGE_ACTIVATION"
-        );
-        let _ = KNOWLEDGE_CHANNELS_START; // suppress unused warning in release builds
-        */
+        // Intentionally disabled — see PR #14 for rationale.
     }
 
     /// Run one turn of the knowledge loop:
