@@ -367,9 +367,8 @@ impl Grid {
         for y in 0..self.height {
             for x in 0..self.width {
                 // Set each pattern channel to its weight
-                for i in 0..NUM_PATTERN_CHANNELS {
-                    self.cells[y][x][NUM_BASE_CHANNELS + i] = weights[i];
-                }
+                self.cells[y][x][NUM_BASE_CHANNELS..(NUM_PATTERN_CHANNELS + NUM_BASE_CHANNELS)]
+                    .copy_from_slice(&weights[..NUM_PATTERN_CHANNELS]);
             }
         }
     }
@@ -437,6 +436,7 @@ impl Grid {
     /// # Arguments
     /// * `cx`, `cy` - Center coordinates of the repair region
     /// * `radius` - Half-width of the repair window
+    ///
     /// Snapshot the current state of knowledge channels (channels 26-31, the 6 embedding slots)
     /// across the entire grid. Returns a 2D array: snapshot[y][x] = [f32; 6].
     ///
@@ -444,10 +444,10 @@ impl Grid {
     /// and retrieve the cells with highest delta magnitude (the "activated" concepts).
     pub fn snapshot_knowledge_channels(&self) -> Vec<Vec<[f32; 6]>> {
         let mut snap = vec![vec![[0.0f32; 6]; self.width]; self.height];
-        for y in 0..self.height {
-            for x in 0..self.width {
-                for slot in 0..6 {
-                    snap[y][x][slot] = self.cells[y][x][KNOWLEDGE_CHANNELS_START + slot] as f32;
+        for (y, row) in snap.iter_mut().enumerate() {
+            for (x, cell) in row.iter_mut().enumerate() {
+                for (slot, cell_val) in cell.iter_mut().enumerate() {
+                    *cell_val = self.cells[y][x][KNOWLEDGE_CHANNELS_START + slot] as f32;
                 }
             }
         }
@@ -457,8 +457,8 @@ impl Grid {
     /// Compute per-cell L2 norm of the change between two knowledge channel snapshots.
     /// Returns a 2D array: delta[y][x] = L2 norm of change in the 6 embedding slots.
     pub fn compute_delta_magnitude(
-        before: &Vec<Vec<[f32; 6]>>,
-        after: &Vec<Vec<[f32; 6]>>,
+        before: &[Vec<[f32; 6]>],
+        after: &[Vec<[f32; 6]>],
     ) -> Vec<Vec<f32>> {
         let h = before.len();
         let w = if h > 0 { before[0].len() } else { 0 };
@@ -521,16 +521,16 @@ impl Grid {
                             let nny =
                                 ((ny as i32 + ndy).rem_euclid(self.height as i32)) as usize;
 
-                            for ch in 4..NUM_BASE_CHANNELS {
-                                neighbor_avg[ch] += self.cells[nny][nnx][ch];
+                            for (ch, avg) in neighbor_avg.iter_mut().enumerate().skip(4).take(NUM_BASE_CHANNELS - 4) {
+                                *avg += self.cells[nny][nnx][ch];
                             }
                             neighbor_count += 1;
                         }
                     }
 
                     if neighbor_count > 0 {
-                        for ch in 4..NUM_BASE_CHANNELS {
-                            neighbor_avg[ch] /= neighbor_count as f64;
+                        for avg in neighbor_avg.iter_mut().skip(4).take(NUM_BASE_CHANNELS - 4) {
+                            *avg /= neighbor_count as f64;
                         }
                     }
 
@@ -540,9 +540,8 @@ impl Grid {
 
             // Apply smoothing: new_val = 0.7 * current + 0.3 * neighbor_avg
             for (nx, ny, neighbor_avg) in updates {
-                for ch in 4..NUM_BASE_CHANNELS {
-                    self.cells[ny][nx][ch] =
-                        self.cells[ny][nx][ch] * 0.7 + neighbor_avg[ch] * 0.3;
+                for (ch, avg) in neighbor_avg.iter().enumerate().skip(4).take(NUM_BASE_CHANNELS - 4) {
+                    self.cells[ny][nx][ch] = self.cells[ny][nx][ch] * 0.7 + avg * 0.3;
                 }
             }
         }

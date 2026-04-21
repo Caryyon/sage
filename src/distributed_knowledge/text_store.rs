@@ -98,6 +98,11 @@ impl TextStore {
         self.entries.len()
     }
 
+    /// Check if store is empty
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Total bytes stored
     pub fn total_bytes(&self) -> usize {
         self.total_bytes

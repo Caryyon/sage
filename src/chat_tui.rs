@@ -149,7 +149,7 @@ fn format_peer_count(n: usize) -> String {
     }
 }
 
-fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, mode: BrainMode) {
+fn flash_nearby_cells(flashes: &mut [Vec<CellFlash>], cx: usize, cy: usize, mode: BrainMode) {
     let now = Instant::now();
     let radius = 3i32;
     for dy in -radius..=radius {
@@ -168,7 +168,7 @@ fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, m
     }
 }
 
-fn decay_flashes(flashes: &mut Vec<Vec<CellFlash>>) {
+fn decay_flashes(flashes: &mut [Vec<CellFlash>]) {
     let now = Instant::now();
     for row in flashes.iter_mut() {
         for cell in row.iter_mut() {
@@ -529,7 +529,7 @@ fn ui(f: &mut Frame, state: &AppState) {
     let version = env!("CARGO_PKG_VERSION");
     let peer_str = format_peer_count(state.peer_count);
     let peer_color = if state.peer_count > 0 { CYAN } else { DIM };
-    let peer_icon = if state.peer_count > 0 { "⬡" } else { "⬡" };
+    let peer_icon = "⬡"; // hexagon for both connected and isolated
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             "SAGE",

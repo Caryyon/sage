@@ -311,7 +311,7 @@ impl KnowledgeLoop {
         }
 
         let total = TOTAL_RETRIEVALS.load(Ordering::Relaxed);
-        if total % 10 == 0 && total > 0 {
+        if total.is_multiple_of(10) && total > 0 {
             let hits = DELTA_UNIQUE_HITS.load(Ordering::Relaxed);
             tracing::debug!(
                 "Contrast retrieval stats: {}/{} retrievals with unique hits ({:.1}%)",
@@ -465,8 +465,7 @@ impl KnowledgeLoop {
         // channels from a token-prediction grid into knowledge organization
         // channels injects noise rather than improving retrieval quality.
         // See: sage-ml-engineer analysis 2026-03-31-flags-for-sage-lead.md
-        return;
-
+        //
         // Original implementation preserved below for future principled design.
         /*
         self.ensure_nca_predictor();
