@@ -153,6 +153,19 @@ async fn handle_client(
                 "growing"
             };
             let dist_peers = s.distributed.peer_count().await;
+
+            // Retrieval quality metrics
+            let stats = s.knowledge.retrieval_stats.as_ref();
+            let retrieval = serde_json::json!({
+                "total_queries": stats.total_queries.load(std::sync::atomic::Ordering::Relaxed),
+                "hit_rate": stats.hit_rate(),
+                "mean_top_relevance": stats.mean_top_relevance(),
+                "relevance_low": stats.relevance_low.load(std::sync::atomic::Ordering::Relaxed),
+                "relevance_mid": stats.relevance_mid.load(std::sync::atomic::Ordering::Relaxed),
+                "relevance_good": stats.relevance_good.load(std::sync::atomic::Ordering::Relaxed),
+                "relevance_excellent": stats.relevance_excellent.load(std::sync::atomic::Ordering::Relaxed),
+            });
+
             let status = serde_json::json!({
                 "node_id": s.node_id,
                 "engine": s.engine.name(),
@@ -167,6 +180,7 @@ async fn handle_client(
                 "network": true,
                 "distributed_peers": dist_peers,
                 "distributed": dist_peers > 0,
+                "retrieval": retrieval,
             });
             let _ = writer.write_all(format!("{}\n", status).as_bytes()).await;
             let _ = writer.write_all(b"DONE\n").await;
