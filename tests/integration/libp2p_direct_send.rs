@@ -45,8 +45,8 @@ async fn test_direct_send_delivers_message() {
         bootstrap_nodes: vec![],
     };
 
-    let node_a = Libp2pTransport::new(config_a);
-    let node_b = Libp2pTransport::new(config_b);
+    let node_a = Libp2pTransport::new(config_a, None);
+    let node_b = Libp2pTransport::new(config_b, None);
 
     node_a.start().await.expect("node_a start");
     node_b.start().await.expect("node_b start");
@@ -127,7 +127,7 @@ async fn test_register_peer_id_overwrites() {
         mdns_enabled:   false,
         bootstrap_nodes: vec![],
     };
-    let transport = Libp2pTransport::new(config);
+    let transport = Libp2pTransport::new(config, None);
     transport.start().await.expect("start");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
