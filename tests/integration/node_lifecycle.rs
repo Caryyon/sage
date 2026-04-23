@@ -13,8 +13,16 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// Get a temporary SAGE_HOME directory for testing
+/// Uses UUID to ensure each test gets a unique directory (parallel tests share PID)
 fn temp_sage_home() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("sage-test-{}", std::process::id()));
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let unique_id = format!(
+        "{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let dir = std::env::temp_dir().join(format!("sage-test-{}", unique_id));
     let _ = fs::create_dir_all(&dir);
     dir
 }
