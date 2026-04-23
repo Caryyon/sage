@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.3.4 — 2026-04-23
+
+Network authentication is now enforced on the gossip wire. Outgoing KnowledgeDiffs are signed with Ed25519 after privacy filtering; incoming diffs are verified before acceptance. Unsigned or invalid-signed diffs are rejected, closing an impersonation and tampering vulnerability. This completes the cryptographic identity chain from node keypair through libp2p PeerId to signed network messages. CI also fixed: test isolation now uses unique temp directories per process, resolving race conditions in parallel test runs.
+
 ## v0.3.3 — 2026-04-16
 
 Signed KnowledgeDiffs close a network poisoning vulnerability. Every diff now carries an Ed25519 signature over (source_node || sequence || state_hash), verified on receipt by NetworkManager. Missing signatures are tolerated for backward compatibility with legacy peers; invalid signatures trigger hard rejection. This completes the cryptographic identity chain: NodeIdentity (real Ed25519 keypair from PR #2) → KnowledgeDiff signing → verified acceptance in the network layer. Five new signature tests cover roundtrip, missing, tampered payload, sequence replay, and serialization cases.

@@ -1,6 +1,6 @@
 [package]
 name = "sage"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "SAGE - Distributed Intelligence System with NCA-based knowledge propagation"
 default-run = "sage-cli"

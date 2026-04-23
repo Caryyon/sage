@@ -296,6 +296,9 @@ impl NetworkManager {
         // Add differential privacy noise
         apply_differential_privacy(&mut diff, &self.privacy_config);
 
+        // Sign the diff with this node's Ed25519 key
+        diff.sign(self.identity.seed_bytes());
+
         // Update stored state
         *last_state = Some(current_grid.to_vec());
         *seq += 1;
@@ -352,6 +355,15 @@ impl NetworkManager {
             println!(
                 "[network] Rejected diff from {}: invalid confidence {}",
                 diff.source_node, diff.confidence
+            );
+            return;
+        }
+
+        // Verify Ed25519 signature (if present)
+        if let Err(e) = diff.verify_signature() {
+            println!(
+                "[network] Rejected diff from {}: signature verification failed: {}",
+                diff.source_node, e
             );
             return;
         }

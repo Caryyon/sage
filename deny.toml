@@ -38,8 +38,6 @@ allow = [
 ]
 # Confidence threshold for license detection
 confidence-threshold = 0.8
-# Warn on crates with no license
-unlicensed = "warn"
 
 [bans]
 # Deny multiple versions of the same crate
