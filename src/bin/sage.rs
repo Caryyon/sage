@@ -722,8 +722,8 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
                                 break;
                             }
                             // Strip CHAT prefix if sent by sage-api
-                            let query = if line.starts_with("CHAT ") {
-                                line[5..].to_string()
+                            let query = if let Some(stripped) = line.strip_prefix("CHAT ") {
+                                stripped.to_string()
                             } else {
                                 line.clone()
                             };
@@ -1228,7 +1228,7 @@ fn run_node_invite() {
     println!("Share this code with a friend. They can run:");
     println!("  sage node join {}", invite.code);
     println!();
-    println!("Valid for: {} (expires in {})", "24 hours", invite.time_remaining());
+    println!("Valid for: 24 hours (expires in {})", invite.time_remaining());
     println!();
 }
 
@@ -1732,13 +1732,13 @@ fn run_node_status() {
 
     // Brain stats
     let mut knowledge = NCAKnowledge::new();
-    if std::path::Path::new(&brain_path).exists() {
-        if knowledge.load(&brain_path).is_ok() {
-            let active = knowledge.active_knowledge(0.01);
-            let total_cells = knowledge.grid.width * knowledge.grid.height;
-            let utilization = (active.len() as f64 / total_cells as f64) * 100.0;
-            println!("Brain:    {} active cells ({:.1}% of grid)", active.len(), utilization);
-        }
+    if std::path::Path::new(&brain_path).exists()
+        && knowledge.load(&brain_path).is_ok()
+    {
+        let active = knowledge.active_knowledge(0.01);
+        let total_cells = knowledge.grid.width * knowledge.grid.height;
+        let utilization = (active.len() as f64 / total_cells as f64) * 100.0;
+        println!("Brain:    {} active cells ({:.1}% of grid)", active.len(), utilization);
     }
 
     // Network address (from config or default)
@@ -1887,7 +1887,7 @@ fn run_model_list() {
 
     println!("Available model presets:");
     println!();
-    println!("  {:<12} {:>6}  {}", "NAME", "SIZE", "DESCRIPTION");
+    println!("  {:<12} {:>6}  DESCRIPTION", "NAME", "SIZE");
     println!("  {}", "-".repeat(60));
     for p in MODEL_PRESETS {
         println!("  {:<12} {:>6}  {}", p.name, p.size, p.description);
@@ -2061,7 +2061,7 @@ fn run_dream(steps: usize) {
     // Step 4: Print dream summary
     let top_topics: Vec<_> = {
         let mut sorted: Vec<_> = topic_counts.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
         sorted.into_iter().take(5).map(|(t, _)| t).collect()
     };
 
@@ -2091,7 +2091,7 @@ fn run_dream(steps: usize) {
 fn extract_topic(text: &str) -> String {
     let text = text.trim();
     // Try to get first sentence
-    if let Some(idx) = text.find(|c| c == '.' || c == '!' || c == '?') {
+    if let Some(idx) = text.find(['.', '!', '?']) {
         if idx < 60 {
             return text[..=idx].to_string();
         }
@@ -2200,7 +2200,7 @@ fn run_insights() {
     }
 
     let mut top_words: Vec<_> = word_counts.into_iter().collect();
-    top_words.sort_by(|a, b| b.1.cmp(&a.1));
+    top_words.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     println!("🏷️  Top Topics (by keyword frequency)");
     let max_count = top_words.first().map(|(_, c)| *c).unwrap_or(1);
@@ -2374,7 +2374,7 @@ fn run_status() {
         let brain_modified = std::fs::metadata(&brain_path)
             .ok()
             .and_then(|m| m.modified().ok())
-            .map(|t| format_time(t))
+            .map(format_time)
             .unwrap_or_else(|| "unknown".to_string());
         println!("  Brain file:       {}", brain_path);
         println!("  Brain size:       {}", brain_size);
