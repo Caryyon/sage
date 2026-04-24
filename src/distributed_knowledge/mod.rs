@@ -422,8 +422,8 @@ impl KnowledgeStore for NCAKnowledge {
 
         // channels: all NUM_KNOWLEDGE_CHANNELS knowledge + 2 comm = 10
         let mut channels = [0usize; 10];
-        for i in 0..NUM_KNOWLEDGE_CHANNELS {
-            channels[i] = KNOWLEDGE_CHANNELS_START + i;
+        for (i, ch) in channels.iter_mut().enumerate().take(NUM_KNOWLEDGE_CHANNELS) {
+            *ch = KNOWLEDGE_CHANNELS_START + i;
         }
         channels[NUM_KNOWLEDGE_CHANNELS] = COMM_SYNC_STATE;
         channels[NUM_KNOWLEDGE_CHANNELS + 1] = COMM_NODE_ID;
@@ -455,8 +455,8 @@ impl KnowledgeStore for NCAKnowledge {
 
     fn apply_delta(&mut self, delta: &GridDelta) {
         let mut channels = [0usize; 10];
-        for i in 0..NUM_KNOWLEDGE_CHANNELS {
-            channels[i] = KNOWLEDGE_CHANNELS_START + i;
+        for (i, ch) in channels.iter_mut().enumerate().take(NUM_KNOWLEDGE_CHANNELS) {
+            *ch = KNOWLEDGE_CHANNELS_START + i;
         }
         channels[NUM_KNOWLEDGE_CHANNELS] = COMM_SYNC_STATE;
         channels[NUM_KNOWLEDGE_CHANNELS + 1] = COMM_NODE_ID;

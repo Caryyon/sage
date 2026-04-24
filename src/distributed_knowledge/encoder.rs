@@ -6,6 +6,7 @@
 //!   2. Ollama (if configured and running)
 //!   3. Learned linear projection (hash × W, loaded from ~/.sage/embedding_projection.bin)
 //!   4. Hash-based fallback (always available)
+//!
 //! Spatial locality: related knowledge clusters in nearby cells.
 
 use super::embedder;
@@ -287,13 +288,13 @@ impl LinearProjection {
     pub fn forward(&self, v: &[f64]) -> Vec<f64> {
         assert_eq!(v.len(), self.dim, "LinearProjection: input dim mismatch");
         let mut out = vec![0.0f64; self.dim];
-        for row in 0..self.dim {
+        for (row, out_val) in out.iter_mut().enumerate().take(self.dim) {
             let mut sum = 0.0;
             let row_offset = row * self.dim;
-            for col in 0..self.dim {
-                sum += self.weights[row_offset + col] * v[col];
+            for (col, v_val) in v.iter().enumerate().take(self.dim) {
+                sum += self.weights[row_offset + col] * v_val;
             }
-            out[row] = sum;
+            *out_val = sum;
         }
         // L2-normalize output
         let mag: f64 = out.iter().map(|x| x * x).sum::<f64>().sqrt();
@@ -370,9 +371,9 @@ impl LinearProjection {
 
 /// Expand a leading `~` to the home directory.
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix("~/") {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        format!("{}/{}", home, &path[2..])
+        format!("{}/{}", home, stripped)
     } else {
         path.to_string()
     }

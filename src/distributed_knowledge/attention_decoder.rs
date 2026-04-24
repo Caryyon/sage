@@ -329,9 +329,9 @@ impl AttentionDecoder {
             }
         }
         if exp_sum > 1e-10 {
-            for qr in 0..2 {
-                for qc in 0..2 {
-                    quadrant_weights[qr][qc] /= exp_sum;
+            for row in &mut quadrant_weights {
+                for weight in row {
+                    *weight /= exp_sum;
                 }
             }
         }
@@ -441,10 +441,10 @@ impl AttentionDecoder {
 
             // Strong injection for delta mode: weight 0.6, radius 10
             let inject_weight = 0.6;
-            let inject_radius = 10;
+            let inject_radius: i32 = 10;
 
-            for dy in -(inject_radius as i32)..=(inject_radius as i32) {
-                for dx in -(inject_radius as i32)..=(inject_radius as i32) {
+            for dy in -inject_radius..=inject_radius {
+                for dx in -inject_radius..=inject_radius {
                     let nx = ((qx as i32 + dx).rem_euclid(scratch.width as i32)) as usize;
                     let ny = ((qy as i32 + dy).rem_euclid(scratch.height as i32)) as usize;
 
@@ -494,15 +494,14 @@ impl AttentionDecoder {
 
         // 6. Find top-K cells by delta magnitude, filtered by activation
         let mut candidates: Vec<(usize, usize, f32)> = Vec::new();
-        for y in 0..scratch.height {
-            for x in 0..scratch.width {
+        for (y, row) in deltas.iter().enumerate() {
+            for (x, delta) in row.iter().enumerate() {
                 let activation = safe_knowledge_activation(&scratch.cells[y][x]);
                 if activation < 1e-6 {
                     continue;
                 }
-                let delta = deltas[y][x];
-                if delta > 1e-8 {
-                    candidates.push((x, y, delta));
+                if *delta > 1e-8 {
+                    candidates.push((x, y, *delta));
                 }
             }
         }
@@ -612,7 +611,7 @@ impl AttentionDecoder {
             let mut neighbor_sum = 0.0;
             let mut neighbor_count = 0;
 
-            let r = neighbor_radius as i32;
+            let r: i32 = neighbor_radius;
             for dy in -r..=r {
                 for dx in -r..=r {
                     if dx == 0 && dy == 0 {
