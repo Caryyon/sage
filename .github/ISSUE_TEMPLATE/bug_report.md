@@ -1,53 +1,30 @@
 ---
-name: Bug Report
-about: Report a bug to help us improve SAGE
-title: '[Bug] '
+name: Bug report
+about: Create a report to help us improve
+title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-## Environment
+**Describe the bug**
+A clear and concise description of what the bug is.
 
-- **SAGE version:** (run `sage status` or `sage version`)
-- **OS:** (e.g., Ubuntu 22.04, macOS 14.2)
-- **Architecture:** (e.g., x86_64, arm64)
-- **Ollama version:** (if applicable, run `ollama --version`)
-
-## Description
-
-A clear description of what the bug is.
-
-## Steps to Reproduce
-
-1. Run `sage ...`
-2. Do this
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Run '...'
+2. Type '...'
 3. See error
 
-## Expected Behavior
+**Expected behavior**
+A clear and concise description of what you expected to happen.
 
-What you expected to happen.
+**Environment:**
+ - OS: [e.g. Ubuntu 22.04]
+ - SAGE Version: [e.g. 0.3.7]
+ - Rust Version: [e.g. 1.75]
+ - Hardware: [e.g. Pi 4, x86_64]
 
-## Actual Behavior
-
-What actually happened.
-
-## Logs
-
-Paste relevant logs here. For more detail, run with:
-
-```bash
-RUST_BACKTRACE=1 RUST_LOG=debug sage ...
+**Logs**
 ```
-
-<details>
-<summary>Full log output</summary>
-
+Paste relevant logs here
 ```
-Paste logs here
-```
-
-</details>
-
-## Additional Context
-
-Any other context about the problem — screenshots, related issues, etc.
