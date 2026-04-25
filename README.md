@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="sage-logo.svg" alt="SAGE Logo" width="200" height="200">
+  <img src="https://raw.githubusercontent.com/Caryyon/sage/main/sage-logo.svg" alt="SAGE Logo" width="200" height="200">
 </p>
 
 <h1 align="center">SAGE</h1>
