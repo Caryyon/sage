@@ -490,6 +490,73 @@ impl NcaPredictor {
         &self.weights
     }
 
+    /// Generate an answer string given a query and context.
+    ///
+    /// Encodes the query + context, then auto-regressively predicts
+    /// next tokens using the NCA grid dynamics.
+    ///
+    /// Returns the decoded text answer, or an error if the corpus
+    /// is too small / no context provided.
+    pub fn answer(
+        &mut self,
+        query: &str,
+        context: Option<&str>,
+        max_tokens: usize,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        // Build prompt from query + context
+        let prompt = if let Some(ctx) = context {
+            format!("{} context: {}", query, ctx)
+        } else {
+            query.to_string()
+        };
+
+        // Encode prompt
+        let tokens = self.tokenizer.encode(&prompt);
+        if tokens.is_empty() {
+            return Err("Empty prompt after tokenization".into());
+        }
+
+        // Auto-regressive generation
+        let mut generated = tokens.clone();
+        let mut last_token = *tokens.last().unwrap();
+
+        for _ in 0..max_tokens {
+            // Predict next token
+            let next_id = self.predict_next_sampled(&generated, 0.7);
+
+            // Stop if we repeat the same token (stuck) or hit <unk>
+            if next_id == last_token || next_id == 0 {
+                break;
+            }
+
+            generated.push(next_id);
+            last_token = next_id;
+
+            // Stop if predicted token is a sentence-ending punctuation
+            if let Some(token_str) = self.tokenizer.id_to_token.get(next_id) {
+                if token_str.ends_with('.')
+                    || token_str.ends_with('?')
+                    || token_str.ends_with('!')
+                {
+                    break;
+                }
+            }
+        }
+
+        // Decode only the newly generated tokens (not the prompt)
+        let answer_ids = &generated[tokens.len().saturating_sub(0)..];
+        let answer = self.tokenizer.decode(answer_ids);
+
+        // Clean up: remove trailing context marker if present
+        let answer = answer.replace(" context: ", "").trim().to_string();
+
+        if answer.is_empty() {
+            return Err("NCA predictor produced empty answer".into());
+        }
+
+        Ok(answer)
+    }
+
     /// Set weights
     pub fn set_weights(&mut self, w: NcaWeights) {
         self.weights = w;
