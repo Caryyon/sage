@@ -1,120 +1,79 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Caryyon/sage/main/sage-logo.svg" alt="SAGE Logo" width="200" height="200">
-</p>
+# SAGE — The People's AI
 
-<h1 align="center">SAGE</h1>
+<img src="https://raw.githubusercontent.com/Caryyon/sage/main/sage-logo.svg" alt="SAGE Logo" width="200" height="200">
 
-<p align="center">
-  <strong>The People's AI — Decentralized. Private. Free forever.</strong>
-</p>
+**Decentralized AI that runs on your machine. No API keys. No cloud. No gatekeepers.**
 
-<p align="center">
-  <a href="https://github.com/caryyon/sage/releases"><img src="https://img.shields.io/github/v/release/caryyon/sage?style=flat-square" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
-  <a href="https://discord.gg/U999zZUuUV"><img src="https://img.shields.io/discord/1234567890?style=flat-square&logo=discord&logoColor=white&label=Discord" alt="Discord"></a>
-  <img src="https://img.shields.io/badge/rust-1.75+-orange?style=flat-square&logo=rust" alt="Rust">
-  <a href="https://github.com/caryyon/sage/actions"><img src="https://img.shields.io/github/actions/workflow/status/caryyon/sage/ci.yml?style=flat-square" alt="Build"></a>
-</p>
+SAGE is a Neural Cellular Automata intelligence system that learns, grows, and connects — all on your hardware. Your knowledge stays on your machine. Your conversations are private. Your AI is yours.
 
----
+## Why SAGE?
 
-**BitTorrent for intelligence.** SAGE encodes knowledge into Neural Cellular Automata patterns and shares them across a peer-to-peer mesh network. Your raw conversations never leave your machine — only compact, encoded patterns sync between nodes.
-
-The more people run SAGE, the smarter it gets for everyone.
+| | Centralized AI | SAGE |
+|---|---|---|
+| **Privacy** | ❌ Your data trains their models | ✅ Everything stays local |
+| **Cost** | ❌ $20/month subscription | ✅ Free forever |
+| **Offline** | ❌ Requires internet | ✅ Works without connection |
+| **Ownership** | ❌ They can shut it down | ✅ You own the software |
+| **Decentralized** | ❌ Single point of failure | ✅ Peer-to-peer mesh |
 
 ## Quick Start
 
 ```bash
+# Install
 curl -fsSL https://whatssage.ai/install.sh | bash
+
+# Chat
 sage chat
+> What is SAGE?
+SAGE is a decentralized AI system...
+
+# Join the mesh
+sage node start
 ```
 
-No accounts. No API keys. No setup wizards.
+## Features
 
-## Why SAGE?
-
-| | **SAGE** | **ChatGPT** | **Ollama** | **Cloud APIs** |
-|---|:---:|:---:|:---:|:---:|
-| Free forever | ✅ | ❌ $20/mo | ✅ | ❌ pay/token |
-| Runs 100% locally | ✅ | ❌ | ✅ | ❌ |
-| Gets smarter over time | ✅ mesh | ❌ | ❌ | ❌ |
-| No account needed | ✅ | ❌ | ✅ | ❌ |
-| Privacy-first | ✅ | ❌ | ✅ | ❌ |
-| Decentralized | ✅ | ❌ | ❌ | ❌ |
-| Works offline | ✅ | ❌ | ✅ | ❌ |
-| No rate limits | ✅ | ❌ | ✅ | ❌ |
-| OpenAI compatible API | ✅ | is OpenAI | ✅ | ✅ |
-
-## How It Works
-
-1. **You chat** — Ask questions, have conversations, explore topics
-2. **Knowledge encodes** — Patterns compress into NCA grid states (kilobytes, not gigabytes)
-3. **Patterns sync** — Encoded knowledge propagates to peers via gossip protocol
-4. **Everyone benefits** — Your node absorbs knowledge from the network
-
-Your raw data never leaves your machine. Only encoded neural patterns are shared — compressed, anonymous knowledge representations that can't be reversed into the original text.
+- **Neural Cellular Automata Brain** — 256×256 living grid stores knowledge
+- **Query Routing** — Simple questions answered offline, complex ones use LLM
+- **Peer-to-Peer Mesh** — Nodes share knowledge via gossip protocols
+- **Offline Mode** — Answer questions without internet (trained NCA predictor)
+- **Raspberry Pi Ready** — Runs on a $35 board
+- **Zero API Keys** — No OpenAI, no monthly fees
 
 ## Architecture
 
-SAGE uses a **256×256 Neural Cellular Automata grid** with 16 channels per cell as its knowledge substrate. This is not a database — it's a living neural structure that evolves via local update rules.
+- **Rust** — Memory-safe, fast, no Python dependency hell
+- **NCA Grid** — Knowledge stored in cellular automata dynamics
+- **libp2p** — Decentralized peer-to-peer networking
+- **Ollama** — LLM fallback for complex reasoning
+- **Ed25519** — Cryptographic identity and signed updates
 
-- **Knowledge encoding**: Text → semantic embeddings → NCA grid patterns
-- **Knowledge retrieval**: Cross-attention decoder (query = your question, keys/values = grid cells)
-- **Network sync**: Gossip protocol exchanges Merkle-verified, Ed25519-signed diffs between peers
-- **Trust model**: Validation tiers, quarantine for suspicious diffs, rate limiting
-- **Retrieval quality**: ~96% hit rate with learned LinearProjection embeddings
+## Platforms
 
-For technical depth, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `sage chat` | Start a conversation |
-| `sage chat --ollama` | Use Ollama as LLM backend |
-| `sage node start` | Join the mesh network |
-| `sage node status` | See connected peers |
-| `sage node stop` | Disconnect from mesh |
-| `sage status` | Show local health & metrics |
-| `sage explore` | Trigger curiosity exploration |
-| `sage export <file>` | Export knowledge state |
-| `sage import <file>` | Import knowledge snapshot |
-
-## Network Dashboard
-
-See the live mesh at [whatssage.ai/network](https://whatssage.ai/network)
-
-- Node count, peer connections, sync stats
-- Knowledge diff throughput
-- Network health and geographic distribution
-
-## Manifesto
-
-Read [docs/MANIFESTO.md](docs/MANIFESTO.md) for the full vision: *The Future of AI is Distributed.*
+- ✅ Linux (x86_64, ARM64)
+- ✅ macOS (Intel, Apple Silicon)
+- ✅ Windows
+- ✅ Raspberry Pi 4
+- 🔄 Browser (WASM — in progress)
+- ✅ Docker
 
 ## Documentation
 
-- [Getting Started](docs/GETTING_STARTED.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API.md)
-- [Distributed Systems](docs/DISTRIBUTED.md)
-- [NCA Inference](docs/NCA_INFERENCE.md)
-- [Roadmap](ROADMAP.md)
-
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+- [Install Guide](docs/getting-started/install.md)
+- [Offline Mode](docs/getting-started/offline.md)
+- [Architecture](docs/architecture/nca-brain.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Community
 
-- **Discord:** [https://discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
-- **GitHub Issues:** Bug reports, feature requests, discussions
-- **Network Dashboard:** [whatssage.ai/network](https://whatssage.ai/network)
+- [Discord](https://discord.gg/U999zZUuUV)
+- [GitHub Issues](https://github.com/Caryyon/sage/issues)
+- [Network Dashboard](https://whatssage.ai/network)
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — use it, modify it, share it.
 
 ---
 
-*SAGE: The People's AI*
+**SAGE is the future of AI — distributed, owned by its users, and getting smarter together.**
