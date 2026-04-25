@@ -1,25 +1,18 @@
-# SAGE — Decentralized AI Node
-# docker run -v ~/.sage:/root/.sage ghcr.io/caryyon/sage
+FROM rust:1.75-slim as builder
 
-FROM rust:1.83-slim AS builder
-
-RUN apt-get update && apt-get install -y pkg-config libssl-dev libasound2-dev libv4l-dev && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
+WORKDIR /app
 COPY . .
-
-RUN cargo build --release --bin sage
+RUN cargo build --release --bin sage-cli
 
 FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/sage-cli /usr/local/bin/sage
+COPY --from=builder /app/data/training/qa-corpus.txt /app/data/training/qa-corpus.txt
 
-COPY --from=builder /build/target/release/sage /usr/local/bin/sage
+RUN mkdir -p /root/.sage
 
-ENV SAGE_HOME=/root/.sage
-RUN mkdir -p /root/.sage/bin /root/.sage/data /root/.sage/peers
-
-EXPOSE 7433
+EXPOSE 4001 19175
 
 ENTRYPOINT ["sage"]
-CMD ["node", "start", "--chat-port", "7433"]
+CMD ["chat"]
