@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffd5" />
+      <stop offset="100%" stop-color="#39ff14" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="200" height="200" rx="30" fill="#0a0a0f" />
+  
+  <!-- Grid pattern (NCA grid representation) -->
+  <g opacity="0.3">
+    <path d="M40 40 h120 M40 60 h120 M40 80 h120 M40 100 h120 M40 120 h120 M40 140 h120 M40 160 h120" stroke="#00ffd5" stroke-width="0.5" />
+    <path d="M40 40 v120 M60 40 v120 M80 40 v120 M100 40 v120 M120 40 v120 M140 40 v120 M160 40 v120" stroke="#00ffd5" stroke-width="0.5" />
+  </g>
+  
+  <!-- S letter stylized -->
+  <path d="M70 80 C70 65, 85 60, 100 60 C115 60, 130 65, 130 80 C130 95, 115 100, 100 100 C85 100, 70 105, 70 120 C70 135, 85 140, 100 140 C115 140, 130 135, 130 120" 
+        stroke="url(#g)" stroke-width="12" fill="none" stroke-linecap="round" />
+  
+  <!-- Active cell dots (like NCA activations) -->
+  <circle cx="60" cy="60" r="4" fill="#00ffd5" opacity="0.8" />
+  <circle cx="140" cy="80" r="3" fill="#39ff14" opacity="0.6" />
+  <circle cx="80" cy="120" r="3.5" fill="#00ffd5" opacity="0.7" />
+  <circle cx="120" cy="140" r="4" fill="#39ff14" opacity="0.9" />
+  <circle cx="100" cy="100" r="5" fill="#00ffd5" opacity="0.5" />
+  
+  <!-- Connection lines (like neural connections) -->
+  <path d="M60 60 Q80 80 100 100" stroke="#00ffd5" stroke-width="1" opacity="0.3" fill="none" />
+  <path d="M140 80 Q120 100 100 100" stroke="#39ff14" stroke-width="1" opacity="0.3" fill="none" />
+  <path d="M80 120 Q90 110 100 100" stroke="#00ffd5" stroke-width="1" opacity="0.3" fill="none" />
+  <path d="M120 140 Q110 120 100 100" stroke="#39ff14" stroke-width="1" opacity="0.3" fill="none" />
+</svg>
