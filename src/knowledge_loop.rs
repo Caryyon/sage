@@ -14,6 +14,7 @@ use crate::inference::nca_predictor::{
 };
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
+use crate::query_router::{classify_query, QueryComplexity};
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -616,8 +617,28 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
-        // 5. Generate response
-        let response = self.engine.chat(&messages, 1000)?;
+        // 5. Generate response (Phase 3: route by query complexity)
+        let complexity = classify_query(user_input);
+        let response: String = match complexity {
+            QueryComplexity::Simple => {
+                // Try NCA predictor for simple factual queries
+                self.ensure_nca_predictor();
+                if let Some(ref mut predictor) = self.nca_predictor {
+                    let context_text = knowledge_context.as_deref().unwrap_or("");
+                    match predictor.answer(user_input, Some(context_text), 20) {
+                        Ok(answer) if !answer.is_empty() => answer,
+                        _ => self.engine.chat(&messages, 1000)?,
+                    }
+                } else {
+                    // Fallback to LLM if predictor not available
+                    self.engine.chat(&messages, 1000)?
+                }
+            }
+            _ => {
+                // Complex queries → use LLM
+                self.engine.chat(&messages, 1000)?
+            }
+        };
 
         // 6. Encode response into NCA grid
         let response_pos = self
