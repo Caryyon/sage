@@ -1340,7 +1340,8 @@ mod tests {
         let corpus = "hello world hello world hello world";
         let tok = SimpleTokenizer::from_corpus(corpus, 1000);
         let w = NcaWeights::random();
-        let mut pred = NcaPredictor::with_default_steps(tok, w);
+        // Use small grid + few steps for fast determinism check
+        let mut pred = NcaPredictor::with_grid_size(tok, w, 2, 8);
         let ids = pred.tokenizer.encode("hello");
         let result1 = pred.predict_next(&ids);
         let result2 = pred.predict_next(&ids);
