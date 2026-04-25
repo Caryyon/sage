@@ -1,12 +1,11 @@
 <p align="center">
-  <!-- Logo placeholder: Replace with actual logo when available -->
   <img src="https://via.placeholder.com/200x200?text=SAGE" alt="SAGE Logo" width="200" height="200">
 </p>
 
 <h1 align="center">SAGE</h1>
 
 <p align="center">
-  <strong>Decentralized AI that runs locally and gets smarter together.</strong>
+  <strong>The People's AI — Decentralized. Private. Free forever.</strong>
 </p>
 
 <p align="center">
@@ -19,7 +18,9 @@
 
 ---
 
-**BitTorrent for intelligence.** SAGE encodes knowledge into Neural Cellular Automata patterns and shares them across a peer-to-peer mesh network. Your raw conversations never leave your machine — only compact, encoded patterns sync between nodes. The more people run SAGE, the smarter it gets for everyone.
+**BitTorrent for intelligence.** SAGE encodes knowledge into Neural Cellular Automata patterns and shares them across a peer-to-peer mesh network. Your raw conversations never leave your machine — only compact, encoded patterns sync between nodes.
+
+The more people run SAGE, the smarter it gets for everyone.
 
 ## Quick Start
 
@@ -28,9 +29,7 @@ curl -fsSL https://whatssage.ai/install.sh | bash
 sage chat
 ```
 
-That's it. No accounts, no API keys, no setup wizards.
-
-<!-- Demo GIF placeholder: Add a terminal recording showing sage chat in action -->
+No accounts. No API keys. No setup wizards.
 
 ## Why SAGE?
 
@@ -42,8 +41,9 @@ That's it. No accounts, no API keys, no setup wizards.
 | No account needed | ✅ | ❌ | ✅ | ❌ |
 | Privacy-first | ✅ | ❌ | ✅ | ❌ |
 | Decentralized | ✅ | ❌ | ❌ | ❌ |
+| Works offline | ✅ | ❌ | ✅ | ❌ |
 | No rate limits | ✅ | ❌ | ✅ | ❌ |
-| OpenAI compatible | ✅ | is OpenAI | ✅ | ✅ |
+| OpenAI compatible API | ✅ | is OpenAI | ✅ | ✅ |
 
 ## How It Works
 
@@ -56,11 +56,13 @@ Your raw data never leaves your machine. Only encoded neural patterns are shared
 
 ## Architecture
 
-SAGE uses a **256×256 Neural Cellular Automata grid** with 38 channels per cell as its knowledge substrate. This is not a database — it's a living neural structure that evolves via local update rules.
+SAGE uses a **256×256 Neural Cellular Automata grid** with 16 channels per cell as its knowledge substrate. This is not a database — it's a living neural structure that evolves via local update rules.
 
 - **Knowledge encoding**: Text → semantic embeddings → NCA grid patterns
 - **Knowledge retrieval**: Cross-attention decoder (query = your question, keys/values = grid cells)
-- **Network sync**: Gossip protocol exchanges Merkle-verified diffs between peers
+- **Network sync**: Gossip protocol exchanges Merkle-verified, Ed25519-signed diffs between peers
+- **Trust model**: Validation tiers, quarantine for suspicious diffs, rate limiting
+- **Retrieval quality**: ~96% hit rate with learned LinearProjection embeddings
 
 For technical depth, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -74,49 +76,45 @@ For technical depth, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `sage node status` | See connected peers |
 | `sage node stop` | Disconnect from mesh |
 | `sage status` | Show local health & metrics |
-| `sage dream` | Trigger a dream cycle |
 | `sage explore` | Trigger curiosity exploration |
 | `sage export <file>` | Export knowledge state |
 | `sage import <file>` | Import knowledge snapshot |
-| `/help` | Show help in chat |
 
-## OpenAI Compatible
+## Network Dashboard
 
-```bash
-export OPENAI_API_BASE=http://localhost:19176/v1
-export OPENAI_API_KEY=not-needed
-```
+See the live mesh at [whatssage.ai/network](https://whatssage.ai/network)
 
-Works with [Continue](https://continue.dev), [Cursor](https://cursor.sh), [Open WebUI](https://openwebui.com), and anything that speaks the OpenAI API. No rate limits. No billing.
+- Node count, peer connections, sync stats
+- Knowledge diff throughput
+- Network health and geographic distribution
 
-## Current Status
+## Manifesto
 
-**Version:** 0.2.9
+Read [docs/MANIFESTO.md](docs/MANIFESTO.md) for the full vision: *The Future of AI is Distributed.*
 
-- ✅ **Phase 1** — Local chat with NCA knowledge encoding
-- ✅ **Phase 2** — Mesh network with gossip protocol
-- 🔨 **Phase 3** — Reduce LLM dependency (bundled embeddings done, 96% retrieval)
-- 🔮 **Phase 4** — Pure NCA intelligence
+## Documentation
 
-See [ROADMAP.md](ROADMAP.md) for details.
-
-## Requirements
-
-- **macOS or Linux** (x86_64 or arm64)
-- **Ollama** (optional) — For best retrieval quality. Without Ollama, SAGE uses bundled fastembed (96% retrieval) or hash fallback.
+- [Getting Started](docs/GETTING_STARTED.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API Reference](docs/API.md)
+- [Distributed Systems](docs/DISTRIBUTED.md)
+- [NCA Inference](docs/NCA_INFERENCE.md)
+- [Roadmap](ROADMAP.md)
 
 ## Contributing
 
-We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and PR guidelines.
-
-Join [#dev on Discord](https://discord.gg/U999zZUuUV) to discuss ideas.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Community
 
-- [Discord](https://discord.gg/U999zZUuUV) — Chat, support, dev discussions
-- [Documentation](docs/) — Architecture, API, getting started
-- [Website](https://whatssage.ai) — Project home
+- **Discord:** [https://discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
+- **GitHub Issues:** Bug reports, feature requests, discussions
+- **Network Dashboard:** [whatssage.ai/network](https://whatssage.ai/network)
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
+
+---
+
+*SAGE: The People's AI*
