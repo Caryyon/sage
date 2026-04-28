@@ -96,7 +96,7 @@ struct AppState {
     frame_counter: u64,
 }
 
-fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, mode: BrainMode) {
+fn flash_nearby_cells(flashes: &mut [Vec<CellFlash>], cx: usize, cy: usize, mode: BrainMode) {
     let now = Instant::now();
     let radius = 3i32;
     for dy in -radius..=radius {
@@ -115,7 +115,7 @@ fn flash_nearby_cells(flashes: &mut Vec<Vec<CellFlash>>, cx: usize, cy: usize, m
     }
 }
 
-fn decay_flashes(flashes: &mut Vec<Vec<CellFlash>>) {
+fn decay_flashes(flashes: &mut [Vec<CellFlash>]) {
     let now = Instant::now();
     for row in flashes.iter_mut() {
         for cell in row.iter_mut() {

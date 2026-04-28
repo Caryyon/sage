@@ -143,7 +143,7 @@ impl ContributionStats {
             fs::create_dir_all(parent)?;
         }
         let content = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::other(e))?;
+            .map_err(std::io::Error::other)?;
         fs::write(&path, content)
     }
 

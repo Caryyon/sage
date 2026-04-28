@@ -1,12 +1,11 @@
 /**
  * SAGE Network Stats Server
- * 
+ *
  * HTTP API for whatssage.ai/network dashboard
  * Aggregates stats from SAGE nodes and serves them to the web UI
- * 
+ *
  * Usage: sage-network-server [--port 3001] [--sage-api http://localhost:19176]
  */
-
 use axum::{
     routing::{get, post},
     Router, Json, extract::State,
