@@ -348,7 +348,7 @@ fn backward_through_steps(
 
                 // delta = tanh(pre_out) * 0.1
                 // d(delta)/d(pre_out) = 0.1 * (1 - tanh(pre_out)^2)
-                let mut d_pre_out = vec![0.0; NCA_CHANNELS];
+                let mut d_pre_out = [0.0; NCA_CHANNELS];
                 for ch in 0..NCA_CHANNELS {
                     let t = trace.pre_out[ch].tanh();
                     d_pre_out[ch] = d_delta[ch] * 0.1 * (1.0 - t * t);

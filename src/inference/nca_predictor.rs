@@ -806,7 +806,7 @@ pub fn train_nca_kan(
 }
 
 thread_local! {
-    static KAN_LAST_WEIGHTS: std::cell::RefCell<Option<super::kan::KanNcaWeights>> = std::cell::RefCell::new(None);
+    static KAN_LAST_WEIGHTS: std::cell::RefCell<Option<super::kan::KanNcaWeights>> = const { std::cell::RefCell::new(None) };
 }
 
 /// CMA-ES optimizer for KAN weights
