@@ -154,6 +154,41 @@ async fn get_pending(State(state): State<AppState>) -> impl IntoResponse {
     Json(pending.clone())
 }
 
+// GET /api/v1/router/stats - Intelligent router statistics
+async fn get_router_stats() -> impl IntoResponse {
+    // Try to load router statistics from persistence
+    let router_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".sage")
+        .join("intelligent_router.json");
+    
+    match std::fs::read_to_string(&router_path) {
+        Ok(json) => {
+            match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(stats) => (StatusCode::OK, Json(stats)),
+                Err(e) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                        "error": format!("Failed to parse router stats: {}", e)
+                    })))
+                }
+            }
+        }
+        Err(e) => {
+            // No router stats yet - return empty structure
+            (StatusCode::OK, Json(serde_json::json!({
+                "pattern_stats": {},
+                "min_attempts_for_learning": 10,
+                "use_learning": true,
+                "default_complexity": "Moderate",
+                "nca_available": false,
+                "exploration_rate": 0.1,
+                "status": "no_data",
+                "message": format!("No router stats found yet: {}", e)
+            })))
+        }
+    }
+}
+
 // POST /api/v1/network/ping - Node heartbeat
 #[derive(Deserialize)]
 struct PingRequest {
@@ -342,6 +377,7 @@ async fn main() {
         .route("/api/v1/network/activity", get(get_activity))
         .route("/api/v1/network/pending", get(get_pending))
         .route("/api/v1/network/ping", post(node_ping))
+        .route("/api/v1/router/stats", get(get_router_stats))
         .layer(CorsLayer::permissive())
         .with_state(state);
     
