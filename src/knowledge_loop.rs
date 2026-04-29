@@ -1022,7 +1022,8 @@ mod tests {
         let context = kl.retrieve_knowledge("What is the capital of France?");
         // Note: hash-based encoding may or may not match well without Ollama embeddings
         // The important thing is the mechanism works
-        assert!(context.is_some() || true); // mechanism test, not semantic accuracy
+        // mechanism test: retrieval worked without panic
+        // (semantic accuracy depends on hash-based encoding)
     }
 
     #[test]
