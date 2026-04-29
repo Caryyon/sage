@@ -16,7 +16,6 @@
 //! - Which patterns need full LLM reasoning
 //! - Optimal confidence thresholds for each category
 
-use crate::inference::nca_predictor::NcaPredictor;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -92,9 +91,6 @@ impl QueryPattern {
             QueryPattern::Analytical | QueryPattern::Creative | QueryPattern::Ambiguous => {
                 QueryComplexity::Complex
             }
-
-            // Fallback for new patterns
-            _ => QueryComplexity::Moderate
         }
     }
 }
