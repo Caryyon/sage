@@ -806,8 +806,16 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
-        // 5. Stream response
-        // Actually, let's collect and use the callback properly
+        // 5. Stream response using intelligent query router
+        // Note: For streaming, we always use LLM since NCA doesn't support true streaming
+        // but we still record the routing decision for learning purposes
+        let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
+        
+        tracing::debug!(
+            "Intelligent routing (streaming): {:?} for pattern {:?} (confidence: {:.3})",
+            backend, pattern, confidence
+        );
+        
         let response_collector = Arc::new(std::sync::Mutex::new(String::new()));
         let collector = Arc::clone(&response_collector);
         let mut user_cb = callback;
@@ -817,8 +825,27 @@ impl KnowledgeLoop {
             user_cb(token);
         });
 
+        // Always use LLM for streaming (NCA doesn't support token-by-token streaming)
         self.engine.chat_streaming(&messages, 1000, combined_cb)?;
         let response = response_collector.lock().unwrap().clone();
+        
+        // Record the outcome based on what backend was *chosen* (not what was used for streaming)
+        let used_backend = if backend == crate::query_router_intelligent::Backend::Nca {
+            // We chose NCA but used LLM for streaming - record as LLM success
+            crate::query_router_intelligent::Backend::Llm
+        } else {
+            crate::query_router_intelligent::Backend::Llm
+        };
+        
+        self.intelligent_router.record_outcome(
+            pattern,
+            crate::query_router_intelligent::RoutingOutcome {
+                backend: used_backend,
+                success: true,
+                response_time_ms: 0,
+                user_satisfaction: None,
+            },
+        );
 
         // 6. Encode response
         let response_pos = self
