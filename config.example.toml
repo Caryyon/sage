@@ -1,0 +1,54 @@
+# SAGE Configuration Example
+# Copy to ~/.sage/config.toml and customize
+
+[node]
+# Human-readable name for this node (empty = auto-generated)
+name = ""
+
+# Port for gossip protocol (0 = random available port)
+port = 4001
+
+# Sync interval in seconds
+sync_interval = 300
+
+[chat]
+# Ollama API URL
+ollama_url = "http://localhost:11434"
+
+# Default model for chat
+model = "qwen2.5:14b"
+
+[network]
+# Enable mDNS for local network discovery
+enable_mdns = true
+
+# Bootstrap peers for WAN discovery
+# These are the initial peers to connect to when joining the network
+# Format: /ip4/<address>/tcp/<port>/p2p/<peer-id>
+# Example:
+# bootstrap_peers = [
+#     "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooW...",
+#     "/dns4/bootstrap.sage.network/tcp/4001/p2p/12D3KooW...",
+# ]
+bootstrap_peers = []
+
+[grid]
+# Grid size (must be power of 2, 64-1024)
+# Larger grids = more knowledge capacity, slower operations
+size = 256
+
+[privacy]
+# Differential privacy epsilon (lower = more private, default 1.0)
+# epsilon = 1.0
+
+# Sensitivity for differential privacy (default 1.0)
+# sensitivity = 1.0
+
+# Minimum conversations before syncing to network
+# min_conversations_before_sync = 5
+
+# Filter PII from knowledge before encoding
+# filter_pii = true
+
+# Channels reserved for local-only knowledge (excluded from sync)
+# local_only_channels = []

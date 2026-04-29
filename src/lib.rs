@@ -2,6 +2,7 @@
 
 #[allow(unused_assignments, dead_code, unused_imports)]
 pub mod chat_tui;
+pub mod config;
 pub mod query_router; // Query complexity router — decides inference backend
 pub mod query_router_intelligent; // Self-improving intelligent router
 pub mod distributed_knowledge; // NCA-based distributed knowledge storage
