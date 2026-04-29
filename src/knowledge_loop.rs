@@ -1008,22 +1008,47 @@ mod tests {
         assert!(kl.active_cells() > 0);
     }
 
+    /// Test that knowledge encoding and retrieval work together.
+    /// Verifies: encode → grid has active cells → retrieval mechanism works.
     #[test]
     fn test_knowledge_retrieval() {
         let engine = Arc::new(MockEngine::echo());
         let mut kl = KnowledgeLoop::new(engine);
         kl.relevance_threshold = 0.01; // lower threshold for test
+        kl.max_results = 10;
 
         // Encode some knowledge directly
         kl.encode("The capital of France is Paris", 0.9);
         kl.encode("Rust is a systems programming language", 0.9);
 
-        // Query should find relevant knowledge
-        let context = kl.retrieve_knowledge("What is the capital of France?");
-        // Note: hash-based encoding may or may not match well without Ollama embeddings
-        // The important thing is the mechanism works
-        // mechanism test: retrieval worked without panic
-        // (semantic accuracy depends on hash-based encoding)
+        // Verify knowledge was encoded into the grid
+        assert!(
+            kl.active_cells() >= 2,
+            "Should have at least 2 active cells after encoding 2 facts"
+        );
+
+        // Query the knowledge store
+        let context = kl.retrieve_knowledge("France capital");
+
+        // Verify retrieval feedback was recorded (business logic: feedback loop works)
+        let (event_count, _, _) = kl.retrieval_feedback_stats();
+        assert!(
+            event_count >= 1,
+            "Should have recorded at least one retrieval event"
+        );
+
+        // If context was found, verify it has proper format
+        if let Some(ref ctx) = context {
+            assert!(
+                ctx.contains("Recalled Knowledge"),
+                "Context should have knowledge header when results found"
+            );
+            // Verify our encoded text appears in the context
+            assert!(
+                ctx.contains("Paris") || ctx.contains("Rust"),
+                "Context should contain one of the encoded facts"
+            );
+        }
     }
 
     #[test]
