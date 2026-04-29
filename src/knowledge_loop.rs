@@ -1056,20 +1056,39 @@ mod tests {
         let path = "/tmp/sage_test_knowledge_loop.bin";
         let _ = std::fs::remove_file(path);
 
+        let cell_count: usize;
+        let encoded_fact = "persistent memory test";
+
         // Create and populate
         {
             let engine = Arc::new(MockEngine::echo());
             let mut kl = KnowledgeLoop::new(engine).with_brain_path(path);
-            kl.encode("persistent memory test", 0.9);
+            kl.encode(encoded_fact, 0.9);
+            cell_count = kl.active_cells();
+            assert!(cell_count > 0, "Should have encoded knowledge");
             kl.save_brain().unwrap();
         }
 
-        // Load and verify
+        // Load new instance
         {
             let engine = Arc::new(MockEngine::echo());
             let mut kl = KnowledgeLoop::new(engine).with_brain_path(path);
             kl.load_brain().unwrap();
-            assert!(kl.active_cells() > 0);
+            
+            // Verify cell count matches
+            assert_eq!(
+                kl.active_cells(), cell_count,
+                "Saved brain should restore same number of active cells"
+            );
+
+            // Verify we can retrieve the encoded fact
+            let context = kl.retrieve_knowledge(encoded_fact);
+            if let Some(ctx) = context {
+                assert!(
+                    ctx.contains(encoded_fact) || ctx.contains("persistent"),
+                    "Should retrieve the encoded fact from restored brain"
+                );
+            }
         }
 
         let _ = std::fs::remove_file(path);
@@ -1085,23 +1104,35 @@ mod tests {
         ]));
         let mut kl = KnowledgeLoop::new(engine);
         kl.relevance_threshold = 0.01;
+        kl.max_results = 10;
 
         // Conversation 1: establish a fact
         let _ = kl.chat("My favorite color is blue").unwrap();
+        let cells_after_fact = kl.active_cells();
+        assert!(cells_after_fact > 0, "First fact should be encoded");
 
-        // Conversation 2-3: noise
+        // Conversation 2-3: add more knowledge
         let _ = kl.chat("What is the weather today?").unwrap();
         let _ = kl.chat("Tell me a joke").unwrap();
 
-        // The knowledge should be encoded in the NCA grid
-        assert!(kl.active_cells() > 0);
+        // Grid should have accumulated more knowledge
+        assert!(
+            kl.active_cells() >= cells_after_fact,
+            "Grid should accumulate knowledge across conversations"
+        );
 
-        // The retrieve mechanism should find color-related knowledge
-        // (with hash-based encoding, exact recall depends on hash collisions)
-        let _ = kl.chat("What is my favorite color?").unwrap();
+        // Retrieve mechanism should work on color-related query
+        let knowledge = kl.retrieve_knowledge("favorite color");
+        // With hash-based encoding, exact recall depends on hash collisions
+        // but the retrieval mechanism itself should not panic and should return
+        // either results or None gracefully
+        
+        // Final conversation should work
+        let response = kl.chat("What is my favorite color?").unwrap();
+        assert!(response.len() > 0, "Should get a response");
 
-        // Verify history accumulated
-        assert_eq!(kl.history().len(), 8); // 4 exchanges × 2 messages
+        // Verify history accumulated (4 exchanges × 2 messages)
+        assert_eq!(kl.history().len(), 8, "Should track all message history");
     }
 
     #[test]
@@ -1259,31 +1290,31 @@ mod tests {
         let engine = Arc::new(MockEngine::echo());
         let mut kl = KnowledgeLoop::new(engine);
         kl.relevance_threshold = 0.01;
+        kl.max_results = 10;
 
         // Encode several facts
         kl.encode("cats are fluffy pets", 0.9);
         kl.encode("dogs are loyal companions", 0.9);
         kl.encode("birds can fly in the sky", 0.9);
+        kl.encode("fish live in water", 0.9);
+        kl.encode("snakes are reptiles", 0.9);
 
         // Delta retrieval with empty already_found should return results
         let delta = kl.retrieve_delta_unique("pets animals", &[]);
 
-        // May or may not find results depending on hash positions, but should not panic
-        // and should return a valid Vec
+        // Should not panic and should return a valid Vec bounded by max_results
         assert!(
             delta.len() <= kl.max_results,
-            "Delta should return at most max_results"
+            "Delta should return at most max_results, got {}",
+            delta.len()
         );
 
-        // If we pass some already_found, delta should exclude those
+        // If we pass all found items as already_found, delta should be empty
         if !delta.is_empty() {
-            let first = delta[0].clone();
-            let delta2 = kl.retrieve_delta_unique("pets animals", &[first.clone()]);
-
-            // The first result should not appear in delta2
+            let delta2 = kl.retrieve_delta_unique("pets animals", &delta);
             assert!(
-                !delta2.contains(&first),
-                "Delta should exclude already_found items"
+                delta2.is_empty(),
+                "Delta should return nothing when all results already found"
             );
         }
     }

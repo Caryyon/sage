@@ -612,12 +612,27 @@ mod tests {
     #[test]
     fn test_pattern_stats_accuracy() {
         let mut stats = PatternStats::new();
-        assert_eq!(stats.nca_accuracy(), 0.0);
-        assert_eq!(stats.llm_accuracy(), 0.0);
+        
+        // Empty stats return 0.0 (no division by zero)
+        assert_eq!(stats.nca_accuracy(), 0.0, "No NCA attempts → 0.0 accuracy");
+        assert_eq!(stats.llm_accuracy(), 0.0, "No LLM attempts → 0.0 accuracy");
 
+        // NCA: 7/10 = 0.7
         stats.nca_attempts = 10;
         stats.nca_successes = 7;
-        assert!((stats.nca_accuracy() - 0.7).abs() < 0.01);
+        assert!((stats.nca_accuracy() - 0.7).abs() < 0.01, "NCA accuracy should be 0.7");
+
+        // LLM: 8/10 = 0.8
+        stats.llm_attempts = 10;
+        stats.llm_successes = 8;
+        assert!((stats.llm_accuracy() - 0.8).abs() < 0.01, "LLM accuracy should be 0.8");
+
+        // Mixed: NCA higher accuracy
+        stats.nca_attempts = 10;
+        stats.nca_successes = 9;
+        stats.llm_attempts = 10;
+        stats.llm_successes = 3;
+        assert!(stats.nca_accuracy() > stats.llm_accuracy(), "NCA should be more accurate");
     }
 
     #[test]
@@ -649,16 +664,16 @@ mod tests {
 
         // Now should have learned - confidence increases with more samples
         let (backend2, _, confidence2) = router.route("What is X?", true);
-        assert_eq!(backend2, Backend::Nca);
-        // With 5 samples, confidence = 5/100 = 0.05, but learning is active
-        assert!(confidence2 <= 0.5, "Low sample confidence should be <= 0.5");
+        assert_eq!(backend2, Backend::Nca, "Should prefer NCA after training");
+        // With min_attempts=5 and 5 samples, confidence builds from data
+        assert!(confidence2 > 0.0, "Should have non-zero confidence after training");
     }
 
     #[test]
     fn test_router_exploration() {
         let mut router = IntelligentRouter::new()
             .with_nca_available(true)
-            .with_exploration_rate(1.0); // Always explore
+            .with_exploration_rate(0.5); // 50% exploration
         
         // Seed with NCA successes
         for _ in 0..10 {
@@ -673,19 +688,20 @@ mod tests {
             );
         }
 
-        // With exploration=1.0, should try LLM sometimes
-        let mut _nca_count = 0;
+        // With exploration=0.5, should see both backends
+        let mut nca_count = 0;
         let mut llm_count = 0;
         for _ in 0..100 {
             let (backend, _, _) = router.route("What is X?", true);
             match backend {
-                Backend::Nca => _nca_count += 1,
+                Backend::Nca => nca_count += 1,
                 Backend::Llm => llm_count += 1,
             }
         }
         
-        // With exploration=1.0, we should see both backends
-        assert!(llm_count > 0, "Should explore LLM with exploration_rate=1.0");
+        // With 50% exploration, we should see both backends
+        assert!(nca_count > 0, "Should exploit known-good NCA");
+        assert!(llm_count > 0, "Should explore LLM with exploration_rate=0.5");
     }
 
     #[test]
