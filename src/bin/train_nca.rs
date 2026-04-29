@@ -228,9 +228,9 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
     eprintln!(
         "   'mammal' rank: {} ({})",
         mammal_rank.map_or("not found".to_string(), |r| format!("#{}", r + 1)),
-        if mammal_rank.map_or(false, |r| r < 10) {
+        if mammal_rank.is_some_and(|r| r < 10) {
             "✅ TOP 10!"
-        } else if mammal_rank.map_or(false, |r| r < 20) {
+        } else if mammal_rank.is_some_and(|r| r < 20) {
             "👍 top 20"
         } else {
             "❌ low rank"
@@ -239,9 +239,9 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
     eprintln!(
         "   'dog' rank:    {} ({})",
         dog_rank.map_or("not found".to_string(), |r| format!("#{}", r + 1)),
-        if dog_rank.map_or(false, |r| r < 10) {
+        if dog_rank.is_some_and(|r| r < 10) {
             "✅ TOP 10!"
-        } else if dog_rank.map_or(false, |r| r < 20) {
+        } else if dog_rank.is_some_and(|r| r < 20) {
             "👍 top 20"
         } else {
             "❌ low rank"
@@ -250,7 +250,7 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
     eprintln!(
         "   'tree' rank:   {} ({})",
         tree_rank.map_or("not found".to_string(), |r| format!("#{}", r + 1)),
-        if tree_rank.map_or(false, |r| r < 20) {
+        if tree_rank.is_some_and(|r| r < 20) {
             "🔴 unexpectedly high (cross-cat)"
         } else {
             "✅ lower rank (expected)"
@@ -259,7 +259,7 @@ fn verify_retrieval(predictor: &mut NcaPredictor) {
     eprintln!(
         "   'oak' rank:    {} ({})",
         oak_rank.map_or("not found".to_string(), |r| format!("#{}", r + 1)),
-        if oak_rank.map_or(false, |r| r < 20) {
+        if oak_rank.is_some_and(|r| r < 20) {
             "🔴 unexpectedly high (cross-cat)"
         } else {
             "✅ lower rank (expected)"

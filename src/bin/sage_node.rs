@@ -596,26 +596,23 @@ async fn main() {
     let state_for_gossip = Arc::clone(&state);
     let transport_recv = Arc::clone(&transport);
     tokio::spawn(async move {
-        loop {
-            match transport_recv.recv().await {
-                Ok((_peer_id, msg)) => match msg {
-                    GossipMessage::KnowledgeDiff(diff) => {
-                        let mut s = state_for_gossip.lock().await;
-                        let changes = diff.changes.len();
-                        diff.apply_weighted(&mut s.knowledge.grid.cells, 0.8);
-                        println!(
-                            "[gossip] Applied diff from {} ({} changes)",
-                            diff.source_node, changes
-                        );
-                        // Save brain after receiving peer knowledge
-                        let _ = s.knowledge.save(&s.brain_path);
-                    }
-                    GossipMessage::PeerAnnounce(announce) => {
-                        println!("[gossip] Peer announce: {}", announce.node_id);
-                    }
-                    _ => {}
-                },
-                Err(_) => break,
+        while let Ok((_peer_id, msg)) = transport_recv.recv().await {
+            match msg {
+                GossipMessage::KnowledgeDiff(diff) => {
+                    let mut s = state_for_gossip.lock().await;
+                    let changes = diff.changes.len();
+                    diff.apply_weighted(&mut s.knowledge.grid.cells, 0.8);
+                    println!(
+                        "[gossip] Applied diff from {} ({} changes)",
+                        diff.source_node, changes
+                    );
+                    // Save brain after receiving peer knowledge
+                    let _ = s.knowledge.save(&s.brain_path);
+                }
+                GossipMessage::PeerAnnounce(announce) => {
+                    println!("[gossip] Peer announce: {}", announce.node_id);
+                }
+                _ => {}
             }
         }
     });

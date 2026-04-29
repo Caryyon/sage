@@ -188,12 +188,9 @@ impl DistributedInference {
         let mut responded = 0usize;
 
         for handle in handles {
-            match tokio::time::timeout(PEER_QUERY_TIMEOUT, handle).await {
-                Ok(Ok(Ok(items))) => {
-                    responded += 1;
-                    all_items.extend(items);
-                }
-                _ => {} // Timeout or error — skip this peer
+            if let Ok(Ok(Ok(items))) = tokio::time::timeout(PEER_QUERY_TIMEOUT, handle).await {
+                responded += 1;
+                all_items.extend(items);
             }
         }
 
