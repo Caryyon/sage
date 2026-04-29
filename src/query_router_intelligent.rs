@@ -422,7 +422,7 @@ impl IntelligentRouter {
     /// Route a query to the appropriate backend
     ///
     /// Returns (backend, pattern, confidence)
-    pub fn route(&self, query: &str) -> (Backend, QueryPattern, f64) {
+    pub fn route(&self, query: &str, nca_available: bool) -> (Backend, QueryPattern, f64) {
         let pattern = detect_pattern(query);
         let stats = self.pattern_stats.get(&pattern).cloned().unwrap_or_default();
 
@@ -430,7 +430,7 @@ impl IntelligentRouter {
         if !self.use_learning || stats.total_queries < self.min_attempts_for_learning {
             let complexity = pattern.default_complexity();
             let backend = match complexity {
-                QueryComplexity::Simple if self.nca_available => Backend::Nca,
+                QueryComplexity::Simple if nca_available => Backend::Nca,
                 _ => Backend::Llm,
             };
             return (backend, pattern, 0.5); // Low confidence when not learned
@@ -441,14 +441,14 @@ impl IntelligentRouter {
         
         let backend = if should_explore {
             // Exploration: try the less-used backend
-            if stats.nca_attempts <= stats.llm_attempts && self.nca_available {
+            if stats.nca_attempts <= stats.llm_attempts && nca_available {
                 Backend::Nca
             } else {
                 Backend::Llm
             }
         } else {
             // Exploitation: use the better-performing backend
-            if stats.nca_preferred(self.min_attempts_for_learning) && self.nca_available {
+            if stats.nca_preferred(self.min_attempts_for_learning) && nca_available {
                 Backend::Nca
             } else {
                 Backend::Llm
@@ -566,7 +566,7 @@ pub fn intelligent_route(
     nca_available: bool,
 ) -> Backend {
     if let Some(r) = router {
-        let (backend, _, _) = r.route(query);
+        let (backend, _, _) = r.route(query, nca_available);
         backend
     } else {
         // Fallback to original static routing
@@ -629,7 +629,7 @@ mod tests {
         router.min_attempts_for_learning = 5;
 
         // Before learning threshold, uses static rules
-        let (backend, pattern, confidence) = router.route("What is X?");
+        let (backend, pattern, confidence) = router.route("What is X?", true);
         assert_eq!(pattern, QueryPattern::FactualLookup);
         assert_eq!(backend, Backend::Nca); // Simple query + NCA available
         assert_eq!(confidence, 0.5); // Low confidence before learning
@@ -648,7 +648,7 @@ mod tests {
         }
 
         // Now should have learned - confidence increases with more samples
-        let (backend2, _, confidence2) = router.route("What is X?");
+        let (backend2, _, confidence2) = router.route("What is X?", true);
         assert_eq!(backend2, Backend::Nca);
         // With 5 samples, confidence = 5/100 = 0.05, but learning is active
         assert!(confidence2 <= 0.5, "Low sample confidence should be <= 0.5");
@@ -674,12 +674,12 @@ mod tests {
         }
 
         // With exploration=1.0, should try LLM sometimes
-        let mut nca_count = 0;
+        let mut _nca_count = 0;
         let mut llm_count = 0;
         for _ in 0..100 {
-            let (backend, _, _) = router.route("What is X?");
+            let (backend, _, _) = router.route("What is X?", true);
             match backend {
-                Backend::Nca => nca_count += 1,
+                Backend::Nca => _nca_count += 1,
                 Backend::Llm => llm_count += 1,
             }
         }

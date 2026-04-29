@@ -15,6 +15,7 @@ use crate::inference::nca_predictor::{
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
 use crate::query_router::{classify_query, QueryComplexity};
+use crate::query_router_intelligent::IntelligentRouter;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -78,6 +79,10 @@ pub struct KnowledgeLoop {
     last_retrieval_features: Option<Vec<f64>>,
     /// Retrieved text from the last retrieval (for logging).
     last_retrieved_text: Option<String>,
+    /// Intelligent self-improving query router — replaces static word-count heuristic.
+    intelligent_router: IntelligentRouter,
+    /// Whether NCA predictor is available for routing decisions.
+    nca_available: bool,
 }
 
 impl KnowledgeLoop {
@@ -101,6 +106,8 @@ impl KnowledgeLoop {
             relevance_readout: BinaryRelevanceReadout::new(RETRIEVAL_FEATURE_DIM),
             last_retrieval_features: None,
             last_retrieved_text: None,
+            intelligent_router: IntelligentRouter::new().with_nca_available(true),
+            nca_available: true,
         }
     }
 
