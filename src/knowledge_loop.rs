@@ -624,26 +624,76 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
-        // 5. Generate response (Phase 3: route by query complexity)
-        let complexity = classify_query(user_input);
-        let response: String = match complexity {
-            QueryComplexity::Simple => {
-                // Try NCA predictor for simple factual queries
+        // 5. Generate response using intelligent query router
+        let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
+        
+        tracing::debug!(
+            "Intelligent routing: {:?} for pattern {:?} (confidence: {:.3})",
+            backend, pattern, confidence
+        );
+        
+        let response: String = match backend {
+            crate::query_router_intelligent::Backend::Nca => {
+                // Try NCA predictor for queries that router thinks NCA can handle
                 self.ensure_nca_predictor();
                 if let Some(ref mut predictor) = self.nca_predictor {
                     let context_text = knowledge_context.as_deref().unwrap_or("");
                     match predictor.answer(user_input, Some(context_text), 20) {
-                        Ok(answer) if !answer.is_empty() => answer,
-                        _ => self.engine.chat(&messages, 1000)?,
+                        Ok(answer) if !answer.is_empty() => {
+                            // Record success for learning
+                            self.intelligent_router.record_outcome(
+                                pattern,
+                                crate::query_router_intelligent::RoutingOutcome {
+                                    backend: crate::query_router_intelligent::Backend::Nca,
+                                    success: true,
+                                    response_time_ms: 0,
+                                    user_satisfaction: None,
+                                },
+                            );
+                            answer
+                        }
+                        _ => {
+                            // NCA failed, record and fall back to LLM
+                            self.intelligent_router.record_outcome(
+                                pattern,
+                                crate::query_router_intelligent::RoutingOutcome {
+                                    backend: crate::query_router_intelligent::Backend::Nca,
+                                    success: false,
+                                    response_time_ms: 0,
+                                    user_satisfaction: None,
+                                },
+                            );
+                            self.engine.chat(&messages, 1000)?
+                        }
                     }
                 } else {
-                    // Fallback to LLM if predictor not available
+                    // No predictor available, record and use LLM
+                    self.intelligent_router.record_outcome(
+                        pattern,
+                        crate::query_router_intelligent::RoutingOutcome {
+                            backend: crate::query_router_intelligent::Backend::Llm,
+                            success: true,
+                            response_time_ms: 0,
+                            user_satisfaction: None,
+                        },
+                    );
                     self.engine.chat(&messages, 1000)?
                 }
             }
-            _ => {
-                // Complex queries → use LLM
-                self.engine.chat(&messages, 1000)?
+            crate::query_router_intelligent::Backend::Llm => {
+                // Use LLM for complex queries
+                let response = self.engine.chat(&messages, 1000)?;
+                // Record success
+                self.intelligent_router.record_outcome(
+                    pattern,
+                    crate::query_router_intelligent::RoutingOutcome {
+                        backend: crate::query_router_intelligent::Backend::Llm,
+                        success: true,
+                        response_time_ms: 0,
+                        user_satisfaction: None,
+                    },
+                );
+                response
             }
         };
 
