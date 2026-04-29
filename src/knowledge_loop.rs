@@ -124,16 +124,37 @@ impl KnowledgeLoop {
     }
 
     /// Load brain state from disk (if it exists).
+    /// Also loads intelligent router statistics if available.
     pub fn load_brain(&mut self) -> Result<(), String> {
         if std::path::Path::new(&self.brain_path).exists() {
             self.knowledge.load(&self.brain_path)?;
+        }
+        // Load router statistics from persistence
+        let router_path = crate::query_router_intelligent::IntelligentRouter::default_path();
+        if router_path.exists() {
+            match crate::query_router_intelligent::IntelligentRouter::load(&router_path) {
+                Ok(loaded_router) => {
+                    self.intelligent_router = loaded_router;
+                    tracing::debug!("Loaded intelligent router stats from {:?}", router_path);
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to load router stats: {}", e);
+                }
+            }
         }
         Ok(())
     }
 
     /// Save brain state to disk.
+    /// Also persists intelligent router statistics.
     pub fn save_brain(&self) -> Result<(), String> {
-        self.knowledge.save(&self.brain_path)
+        self.knowledge.save(&self.brain_path)?;
+        // Save router statistics
+        let router_path = crate::query_router_intelligent::IntelligentRouter::default_path();
+        if let Err(e) = self.intelligent_router.save(&router_path) {
+            tracing::warn!("Failed to save router statistics: {}", e);
+        }
+        Ok(())
     }
 
     /// Get the number of active knowledge cells in the NCA grid.
