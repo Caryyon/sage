@@ -14,7 +14,6 @@ use crate::inference::nca_predictor::{
 };
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
-use crate::query_router::{classify_query, QueryComplexity};
 use crate::query_router_intelligent::IntelligentRouter;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};

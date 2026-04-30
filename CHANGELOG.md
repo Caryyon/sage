@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.8] - 2026-04-30
+
+### Added
+- Bootstrap peer configuration via `~/.sage/config.toml` — users can now set
+  WAN bootstrap peers without editing source code or managing separate files.
+  Config merges: hardcoded defaults → config.toml → bootstrap_peers.txt.
+- Example config with documentation (`config.example.toml`)
+
+### Fixed
+- Removed unused imports in query_router_intelligent
+- Removed unreachable pattern match arm in QueryPattern
+
+This completes the Phase 2 network configuration ergonomics milestone.
+
 ## [0.3.7] - 2026-04-25
 
 ### Added

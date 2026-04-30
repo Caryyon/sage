@@ -575,12 +575,22 @@ fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
 
         let _net = NetworkManager::new(identity.clone(), net_config);
 
+        // Load config from ~/.sage/config.toml
+        let sage_config = sage::config::load_config();
+
         // Start libp2p transport for real peer discovery
-        let bootstrap_nodes: Vec<String> = BOOTSTRAP_NODES.iter().map(|s| s.to_string()).collect();
+        // Bootstrap sources: 1) hardcoded defaults, 2) config.toml, 3) bootstrap_peers.txt
+        let mut all_bootstrap: Vec<String> = BOOTSTRAP_NODES.iter().map(|s| s.to_string()).collect();
+
+        // Add bootstrap peers from config.toml
+        for peer in &sage_config.network.bootstrap_peers {
+            if !peer.is_empty() && !all_bootstrap.contains(peer) {
+                all_bootstrap.push(peer.clone());
+            }
+        }
 
         // Also load custom bootstrap peers from file
         let bootstrap_path = sage_home().join("bootstrap_peers.txt");
-        let mut all_bootstrap: Vec<String> = bootstrap_nodes;
         if bootstrap_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&bootstrap_path) {
                 for line in content.lines() {
