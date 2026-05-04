@@ -110,7 +110,7 @@ impl FeedbackStore {
         self.total_events += 1;
         
         // Auto-save every 10 events
-        if self.total_events % 10 == 0 {
+        if self.total_events.is_multiple_of(10) {
             let _ = self.save();
         }
     }
@@ -173,6 +173,12 @@ pub struct FeedbackSummary {
 pub struct FeedbackCollector {
     store: FeedbackStore,
     pending_event: Option<FeedbackEvent>,
+}
+
+impl Default for FeedbackCollector {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FeedbackCollector {
