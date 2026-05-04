@@ -8,12 +8,12 @@
 //! - Implicit: User repeats similar question (NCA failed), or moves on quickly (NCA succeeded)
 //! - Fallback: User asks follow-up that triggers LLM routing (signal NCA wasn't enough)
 
-use crate::query_router_intelligent::{IntelligentRouter, QueryPattern};
+use crate::query_router_intelligent::QueryPattern;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A single feedback event
