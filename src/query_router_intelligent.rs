@@ -546,7 +546,7 @@ impl IntelligentRouter {
                 let router_stats = self.pattern_stats.entry(pattern).or_default();
                 
                 // Update NCA success rate from feedback
-                let nca_rate = if stats.total_attempts > 0 {
+                let _nca_rate = if stats.total_attempts > 0 {
                     stats.nca_satisfactory as f64 / stats.total_attempts as f64
                 } else {
                     0.0
