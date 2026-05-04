@@ -649,6 +649,9 @@ impl KnowledgeLoop {
             content: user_input.to_string(),
         });
 
+        // Sync router with latest feedback data before routing
+        self.intelligent_router.sync_with_feedback();
+        
         // 5. Generate response using intelligent query router
         let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
         
