@@ -14,10 +14,12 @@ use crate::inference::nca_predictor::{
 };
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
+use crate::feedback::FeedbackCollector;
 use crate::query_router_intelligent::IntelligentRouter;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 // ── Delta Retrieval Quality Counters ──────────────────────────────────────
 /// Total number of knowledge retrievals that used delta attention.
@@ -82,6 +84,8 @@ pub struct KnowledgeLoop {
     intelligent_router: IntelligentRouter,
     /// Whether NCA predictor is available for routing decisions.
     nca_available: bool,
+    /// Feedback collector for learning from user interactions.
+    feedback_collector: FeedbackCollector,
 }
 
 impl KnowledgeLoop {
@@ -107,6 +111,7 @@ impl KnowledgeLoop {
             last_retrieved_text: None,
             intelligent_router: IntelligentRouter::new().with_nca_available(true),
             nca_available: true,
+            feedback_collector: FeedbackCollector::new(),
         }
     }
 
@@ -647,6 +652,14 @@ impl KnowledgeLoop {
         // 5. Generate response using intelligent query router
         let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
         
+        // Start tracking this query for feedback
+        let query_start = Instant::now();
+        self.feedback_collector.start_query(
+            user_input.to_string(),
+            pattern.clone(),
+            true, // NCA was attempted (we always try it first conceptually)
+        );
+        
         tracing::debug!(
             "Intelligent routing: {:?} for pattern {:?} (confidence: {:.3})",
             backend, pattern, confidence
@@ -716,6 +729,23 @@ impl KnowledgeLoop {
                 response
             }
         };
+
+        // Track timing and complete feedback
+        let response_time_ms = query_start.elapsed().as_millis() as u64;
+        
+        // Determine if NCA satisfied user based on routing decision
+        match backend {
+            crate::query_router_intelligent::Backend::Nca => {
+                // NCA was used and returned an answer - mark success
+                self.feedback_collector.mark_nca_success();
+            }
+            crate::query_router_intelligent::Backend::Llm => {
+                // LLM was used - NCA didn't satisfy
+                self.feedback_collector.mark_llm_fallback();
+            }
+        }
+        
+        self.feedback_collector.complete(response_time_ms);
 
         // 6. Encode response into NCA grid
         let response_pos = self

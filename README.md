@@ -33,11 +33,12 @@ sage node start
 
 ## Features
 
-- **Grid-Based Knowledge Store** — 256×256 living grid stores semantic embeddings
-- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge
-- **Query Routing** — Simple questions answered offline, complex ones use LLM
-- **Peer-to-Peer Mesh** — Nodes share knowledge via gossip protocols
-- **Retrieval Feedback Learning** — System improves from relevance signals
+- **Grid-Based Knowledge Store** — 256×256 grid stores semantic embeddings with attention-based retrieval
+- **Intelligent Query Router** — Learning-based routing (v0.3.7): detects 12 query patterns, tracks NCA vs LLM accuracy, adapts over time
+- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge with delta attention spreading
+- **Peer-to-Peer Mesh** — Nodes share knowledge diffs via libp2p gossip protocols
+- **Retrieval Feedback Learning** — System improves from relevance signals using Adam optimizer
+- **Bootstrap Peer Config** — Configure WAN bootstrap peers via `~/.sage/config.toml` (v0.3.8)
 - **Raspberry Pi Ready** — Runs on a $35 board
 - **Zero API Keys** — No OpenAI, no monthly fees
 
@@ -48,10 +49,11 @@ sage node start
 ## Architecture
 
 - **Rust** — Memory-safe, fast, no Python dependency hell
-- **NCA Grid** — Knowledge stored in cellular automata dynamics
+- **Grid Store** — Knowledge stored as semantic embeddings in 256×256 grid
 - **libp2p** — Decentralized peer-to-peer networking
 - **Ollama** — LLM fallback for complex reasoning
 - **Ed25519** — Cryptographic identity and signed updates
+- **Semantic Hashing** — 0% collision feature-to-position mapping
 
 ## Platforms
 

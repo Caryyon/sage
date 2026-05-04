@@ -5,6 +5,7 @@ pub mod chat_tui;
 pub mod config;
 pub mod query_router; // Query complexity router — decides inference backend
 pub mod query_router_intelligent; // Self-improving intelligent router
+pub mod feedback; // User feedback tracking and learning
 pub mod distributed_knowledge; // NCA-based distributed knowledge storage
 pub mod knowledge_loop; // Core intelligence cycle: Text → NCA → Knowledge → LLM
 pub mod knowledge_loop_integration_tests; // Query routing integration tests
