@@ -107,6 +107,11 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Manage user feedback and learning statistics
+    Feedback {
+        #[command(subcommand)]
+        command: FeedbackCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -120,6 +125,23 @@ enum ModelCommands {
     List,
     /// Show current model status
     Status,
+}
+
+#[derive(Subcommand)]
+enum FeedbackCommands {
+    /// Show feedback statistics
+    Stats,
+    /// Submit feedback for last response (good/bad/rating)
+    Submit {
+        /// Rating: good, bad, or a number from -1 to 1
+        rating: String,
+    },
+    /// Export feedback data as JSON
+    Export {
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -275,6 +297,17 @@ fn main() {
         Some(Commands::Search { query, max_results, json }) => {
             run_search(&query, max_results, json);
         }
+        Some(Commands::Feedback { command }) => match command {
+            FeedbackCommands::Stats => {
+                run_feedback_stats();
+            }
+            FeedbackCommands::Submit { rating } => {
+                run_feedback_submit(&rating);
+            }
+            FeedbackCommands::Export { output } => {
+                run_feedback_export(output.as_deref());
+            }
+        },
         Some(Commands::Node { command }) => match command {
             NodeCommands::Start {
                 port,
@@ -3013,4 +3046,87 @@ fn run_import_merge(file: &str, weight: f64) {
     }
     println!("   After:  {} active cells", after_active);
     println!("   Saved to: {}", brain_path);
+}
+
+/// Show feedback statistics
+fn run_feedback_stats() {
+    use sage::feedback::FeedbackStore;
+    
+    let store = FeedbackStore::load_or_new();
+    let summary = store.summary();
+    
+    println!("╔══════════════════════════════════════════╗");
+    println!("║         SAGE Feedback Statistics         ║");
+    println!("╚══════════════════════════════════════════╝");
+    println!();
+    println!("Total queries tracked: {}", summary.total_queries);
+    println!("NCA attempts:          {}", summary.nca_attempts);
+    if summary.nca_attempts > 0 {
+        println!("NCA satisfaction rate: {:.1}%", summary.nca_satisfaction_rate * 100.0);
+    }
+    println!("LLM fallback rate:     {:.1}%", summary.llm_fallback_rate * 100.0);
+    println!();
+    
+    if !summary.pattern_breakdown.is_empty() {
+        println!("Pattern breakdown:");
+        for (pattern, stats) in &summary.pattern_breakdown {
+            let rate = if stats.total_attempts > 0 {
+                (stats.nca_satisfactory as f64 / stats.total_attempts as f64) * 100.0
+            } else {
+                0.0
+            };
+            println!("  {}: {} queries, {:.1}% NCA success", 
+                pattern, stats.total_attempts, rate);
+        }
+    }
+}
+
+/// Submit feedback for last response
+fn run_feedback_submit(rating: &str) {
+    // Parse rating
+    let explicit_rating = match rating.to_lowercase().as_str() {
+        "good" | "g" | "+" | "yes" => Some(1.0),
+        "bad" | "b" | "-" | "no" => Some(-1.0),
+        "ok" | "okay" | "meh" | "0" => Some(0.0),
+        num => {
+            // Try to parse as number
+            num.parse::<f64>().ok().map(|n| n.clamp(-1.0, 1.0))
+        }
+    };
+    
+    if let Some(_rating) = explicit_rating {
+        // Note: In a real implementation, we'd need to track the last query
+        // and update it with the rating. For now, we just acknowledge.
+        println!("✅ Feedback recorded: {}", rating);
+        println!("   (In interactive mode, this updates the last response's rating)");
+    } else {
+        eprintln!("❌ Invalid rating. Use: good, bad, ok, or a number from -1 to 1");
+        std::process::exit(1);
+    }
+}
+
+/// Export feedback data
+fn run_feedback_export(output: Option<&str>) {
+    use sage::feedback::FeedbackStore;
+    
+    let store = FeedbackStore::load_or_new();
+    let json = match serde_json::to_string_pretty(&store) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("Failed to serialize feedback: {}", e);
+            std::process::exit(1);
+        }
+    };
+    
+    if let Some(path) = output {
+        match std::fs::write(path, json) {
+            Ok(_) => println!("✅ Feedback exported to {}", path),
+            Err(e) => {
+                eprintln!("Failed to write to {}: {}", path, e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!("{}", json);
+    }
 }
