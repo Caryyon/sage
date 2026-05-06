@@ -18,6 +18,10 @@ pub mod offline;
 pub mod ollama;
 pub mod reservoir;
 
+// Re-export key types for public API
+pub use offline::OfflineEngine;
+pub use ollama::OllamaEngine;
+
 use std::error::Error;
 
 /// Unified inference engine trait
