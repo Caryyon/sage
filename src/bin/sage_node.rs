@@ -617,6 +617,38 @@ async fn main() {
         }
     });
 
+    // Spawn periodic sync broadcaster
+    let state_for_sync = Arc::clone(&state);
+    let transport_sync = Arc::clone(&transport);
+    let sync_interval = cli.sync_interval;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(sync_interval));
+        loop {
+            interval.tick().await;
+            let mut s = state_for_sync.lock().await;
+            // Capture current grid as the before state if we haven't tracked one
+            let grid_before = s.last_broadcast_state.take().unwrap_or_else(|| {
+                s.knowledge.grid.cells.clone()
+            });
+            // Compute diff from last broadcast state
+            let diff = KnowledgeDiff::compute(
+                &grid_before,
+                &s.knowledge.grid.cells,
+                s.node_id.clone(),
+                s.diff_sequence,
+                0.7,
+                1e-6,
+            );
+            s.diff_sequence += 1;
+            if !diff.is_empty() {
+                println!("[sync] Broadcasting {} cell changes", diff.changes.len());
+                let _ = transport_sync.broadcast(GossipMessage::KnowledgeDiff(diff)).await;
+            }
+            // Store current state for next interval
+            s.last_broadcast_state = Some(s.knowledge.grid.cells.clone());
+        }
+    });
+
     // Start TCP listener for clients
     let listener = match TcpListener::bind(format!("127.0.0.1:{}", cli.port)).await {
         Ok(l) => {
