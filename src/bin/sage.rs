@@ -3182,3 +3182,14 @@ fn run_prune(threshold: f64, dry_run: bool) {
         }
     }
     
+    
+    if let Err(e) = knowledge.save(&brain_path) {
+        eprintln!("Failed to save brain after pruning: {}", e);
+        std::process::exit(1);
+    }
+    
+    println!("✅ Pruned {} cells (activation < {}) from brain.", pruned_count, threshold);
+    println!("   Active cells before: {}", before);
+    println!("   Active cells after: {}", before - pruned_count);
+    println!("   Brain saved to {}", brain_path);
+}
