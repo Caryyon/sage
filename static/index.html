@@ -882,12 +882,12 @@
             <div class="accordion-item">
                 <div class="accordion-header" onclick="toggleAccordion(this)">
                     <span class="icon">🧬</span>
-                    <h3>NCA Grid — Your AI's Brain is a Living Neural Grid</h3>
+                    <h3>Grid-Based Knowledge — 256×256 Semantic Embedding Space</h3>
                     <span class="arrow">▼</span>
                 </div>
                 <div class="accordion-body">
                     <div class="accordion-body-inner">
-                        SAGE's core is a <strong>256×256 Neural Cellular Automata grid</strong> with 32 channels per cell (24 shared + 8 private). Cells perceive neighbors via Sobel filters and update through tiny neural networks. This creates self-organizing, self-healing knowledge structures. Damage the grid and it regenerates — like biological tissue, but for intelligence. Knowledge isn't stored as text — it's encoded as stable NCA patterns that emerge from simple cellular rules.
+                        SAGE's core is a <strong>256×256 grid-based knowledge store</strong> with 38 channels per cell. Knowledge is encoded as 64-dimensional semantic embeddings distributed across the grid using semantic hashing. <strong>Attention-based retrieval</strong> finds relevant knowledge via cross-attention mechanisms, with feedback learning that improves results over time. Simple queries hit the grid directly (~73ms response). Complex queries seamlessly fall back to LLM when needed. <em>Note: The NCA (Neural Cellular Automata) dynamics are aspirational — current implementation uses static knowledge channels with neighbor-averaged hidden states, not learned cellular automata rules.</em>
                     </div>
                 </div>
             </div>
@@ -899,7 +899,19 @@
                 </div>
                 <div class="accordion-body">
                     <div class="accordion-body-inner">
-                        Nodes exchange <strong>compact NCA pattern diffs</strong> via a gossip protocol — not your raw conversations. These diffs are anonymous, compressed knowledge representations measured in kilobytes, not gigabytes. Peer discovery uses Kademlia DHT. Conflict resolution merges patterns via NCA superposition. Sync is lazy and runs in the background — never blocks your chat.
+                        Nodes exchange <strong>compact knowledge diffs</strong> via a gossip protocol — not your raw conversations. These diffs are anonymous, compressed knowledge representations measured in kilobytes, not gigabytes. Peer discovery uses libp2p. Sync is lazy and runs in the background — never blocks your chat. Bootstrap peers now configurable via <code>~/.sage/config.toml</code> for easy WAN connections.
+                    </div>
+                </div>
+            </div>
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="toggleAccordion(this)">
+                    <span class="icon">⚡</span>
+                    <h3>Intelligent Query Router — Learns What You Ask</h3>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="accordion-body">
+                    <div class="accordion-body-inner">
+                        SAGE v0.3.7 introduces a <strong>learning-based query router</strong> that replaces static heuristics. The router detects 12 query patterns (FactualLookup, Temporal, Comparative, Causal, Procedural, etc.) and learns which patterns work best with grid retrieval vs LLM fallback. Simple single-hop queries get 73ms responses from the grid. Complex multi-hop queries route directly to the model. The router tracks per-pattern accuracy and improves over time. Weights persist to disk and carry across sessions.
                     </div>
                 </div>
             </div>
@@ -911,7 +923,7 @@
                 </div>
                 <div class="accordion-body">
                     <div class="accordion-body-inner">
-                        Raw data <strong>never leaves your machine</strong>. Knowledge is encoded into NCA patterns before any network sharing occurs. Built-in PII filtering strips personal information before encoding. Differential privacy adds calibrated noise to shared patterns. And if you want total isolation, <strong>local-only mode</strong> keeps everything on your machine with zero network traffic.
+                        Raw data <strong>never leaves your machine</strong>. Knowledge is encoded into embeddings before any network sharing occurs. Built-in PII filtering strips personal information before encoding. Differential privacy adds calibrated noise to shared patterns. And if you want total isolation, <strong>local-only mode</strong> keeps everything on your machine with zero network traffic.
                     </div>
                 </div>
             </div>
@@ -951,13 +963,13 @@
             </div>
             <div class="phase">
                 <div class="phase-dot current"></div>
-                <h4>Phase 3</h4>
-                <p>Kill the LLM</p>
+                <h4>Phase 3 — Active</h4>
+                <p>Intelligent routing, bootstrap config</p>
             </div>
             <div class="phase">
                 <div class="phase-dot future"></div>
                 <h4>Phase 4</h4>
-                <p>Pure NCA intelligence</p>
+                <p>Trained NCA dynamics</p>
             </div>
         </div>
     </div>

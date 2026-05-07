@@ -16,6 +16,7 @@
 //! - Which patterns need full LLM reasoning
 //! - Optimal confidence thresholds for each category
 
+use crate::feedback::FeedbackStore;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -531,6 +532,53 @@ impl IntelligentRouter {
         let json = fs::read_to_string(path)?;
         let router: Self = serde_json::from_str(&json)?;
         Ok(router)
+    }
+
+    /// Sync pattern stats with feedback store data
+    /// Call this periodically to incorporate user feedback
+    pub fn sync_with_feedback(&mut self) {
+        let feedback_store = FeedbackStore::load_or_new();
+        let summary = feedback_store.summary();
+        
+        // Map feedback pattern names to QueryPattern
+        for (pattern_name, stats) in &summary.pattern_breakdown {
+            if let Some(pattern) = Self::pattern_from_name(pattern_name) {
+                let router_stats = self.pattern_stats.entry(pattern).or_default();
+                
+                // Update NCA success rate from feedback
+                let _nca_rate = if stats.total_attempts > 0 {
+                    stats.nca_satisfactory as f64 / stats.total_attempts as f64
+                } else {
+                    0.0
+                };
+                
+                // Only update if we have new data
+                if stats.total_attempts > router_stats.total_queries {
+                    router_stats.nca_attempts = stats.total_attempts;
+                    router_stats.nca_successes = stats.nca_satisfactory;
+                    router_stats.total_queries = stats.total_attempts;
+                }
+            }
+        }
+    }
+
+    /// Convert pattern name string to QueryPattern
+    fn pattern_from_name(name: &str) -> Option<QueryPattern> {
+        match name {
+            "factual_lookup" | "FactualLookup" => Some(QueryPattern::FactualLookup),
+            "temporal" | "Temporal" => Some(QueryPattern::Temporal),
+            "spatial" | "Spatial" => Some(QueryPattern::Spatial),
+            "quantitative" | "Quantitative" => Some(QueryPattern::Quantitative),
+            "definitional" | "Definitional" => Some(QueryPattern::Definitional),
+            "comparative" | "Comparative" => Some(QueryPattern::Comparative),
+            "causal" | "Causal" => Some(QueryPattern::Causal),
+            "procedural" | "Procedural" => Some(QueryPattern::Procedural),
+            "analytical" | "Analytical" => Some(QueryPattern::Analytical),
+            "creative" | "Creative" => Some(QueryPattern::Creative),
+            "conversational" | "Conversational" => Some(QueryPattern::Conversational),
+            "ambiguous" | "Ambiguous" => Some(QueryPattern::Ambiguous),
+            _ => None,
+        }
     }
 
     /// Get default save path

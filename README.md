@@ -22,22 +22,42 @@ SAGE is a Neural Cellular Automata intelligence system that learns, grows, and c
 # Install
 curl -fsSL https://whatssage.ai/install.sh | bash
 
-# Chat
+# Chat with your personal AI
 sage chat
 > What is SAGE?
 SAGE is a decentralized AI system...
 
-# Join the mesh
+# See how well it's learning from you
+sage feedback stats
+
+# Join the mesh to sync across devices
 sage node start
+```
+
+## What SAGE Does
+
+**1. Remembers Everything You Tell It**
+Chat with SAGE about anything — your projects, ideas, preferences, notes. It stores knowledge in a 256×256 neural grid, retrieving relevant context when you need it later.
+
+**2. Learns From Your Feedback**  
+SAGE tracks which responses satisfy you and which fall back to LLM. Over time, it gets better at serving you faster with local inference for queries it handles well.
+
+**3. Syncs Across Your Devices**
+Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer via libp2p gossip — no cloud required, your data stays yours.
+
+**Try the Demo**
+```bash
+./demo.sh  # See SAGE in action
 ```
 
 ## Features
 
-- **Grid-Based Knowledge Store** — 256×256 living grid stores semantic embeddings
-- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge
-- **Query Routing** — Simple questions answered offline, complex ones use LLM
-- **Peer-to-Peer Mesh** — Nodes share knowledge via gossip protocols
-- **Retrieval Feedback Learning** — System improves from relevance signals
+- **Grid-Based Knowledge Store** — 256×256 grid stores semantic embeddings with attention-based retrieval
+- **Intelligent Query Router** — Learning-based routing (v0.3.7): detects 12 query patterns, tracks NCA vs LLM accuracy, adapts over time
+- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge with delta attention spreading
+- **Peer-to-Peer Mesh** — Nodes share knowledge diffs via libp2p gossip protocols
+- **Retrieval Feedback Learning** — System improves from relevance signals using Adam optimizer
+- **Bootstrap Peer Config** — Configure WAN bootstrap peers via `~/.sage/config.toml` (v0.3.8)
 - **Raspberry Pi Ready** — Runs on a $35 board
 - **Zero API Keys** — No OpenAI, no monthly fees
 
@@ -48,10 +68,11 @@ sage node start
 ## Architecture
 
 - **Rust** — Memory-safe, fast, no Python dependency hell
-- **NCA Grid** — Knowledge stored in cellular automata dynamics
+- **Grid Store** — Knowledge stored as semantic embeddings in 256×256 grid
 - **libp2p** — Decentralized peer-to-peer networking
 - **Ollama** — LLM fallback for complex reasoning
 - **Ed25519** — Cryptographic identity and signed updates
+- **Semantic Hashing** — 0% collision feature-to-position mapping
 
 ## Platforms
 

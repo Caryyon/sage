@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.4.0] - 2026-05-04
+
+### Added
+- **User Feedback System** — Track query patterns, routing decisions, and satisfaction
+  - New module: `src/feedback.rs`
+  - CLI commands: `sage feedback stats/submit/export`
+  - Data persists to `~/.sage/feedback.json`
+  - Tracks NCA vs LLM routing outcomes
+- **Router Learning Loop** — Self-improving query routing
+  - Router syncs with feedback data before each query
+  - Pattern-specific satisfaction tracking
+  - Preferences evolve based on actual usage
+- **Multi-Node Sync Validation** — Verified knowledge propagation
+  - 14 integration tests passing
+  - Knowledge diffs propagate correctly between nodes
+  - Cross-grid-size sync works
+- **Demo Script** — Interactive walkthrough (`./demo.sh`)
+  - Shows personal knowledge store
+  - Demonstrates contextual retrieval
+  - Displays feedback statistics
+  - Shows decentralized sync
+
+### Changed
+- Updated README with clearer value proposition
+- Focus on user benefits rather than technical implementation
+
+### Fixed
+- Clippy warnings in feedback module
+- Unused variable in query_router_intelligent
+
+**Total: 262 tests passing (248 lib + 14 integration)**
+
+---
+
 ## [0.3.8] - 2026-04-30
 
 ### Added
