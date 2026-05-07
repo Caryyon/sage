@@ -1,0 +1,17 @@
+[advisories]
+# Ignore advisories for transitive deps we can't directly fix
+ignore = [
+    # RUSTSEC-2026-0118: hickory-proto NSEC3 unbounded loop
+    # Transitive via libp2p-mdns/libp2p-dns. libp2p 0.56 pins hickory-proto ^0.25.
+    # Fix requires hickory-proto >=0.26.1, blocked on libp2p update.
+    # Low risk: only triggered by malicious DNS responses to mDNS/DNS resolver.
+    # Tracked for removal when libp2p updates hickory dependency.
+    "RUSTSEC-2026-0118",
+    # RUSTSEC-2026-0119: hickory-proto CPU exhaustion in name compression
+    # Same dependency chain and status as RUSTSEC-2026-0118 above.
+    "RUSTSEC-2026-0119",
+    # RUSTSEC-2025-0141: bincode 1.x is unmaintained
+    # Direct dependency, used for serialization. bincode 3.x has breaking API changes.
+    # Tracked for migration to bincode 3.x in a future refactor.
+    "RUSTSEC-2025-0141",
+]
