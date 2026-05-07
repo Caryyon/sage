@@ -36,6 +36,20 @@ struct NodeStats {
     last_seen: u64, // unix timestamp
     uptime_seconds: u64,
     contribution_tier: String, // "seedling", "sprout", "grove", "forest"
+    /// Retrieval quality metrics (optional, from /STATUS endpoint)
+    pub retrieval: Option<RetrievalMetrics>,
+}
+
+/// Knowledge retrieval quality metrics for dashboard display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RetrievalMetrics {
+    total_queries: u64,
+    hit_rate: f64,
+    mean_top_relevance: f64,
+    relevance_low: u64,
+    relevance_mid: u64,
+    relevance_good: u64,
+    relevance_excellent: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +243,7 @@ async fn node_ping(
         last_seen: now(),
         uptime_seconds: req.uptime_seconds,
         contribution_tier: tier.to_string(),
+        retrieval: None,
     };
     
     nodes.insert(req.node_id.clone(), node);
@@ -283,6 +298,19 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
                     let grid_total = 65536; // 256x256
                     let utilization = grid_active as f32 / grid_total as f32;
                     
+                    // Extract retrieval quality metrics if present
+                    let retrieval = json.get("retrieval").and_then(|r| {
+                        Some(RetrievalMetrics {
+                            total_queries: r.get("total_queries")?.as_u64()?,
+                            hit_rate: r.get("hit_rate")?.as_f64()?,
+                            mean_top_relevance: r.get("mean_top_relevance")?.as_f64()?,
+                            relevance_low: r.get("relevance_low")?.as_u64()?,
+                            relevance_mid: r.get("relevance_mid")?.as_u64()?,
+                            relevance_good: r.get("relevance_good")?.as_u64()?,
+                            relevance_excellent: r.get("relevance_excellent")?.as_u64()?,
+                        })
+                    });
+                    
                     let mut nodes = state.nodes.lock().unwrap();
                     nodes.insert(node_id.clone(), NodeStats {
                         id: node_id.clone(),
@@ -295,6 +323,7 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
                         last_seen: now(),
                         uptime_seconds: 0,
                         contribution_tier: if patterns > 1000 { "grove".to_string() } else { "seedling".to_string() },
+                        retrieval,
                     });
                     
                     // Log successful poll
