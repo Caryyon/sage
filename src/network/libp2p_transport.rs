@@ -266,6 +266,14 @@ impl GossipTransport for Libp2pTransport {
                                     request_response::Message::Request { request, channel, .. } => {
                                         // Deserialise and forward to the incoming channel
                                         if let Ok(msg) = GossipMessage::from_bytes(&request) {
+                                            // Register SAGE node ID → libp2p PeerId mapping for direct send.
+                                            // This ensures send_to() can route directly after the initial handshake.
+                                            if let GossipMessage::PeerAnnounce(ref announce) = msg {
+                                                peer_id_map
+                                                    .write()
+                                                    .await
+                                                    .insert(announce.node_id.clone(), peer);
+                                            }
                                             let _ = incoming_tx.send((peer.to_string(), msg)).await;
                                         }
                                         // Send empty ACK (fire-and-forget)
