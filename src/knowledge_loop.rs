@@ -103,7 +103,8 @@ impl KnowledgeLoop {
             response_encode_confidence: 0.8,
             nca_predictor: None,
             nca_load_attempted: false,
-            attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE),
+            attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE)
+                .with_recency_weight(0.3),
             encoder_config: EncoderConfig::default(),
             retrieval_feedback: RetrievalFeedback::new(RETRIEVAL_FEATURE_DIM),
             relevance_readout: BinaryRelevanceReadout::new(RETRIEVAL_FEATURE_DIM),
@@ -124,6 +125,15 @@ impl KnowledgeLoop {
     /// Set the brain persistence path.
     pub fn with_brain_path(mut self, path: &str) -> Self {
         self.brain_path = path.to_string();
+        self
+    }
+
+    /// Set recency weight for attention scoring (0.0–1.0).
+    /// Higher values boost recently-encoded knowledge during retrieval.
+    pub fn with_recency_weight(mut self, weight: f64) -> Self {
+        let w = weight.clamp(0.0, 1.0);
+        self.attention_decoder = AttentionDecoder::new(GRID_SIZE, GRID_SIZE)
+            .with_recency_weight(w);
         self
     }
 
@@ -198,8 +208,9 @@ impl KnowledgeLoop {
             self.retrieval_feedback.rounds_completed
         );
 
-        let relevant_texts: Vec<String> = if query_features.is_semantic {
-            // Use AttentionDecoder for semantic queries (cross-attention readout)
+        let relevant_texts: Vec<String> = {
+            // Always use AttentionDecoder for retrieval — it handles both
+            // semantic (no projection) and hash-based (with projection) queries.
             let attention_results = self.attention_decoder.attend_with_spatial_gate_and_text(
                 &query_features,
                 &self.knowledge.grid,
@@ -208,7 +219,7 @@ impl KnowledgeLoop {
                 Some(&self.knowledge.text_store),
             );
 
-            // Record semantic retrieval into shared stats (convert to KnowledgeActivation-like)
+            // Record retrieval into shared stats (convert to KnowledgeActivation-like)
             {
                 use crate::distributed_knowledge::decoder::KnowledgeActivation;
                 let ka_results: Vec<KnowledgeActivation> = attention_results
@@ -229,15 +240,6 @@ impl KnowledgeLoop {
             attention_results
                 .into_iter()
                 .filter(|r| r.attention_weight * readout_scale > self.relevance_threshold && r.text.is_some())
-                .filter_map(|r| r.text)
-                .collect()
-        } else {
-            // Fall back to cosine+proximity for hash-based queries
-            // (stats are recorded inside NCAKnowledge::query)
-            let results = self.knowledge.query(query, self.max_results);
-            results
-                .into_iter()
-                .filter(|r| r.relevance * readout_scale > self.relevance_threshold && r.text.is_some())
                 .filter_map(|r| r.text)
                 .collect()
         };
