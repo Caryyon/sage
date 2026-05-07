@@ -41,6 +41,7 @@ pub struct GridConfig {
     pub size: usize,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for SageConfig {
     fn default() -> Self {
         Self {
@@ -52,12 +53,14 @@ impl Default for SageConfig {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for NodeConfig {
     fn default() -> Self {
         Self { name: String::new(), port: 7433, sync_interval: 300 }
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
@@ -67,12 +70,14 @@ impl Default for ChatConfig {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for NetworkSettings {
     fn default() -> Self {
         Self { enable_mdns: true, bootstrap_peers: Vec::new() }
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for GridConfig {
     fn default() -> Self {
         Self { size: 256 }
