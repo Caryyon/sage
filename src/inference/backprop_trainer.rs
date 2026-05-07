@@ -200,14 +200,14 @@ struct StepTrace {
 
 fn forward_with_trace(
     weights: &NcaWeights,
-    grid: &mut Vec<Vec<[f64; NCA_CHANNELS]>>,
+    grid: &mut [Vec<[f64; NCA_CHANNELS]>],
     grid_size: usize,
     nca_steps: usize,
 ) -> Vec<StepTrace> {
     let mut traces = Vec::with_capacity(nca_steps);
 
     for _step in 0..nca_steps {
-        let grid_before = grid.clone();
+        let grid_before: Vec<Vec<[f64; NCA_CHANNELS]>> = grid.iter().cloned().collect();
         let mut step_cells: Vec<Vec<CellTrace>> = Vec::with_capacity(grid_size);
 
         // Compute deltas and traces

@@ -156,7 +156,7 @@ fn encode_base58(data: &[u8]) -> String {
     let mut result = Vec::new();
     let mut num: Vec<u8> = data.to_vec();
 
-    while !num.is_empty() && !(num.len() == 1 && num[0] == 0) {
+    while !num.is_empty() && (num.len() > 1 || num[0] != 0) {
         let mut remainder = 0u32;
         let mut new_num = Vec::new();
 

@@ -661,7 +661,7 @@ impl KnowledgeLoop {
         let query_start = Instant::now();
         self.feedback_collector.start_query(
             user_input.to_string(),
-            pattern.clone(),
+            pattern,
             true, // NCA was attempted (we always try it first conceptually)
         );
         
