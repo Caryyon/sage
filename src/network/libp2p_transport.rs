@@ -246,6 +246,14 @@ impl GossipTransport for Libp2pTransport {
                                 gossipsub::Event::Message { propagation_source, message, .. }
                             )) => {
                                 if let Ok(msg) = GossipMessage::from_bytes(&message.data) {
+                                    // Register SAGE node ID → libp2p PeerId mapping for direct send.
+                                    // This ensures send_to() can route directly after the initial handshake.
+                                    if let GossipMessage::PeerAnnounce(ref announce) = msg {
+                                        peer_id_map
+                                            .write()
+                                            .await
+                                            .insert(announce.node_id.clone(), propagation_source);
+                                    }
                                     let _ = incoming_tx.send((propagation_source.to_string(), msg)).await;
                                 }
                             }
