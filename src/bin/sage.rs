@@ -112,6 +112,15 @@ enum Commands {
         #[command(subcommand)]
         command: FeedbackCommands,
     },
+    /// Prune inactive knowledge from the brain
+    Prune {
+        /// Activation threshold below which knowledge is removed (0.0-1.0)
+        #[arg(short, long, default_value_t = 0.05)]
+        threshold: f64,
+        /// Show what would be removed without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -307,6 +316,9 @@ fn main() {
             FeedbackCommands::Export { output } => {
                 run_feedback_export(output.as_deref());
             }
+        },
+        Some(Commands::Prune { threshold, dry_run }) => {
+            run_prune(threshold, dry_run);
         },
         Some(Commands::Node { command }) => match command {
             NodeCommands::Start {
@@ -3130,3 +3142,43 @@ fn run_feedback_export(output: Option<&str>) {
         println!("{}", json);
     }
 }
+
+/// Prune inactive knowledge from the brain
+fn run_prune(threshold: f64, dry_run: bool) {
+    let brain_path = default_brain_path();
+    
+    if !std::path::Path::new(&brain_path).exists() {
+        println!("No brain found at {}. Nothing to prune.", brain_path);
+        return;
+    }
+    
+    let mut knowledge = NCAKnowledge::new();
+    if let Err(e) = knowledge.load(&brain_path) {
+        eprintln!("Failed to load brain: {}", e);
+        std::process::exit(1);
+    }
+    
+    let before = knowledge.active_knowledge(0.0).len();
+    let to_prune = knowledge.active_knowledge(threshold).len();
+    
+    if dry_run {
+        println!("🔍 Dry run — no changes will be made.");
+        println!("   Active cells before: {}", before);
+        println!("   Cells below threshold ({}): {}", threshold, to_prune);
+        println!("   Cells that would remain: {}", before - to_prune);
+        return;
+    }
+    
+    // Zero out cells below threshold
+    let mut pruned_count = 0;
+    for y in 0..knowledge.grid.height {
+        for x in 0..knowledge.grid.width {
+            if knowledge.grid.cells[y][x][sage::grid::KNOWLEDGE_ACTIVATION] < threshold {
+                for ch in sage::grid::KNOWLEDGE_CHANNELS_START..sage::grid::KNOWLEDGE_CHANNELS_START + sage::grid::NUM_KNOWLEDGE_CHANNELS {
+                    knowledge.grid.cells[y][x][ch] = 0.0;
+                }
+                pruned_count += 1;
+            }
+        }
+    }
+    
