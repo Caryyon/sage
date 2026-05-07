@@ -33,12 +33,17 @@ sage node start
 
 ## Features
 
-- **Neural Cellular Automata Brain** — 256×256 living grid stores knowledge
+- **Grid-Based Knowledge Store** — 256×256 living grid stores semantic embeddings
+- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge
 - **Query Routing** — Simple questions answered offline, complex ones use LLM
 - **Peer-to-Peer Mesh** — Nodes share knowledge via gossip protocols
-- **Offline Mode** — Answer questions without internet (trained NCA predictor)
+- **Retrieval Feedback Learning** — System improves from relevance signals
 - **Raspberry Pi Ready** — Runs on a $35 board
 - **Zero API Keys** — No OpenAI, no monthly fees
+
+> **Note:** The "Neural Cellular Automata" branding is aspirational. Current NCA dynamics
+> are fixed neighbor-averaging, not learned update rules. See
+> [Architecture docs](docs/architecture/nca-brain.md) for details.
 
 ## Architecture
 
