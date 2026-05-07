@@ -17,7 +17,7 @@
 use super::decoder::KnowledgeActivation;
 use super::encoder::{feature_to_position, load_projection, LinearProjection, FeatureVector, NUM_EMBED_SLOTS};
 use super::text_store::TextStore;
-use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
+use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE, MEMORY_RECENCY};
 use std::sync::OnceLock;
 
 /// Lazily-loaded projection matrix, shared across all AttentionDecoder instances.
@@ -73,6 +73,9 @@ pub struct AttentionDecoder {
     grid_height: usize,
     /// Minimum activation threshold for a cell to be considered
     activation_threshold: f64,
+    /// Weight for recency channel (0.0 = off, 1.0 = recency equals attention score).
+    /// Recency-biased retrieval boosts recently-encoded knowledge in the ranking.
+    recency_weight: f64,
 }
 
 impl AttentionDecoder {
@@ -82,12 +85,20 @@ impl AttentionDecoder {
             grid_width,
             grid_height,
             activation_threshold: 0.05,
+            recency_weight: 0.0,
         }
     }
 
     /// Set the minimum activation threshold for cells to be considered.
     pub fn with_activation_threshold(mut self, threshold: f64) -> Self {
         self.activation_threshold = threshold;
+        self
+    }
+
+    /// Set recency weight for retrieval bias.
+    /// 0.0 = pure attention scoring (default). 0.3 = mild recency boost.
+    pub fn with_recency_weight(mut self, weight: f64) -> Self {
+        self.recency_weight = weight.clamp(0.0, 1.0);
         self
     }
 
@@ -187,7 +198,10 @@ impl AttentionDecoder {
                 }
 
                 let cell_embed = self.cell_embedding(grid, x, y);
-                let score = self.attention_score(&query, &cell_embed);
+                let raw_score = self.attention_score(&query, &cell_embed);
+                // Recency bias: boost cells that were recently encoded
+                let recency = grid.cells[y][x].get(MEMORY_RECENCY).copied().unwrap_or(0.0);
+                let score = raw_score + self.recency_weight * recency;
                 candidates.push((x, y, score, cell_embed, activation));
             }
         }
@@ -353,9 +367,13 @@ impl AttentionDecoder {
                 let cell_embed = self.cell_embedding(grid, x, y);
                 let raw_score = self.attention_score(&query, &cell_embed);
 
+                // Recency bias: boost cells that were recently encoded
+                let recency = grid.cells[y][x].get(MEMORY_RECENCY).copied().unwrap_or(0.0);
+                let recency_bonus = self.recency_weight * recency;
+
                 // Gated score: combine raw attention with quadrant relevance
                 // 70% attention, 30% spatial gate
-                let gated_score = 0.7 * raw_score + 0.3 * gate_weight;
+                let gated_score = 0.7 * (raw_score + recency_bonus) + 0.3 * gate_weight;
                 candidates.push((x, y, gated_score, cell_embed, activation));
             }
         }
@@ -1122,6 +1140,55 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Test recency-weighted attention: cells with higher MEMORY_RECENCY get
+    /// boosted when recency_weight > 0.
+    #[test]
+    fn test_recency_weighted_retrieval() {
+        use crate::grid::{MEMORY_RECENCY, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START};
+        use crate::distributed_knowledge::encoder::NUM_EMBED_SLOTS;
+
+        let mut grid = Grid::new(32, 32);
+        let decoder_no_recency = AttentionDecoder::new(32, 32).with_recency_weight(0.0);
+        let decoder_with_recency = AttentionDecoder::new(32, 32).with_recency_weight(0.5);
+
+        // Set up two cells with identical embeddings but different recency
+        let cell_a = (5, 5);
+        let cell_b = (10, 10);
+
+        // Set activation and identical embeddings
+        grid.cells[cell_a.1][cell_a.0][KNOWLEDGE_ACTIVATION] = 0.8;
+        grid.cells[cell_b.1][cell_b.0][KNOWLEDGE_ACTIVATION] = 0.8;
+
+        for i in 0..NUM_EMBED_SLOTS {
+            let val = 0.5;
+            grid.cells[cell_a.1][cell_a.0][KNOWLEDGE_CHANNELS_START + i] = val;
+            grid.cells[cell_b.1][cell_b.0][KNOWLEDGE_CHANNELS_START + i] = val;
+        }
+
+        // Set recency: A is recent, B is old
+        grid.cells[cell_a.1][cell_a.0][MEMORY_RECENCY] = 0.9;
+        grid.cells[cell_b.1][cell_b.0][MEMORY_RECENCY] = 0.1;
+
+        // Build a query that matches the embeddings (semantic to skip projection)
+        let query_features = FeatureVector {
+            values: vec![0.5; NUM_EMBED_SLOTS],
+            is_semantic: true,
+        };
+
+        // Without recency weight, both should have similar attention
+        let results_no = decoder_no_recency.attend(&query_features, &grid, 10);
+        assert_eq!(results_no.len(), 2, "Should find both active cells");
+
+        // With recency weight, A should be ranked higher
+        let results_with = decoder_with_recency.attend(&query_features, &grid, 10);
+        assert_eq!(results_with.len(), 2, "Should find both active cells");
+
+        if !results_with.is_empty() {
+            assert_eq!(results_with[0].position, cell_a,
+                "With recency weight, cell A (recent) should be top-ranked");
         }
     }
 }
