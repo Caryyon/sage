@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1] - 2026-05-07
+
+### Fixed
+- **Direct Protocol Peer ID Registration** — PeerAnnounce messages received via the
+  direct protocol now register the SAGE node ID → libp2p PeerId mapping, ensuring
+  subsequent send_to() calls route directly instead of falling back to broadcast.
+  This was already working for GossipSub-delivered PeerAnnounce, but was missing
+  from the direct protocol handler.
+
 ## [0.4.0] - 2026-05-04
 
 ### Added
