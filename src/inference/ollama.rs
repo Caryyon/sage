@@ -53,6 +53,12 @@ pub struct OllamaEngine {
     display_name: String,
 }
 
+impl Default for OllamaEngine {
+    fn default() -> Self {
+        Self::new(None, None)
+    }
+}
+
 impl OllamaEngine {
     pub fn new(model: Option<String>, url: Option<String>) -> Self {
         let default_url =
