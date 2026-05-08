@@ -39,7 +39,7 @@ proptest! {
 
     /// Invariant 2: Grid channels stay in valid range after any operation
     ///
-    /// After freerun_repair, all values must be finite and in a reasonable range.
+    /// After smooth_hidden_channels, all values must be finite and in a reasonable range.
     #[test]
     fn grid_channels_always_valid(
         cx in 0usize..64,
@@ -48,7 +48,7 @@ proptest! {
         steps in 1usize..=5
     ) {
         let mut grid = Grid::new(64, 64);
-        grid.freerun_repair(cx, cy, radius, steps);
+        grid.smooth_hidden_channels(cx, cy, radius, steps);
         for y in 0..64 {
             for x in 0..64 {
                 for ch in 0..NUM_CHANNELS {
@@ -61,13 +61,13 @@ proptest! {
         }
     }
 
-    /// Invariant 3: CRITICAL — freerun never modifies knowledge channels
+    /// Invariant 3: CRITICAL — smoothing never modifies knowledge channels
     ///
     /// This is the bug we just fixed. This test ensures it never regresses.
-    /// Freerun_repair only touches hidden channels (4..NUM_BASE_CHANNELS),
+    /// smooth_hidden_channels only touches hidden channels (4..NUM_BASE_CHANNELS),
     /// knowledge channels (26-37) must be preserved.
     #[test]
-    fn freerun_never_modifies_knowledge_channels(
+    fn smoothing_never_modifies_knowledge_channels(
         steps in 1usize..=5,
         cx in 0usize..64,
         cy in 0usize..64,
@@ -84,9 +84,9 @@ proptest! {
             }
         }
 
-        // Snapshot knowledge channels before freerun
+        // Snapshot knowledge channels before smoothing
         let before = grid.snapshot_knowledge_channels();
-        grid.freerun_repair(cx, cy, 32, steps);
+        grid.smooth_hidden_channels(cx, cy, 32, steps);
         let after = grid.snapshot_knowledge_channels();
 
         // REGRESSION: freerun used to silently modify knowledge channels,
@@ -262,16 +262,16 @@ mod additional_tests {
         }
     }
 
-    /// Test freerun at grid boundaries doesn't panic
+    /// Test smoothing at grid boundaries doesn't panic
     #[test]
-    fn test_freerun_at_boundaries() {
+    fn test_smoothing_at_boundaries() {
         let mut grid = Grid::new(64, 64);
 
         // Corner cases
-        grid.freerun_repair(0, 0, 10, 2);
-        grid.freerun_repair(63, 63, 10, 2);
-        grid.freerun_repair(0, 63, 10, 2);
-        grid.freerun_repair(63, 0, 10, 2);
+        grid.smooth_hidden_channels(0, 0, 10, 2);
+        grid.smooth_hidden_channels(63, 63, 10, 2);
+        grid.smooth_hidden_channels(0, 63, 10, 2);
+        grid.smooth_hidden_channels(63, 0, 10, 2);
 
         // Should not panic
         assert!(true);

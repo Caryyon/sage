@@ -352,16 +352,18 @@ impl NCAKnowledge {
     /// consolidate knowledge and prevent semantic drift after encoding.
     ///
     /// This lets the grid "settle" its activation patterns via local
-    /// communication rules before the next read. Only touches hidden
-    /// channels (4..16); knowledge channels are preserved.
+    /// Smooth hidden channels in a region of the grid.
+    ///
+    /// Applies diffusion to hidden channels (4..16) in a region; knowledge
+    /// channels are preserved. This is trivial smoothing, not learned NCA.
     ///
     /// # Arguments
-    /// * `center` - (x, y) coordinates of the repair region center
-    /// * `steps` - Number of freerun repair steps to run
-    pub fn freerun_repair(&mut self, center: (usize, usize), steps: usize) {
+    /// * `center` - (x, y) coordinates of the smoothing region center
+    /// * `steps` - Number of smoothing iterations to run
+    pub fn smooth_hidden_channels(&mut self, center: (usize, usize), steps: usize) {
         const DEFAULT_RADIUS: usize = 8;
         self.grid
-            .freerun_repair(center.0, center.1, DEFAULT_RADIUS, steps);
+            .smooth_hidden_channels(center.0, center.1, DEFAULT_RADIUS, steps);
     }
 }
 

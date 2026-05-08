@@ -2103,9 +2103,9 @@ fn run_dream(steps: usize) {
         }
     }
 
-    // Step 3: Run NCA freerun repair steps to let knowledge consolidate
+    // Step 3: Run hidden channel smoothing to let activity diffuse
     for ((x, y), _) in top_cells.iter().take(5) {
-        knowledge.freerun_repair((*x, *y), steps);
+        knowledge.smooth_hidden_channels((*x, *y), steps);
     }
 
     // Save the brain after dream consolidation
