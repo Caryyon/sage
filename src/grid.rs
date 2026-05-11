@@ -476,8 +476,19 @@ impl Grid {
         delta
     }
 
-    /// * `steps` - Number of freerun repair steps to run
-    pub fn freerun_repair(&mut self, cx: usize, cy: usize, radius: usize, steps: usize) {
+    /// Smooth hidden channels (4..NUM_BASE_CHANNELS) via diffusion.
+    ///
+    /// This is NOT a learned NCA operation — it applies trivial smoothing
+    /// (70% current + 30% neighbor average) to hidden channels. Knowledge
+    /// channels (26..33) are explicitly NOT modified.
+    ///
+    /// The name was changed from `freerun_repair` because "repair" implied
+    /// more than the function actually does (diffusion, not learning).
+    ///
+    /// * `cx`, `cy` - Center of smoothing window
+    /// * `radius` - Radius of smoothing window (cells within radius are smoothed)
+    /// * `steps` - Number of smoothing iterations (more = more diffusion)
+    pub fn smooth_hidden_channels(&mut self, cx: usize, cy: usize, radius: usize, steps: usize) {
         // Snapshot knowledge channels BEFORE repair to verify they're untouched
         #[cfg(debug_assertions)]
         let knowledge_snapshot: Vec<((usize, usize), Vec<f64>)> = {
@@ -555,7 +566,7 @@ impl Grid {
                     let new_val = self.cells[ny][nx][ch];
                     debug_assert!(
                         (new_val - old_val).abs() < 1e-10,
-                        "freerun_repair must not modify knowledge channels: \
+                        "smooth_hidden_channels must not modify knowledge channels: \
                          channel {} at ({},{}) changed from {} to {}",
                         ch,
                         nx,
@@ -692,13 +703,13 @@ mod tests {
             .collect();
 
         // Run freerun repair
-        grid.freerun_repair(cx, cy, 4, 5);
+        grid.smooth_hidden_channels(cx, cy, 4, 5);
 
         // Verify unchanged
         for (i, ch) in (KNOWLEDGE_CHANNELS_START..NUM_CHANNELS).enumerate() {
             assert!(
                 (grid.cells[cy][cx][ch] - before[i]).abs() < 1e-10,
-                "Knowledge channel {} should be unchanged after freerun_repair",
+                "Knowledge channel {} should be unchanged after smooth_hidden_channels",
                 ch
             );
         }
@@ -717,7 +728,7 @@ mod tests {
         // After smoothing: new = 0.7 * 1.0 + 0.3 * 0.0 = 0.7 (first step)
 
         let before = grid.cells[cy][cx][5];
-        grid.freerun_repair(cx, cy, 2, 3);
+        grid.smooth_hidden_channels(cx, cy, 2, 3);
         let after = grid.cells[cy][cx][5];
 
         assert!(
@@ -737,7 +748,7 @@ mod tests {
         grid.cells[0][0][KNOWLEDGE_CHANNELS_START] = 0.9;
 
         // Should not panic when center is at grid edge
-        grid.freerun_repair(0, 0, 4, 3);
+        grid.smooth_hidden_channels(0, 0, 4, 3);
 
         // Grid should still be valid
         assert!(grid.cells[0][0][5].is_finite());
@@ -756,7 +767,7 @@ mod tests {
         }
 
         // Radius larger than half grid should wrap correctly
-        grid.freerun_repair(16, 16, 20, 2);
+        grid.smooth_hidden_channels(16, 16, 20, 2);
 
         // Should complete without panic
         assert!(grid.cells[16][16][5].is_finite());

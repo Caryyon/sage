@@ -499,10 +499,10 @@ impl AttentionDecoder {
         // 2. Snapshot knowledge channels before NCA steps
         let before = scratch.snapshot_knowledge_channels();
 
-        // 3. Run LOCAL freerun (2 steps, radius 24) — much faster than full grid
+        // 3. Run LOCAL hidden channel smoothing (2 steps, radius 24) — much faster than full grid
         let (cx, cy) = query_center.unwrap_or((scratch.width / 2, scratch.height / 2));
         let radius = 24; // Local neighborhood, NOT full grid
-        scratch.freerun_repair(cx, cy, radius, 2);
+        scratch.smooth_hidden_channels(cx, cy, radius, 2);
 
         // 4. Snapshot after NCA steps
         let after = scratch.snapshot_knowledge_channels();
@@ -950,8 +950,8 @@ mod tests {
             Some(&text_store),
         );
 
-        // Should find some results (cells that changed during NCA steps)
-        // Note: freerun_repair only modifies hidden channels 4-15, NOT knowledge channels (26-33).
+        // Should find some results (cells that changed during smoothing steps)
+        // Note: smooth_hidden_channels only modifies hidden channels 4-15, NOT knowledge channels (26-33).
         // So delta on knowledge channels will typically be 0.
         // The test verifies the method runs without panicking and returns a valid (possibly empty) result.
         assert!(

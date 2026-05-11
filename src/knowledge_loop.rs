@@ -383,9 +383,9 @@ impl KnowledgeLoop {
         // Encode query — this is the only NCA-coherent way to find relevant cells.
         let query_features = encode_text(query, &self.encoder_config);
 
-        // Previous implementation: cloned the grid, seeded the query, ran freerun_repair,
+        // Previous implementation: cloned the grid, seeded the query, ran smooth_hidden_channels,
         // then sorted by KNOWLEDGE_ACTIVATION. This was query-independent because
-        // freerun_repair only updates hidden channels 4..15 — not KNOWLEDGE_ACTIVATION.
+        // smooth_hidden_channels only updates hidden channels 4..15 — not KNOWLEDGE_ACTIVATION.
         // Fix: rank cells by cosine similarity to the query's feature vector directly.
         // This makes the "thought" genuinely query-dependent without requiring NCA dynamics
         // to propagate into knowledge channels (which would require energy constraints).
@@ -591,11 +591,11 @@ impl KnowledgeLoop {
             .knowledge
             .encode(user_input, self.user_encode_confidence);
 
-        // 2. Run NCA update steps to let the grid "react" to the new input
-        // This is the key cellular automata step: cells communicate via local rules
-        // before we query them, allowing associative pattern completion.
+        // 2. Run hidden channel smoothing to let the grid "react" to the new input
+        // This smooths hidden channels via diffusion (not learned NCA dynamics)
+        // before we query them.
         self.knowledge
-            .freerun_repair(user_pos, N_PRE_RETRIEVE_STEPS);
+            .smooth_hidden_channels(user_pos, N_PRE_RETRIEVE_STEPS);
 
         // 3. Retrieve relevant knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
@@ -764,9 +764,9 @@ impl KnowledgeLoop {
         // 6b. Write recency signal to memory channel 25
         self.update_recency_channel(response_pos);
 
-        // 7. Consolidate knowledge via local rules (rNCA paper)
+        // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
-        self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
+        self.knowledge.smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
         // Update history
         self.history.push(ChatMessage {
@@ -793,9 +793,9 @@ impl KnowledgeLoop {
             .knowledge
             .encode(user_input, self.user_encode_confidence);
 
-        // 2. Run NCA update steps (grid reacts to new input via local rules)
+        // 2. Run hidden channel smoothing (grid reacts to new input via diffusion)
         self.knowledge
-            .freerun_repair(user_pos, N_PRE_RETRIEVE_STEPS);
+            .smooth_hidden_channels(user_pos, N_PRE_RETRIEVE_STEPS);
 
         // 3. Retrieve knowledge (uses AttentionDecoder for semantic queries)
         let knowledge_context = self.retrieve_knowledge(user_input);
@@ -891,9 +891,9 @@ impl KnowledgeLoop {
         // 6b. Write recency signal to memory channel 25
         self.update_recency_channel(response_pos);
 
-        // 7. Consolidate knowledge via local rules (rNCA paper)
+        // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
-        self.knowledge.freerun_repair(response_pos, N_FREERUN_STEPS);
+        self.knowledge.smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
         // Update history
         self.history.push(ChatMessage {
