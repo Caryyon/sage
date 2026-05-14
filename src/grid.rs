@@ -974,4 +974,171 @@ mod tests {
             );
         }
     }
+
+    // ── Integration Tests: Knowledge Consolidation with Retrieval ────────────────
+    //
+    // These tests verify that consolidate_knowledge() works correctly with
+    // actual knowledge encoding and retrieval, not just raw grid cells.
+
+    /// Test that consolidation preserves retrieval recall for encoded facts.
+    ///
+    /// The consolidation algorithm decays inactive cells and strengthens
+    /// active cells with active neighbors. This should not destroy encoded
+    /// knowledge that was recently accessed.
+    #[test]
+    fn test_consolidation_preserves_recently_accessed_knowledge() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None; // Use hash-based embeddings
+
+        // Encode several related facts about Python
+        knowledge.encode("Python is a programming language", 0.9);
+        knowledge.encode("Python has dynamic typing", 0.85);
+        knowledge.encode("Python supports object-oriented programming", 0.8);
+
+        // Query to establish access patterns
+        let before = knowledge.query("Python programming", 10);
+        let before_count = before.iter().filter(|r| r.relevance > 0.3).count();
+
+        // Run consolidation (simulates "dream cycle")
+        knowledge.grid.consolidate_knowledge(3);
+
+        // Query after consolidation
+        let after = knowledge.query("Python programming", 10);
+        let after_count = after.iter().filter(|r| r.relevance > 0.3).count();
+
+        // Consolidation should preserve at least half of recall quality
+        assert!(
+            after_count >= before_count / 2,
+            "Consolidation destroyed too much recall: before={}, after={}",
+            before_count,
+            after_count
+        );
+    }
+
+    /// Test that consolidation survives save/load persistence.
+    ///
+    /// Knowledge should remain retrievable after consolidation + serialization.
+    #[test]
+    fn test_consolidation_survives_persistence() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let path = "/tmp/sage_test_consolidation_persistence.bin";
+        let _ = std::fs::remove_file(path);
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None;
+
+        // Encode a fact with high confidence
+        knowledge.encode("Rust has ownership semantics", 0.9);
+
+        // Run consolidation
+        knowledge.grid.consolidate_knowledge(2);
+
+        // Save
+        knowledge.save(path).expect("Save should succeed");
+
+        // Load into fresh instance
+        let mut loaded = NCAKnowledge::new();
+        loaded.load(path).expect("Load should succeed");
+
+        // Query should still find the knowledge
+        let results = loaded.query("Rust ownership", 5);
+        assert!(
+            !results.is_empty(),
+            "Knowledge should survive consolidation + save/load"
+        );
+
+        // Verify relevance is reasonable
+        assert!(
+            results[0].relevance > 0.1,
+            "Retrieved knowledge should have meaningful relevance: {:?}",
+            results[0]
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Test that consolidation respects activation thresholds.
+    ///
+    /// Cells below ACTIVATION_THRESHOLD should decay, cells above with
+    /// active neighbors should strengthen.
+    #[test]
+    fn test_consolidation_threshold_behavior() {
+        let mut grid = Grid::new(64, 64);
+
+        // High-activation cell with active neighbors (should strengthen)
+        grid.cells[32][32][KNOWLEDGE_ACTIVATION] = 0.8;
+        grid.cells[32][32][KNOWLEDGE_CONFIDENCE] = 0.9;
+        grid.cells[31][32][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[33][32][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[32][31][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[32][33][KNOWLEDGE_ACTIVATION] = 0.6;
+
+        // Low-activation cell (should decay)
+        grid.cells[10][10][KNOWLEDGE_ACTIVATION] = 0.1;
+        grid.cells[10][10][KNOWLEDGE_CONFIDENCE] = 0.5;
+
+        let high_before = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        let low_before = grid.cells[10][10][KNOWLEDGE_ACTIVATION];
+
+        grid.consolidate_knowledge(1);
+
+        let high_after = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        let low_after = grid.cells[10][10][KNOWLEDGE_ACTIVATION];
+
+        // High-activation should stay high or increase
+        assert!(
+            high_after >= high_before * 0.9,
+            "High-activation cell should not decay significantly: before={}, after={}",
+            high_before,
+            high_after
+        );
+
+        // Low-activation should have decayed
+        assert!(
+            low_after < low_before,
+            "Low-activation cell should decay: before={}, after={}",
+            low_before,
+            low_after
+        );
+    }
+
+    /// Test that multiple consolidation steps don't destroy knowledge.
+    ///
+    /// Repeated consolidation should converge, not collapse to zero.
+    #[test]
+    fn test_repeated_consolidation_converges() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None;
+
+        // Encode multiple facts
+        knowledge.encode("Neural networks learn from data", 0.9);
+        knowledge.encode("Training requires gradient descent", 0.85);
+        knowledge.encode("Backpropagation computes gradients", 0.8);
+
+        // Initial query
+        let initial = knowledge.query("neural network training", 5);
+        let initial_relevance = initial.first().map(|r| r.relevance).unwrap_or(0.0);
+
+        // Run multiple consolidation rounds
+        for _ in 0..5 {
+            knowledge.grid.consolidate_knowledge(2);
+        }
+
+        // Query after repeated consolidation
+        let final_result = knowledge.query("neural network training", 5);
+        let final_relevance = final_result.first().map(|r| r.relevance).unwrap_or(0.0);
+
+        // Should maintain at least 30% of original relevance
+        assert!(
+            final_relevance >= initial_relevance * 0.3,
+            "Repeated consolidation destroyed too much: initial={}, final={}",
+            initial_relevance,
+            final_relevance
+        );
+    }
 }
