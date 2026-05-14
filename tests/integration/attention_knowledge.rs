@@ -92,8 +92,8 @@ fn test_nca_knowledge_freerun_repair() {
         .map(|ch| knowledge.grid.cells[pos.1][pos.0][ch])
         .collect();
 
-    // Run freerun repair
-    knowledge.freerun_repair(pos, 5);
+    // Run smooth_hidden_channels (formerly freerun_repair)
+    knowledge.smooth_hidden_channels(pos, 5);
 
     // Hidden channels may change (smoothing effect)
     let after_hidden: Vec<f64> = (4..16)

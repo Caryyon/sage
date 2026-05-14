@@ -578,6 +578,139 @@ impl Grid {
             }
         }
     }
+
+    /// Consolidate knowledge via local NCA-style update rules.
+    ///
+    /// This implements the "dream cycle" for knowledge channels (26-33):
+    /// - Strengthens frequently accessed cells (boost activation & confidence)
+    /// - Decays inactive cells (reduce activation over time)
+    /// - Spreads activation to neighbors (Hebbian-like association)
+    ///
+    /// Unlike smooth_hidden_channels (diffusion), this operates on knowledge channels
+    /// and uses learned-style dynamics even though weights are fixed.
+    ///
+    /// # Arguments
+    /// * `steps` - Number of consolidation iterations (default: 1-3)
+    ///
+    /// # Channel Effects
+    /// - KNOWLEDGE_ACTIVATION (ch 32): Strengthened by usage, decayed by time
+    /// - KNOWLEDGE_CONFIDENCE (ch 33): Increased when activation is stable
+    /// - Embedding slots (ch 26-31): Light diffusion to spread associations
+    pub fn consolidate_knowledge(&mut self, steps: usize) {
+        // Update parameters (tunable)
+        const DECAY_RATE: f64 = 0.02;      // Per-step decay for inactive cells
+        const STRENGTHEN_RATE: f64 = 0.05; // Boost for high-activation cells
+        const SPREAD_RATE: f64 = 0.03;     // How much activation spreads to neighbors
+        const CONFIDENCE_BOOST: f64 = 0.02; // Confidence increase for stable cells
+        const ACTIVATION_THRESHOLD: f64 = 0.3; // Minimum activation to count as "active"
+
+        for _step in 0..steps {
+            // Collect updates in a separate buffer to avoid in-place mutation artifacts
+            let mut activation_updates: Vec<(usize, usize, f64)> = Vec::new();
+            let mut confidence_updates: Vec<(usize, usize, f64)> = Vec::new();
+            let mut embedding_updates: Vec<(usize, usize, usize, f64)> = Vec::new();
+
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    let activation = self.cells[y][x][KNOWLEDGE_ACTIVATION];
+                    let confidence = self.cells[y][x][KNOWLEDGE_CONFIDENCE];
+
+                    // Skip cells with no knowledge
+                    if activation < 0.01 {
+                        continue;
+                    }
+
+                    // Count active neighbors (Hebbian: co-activated cells strengthen together)
+                    let mut active_neighbors = 0usize;
+                    let mut neighbor_embedding_sum: [f64; 6] = [0.0; 6];
+                    let mut neighbor_count = 0usize;
+
+                    for dy in -1i32..=1 {
+                        for dx in -1i32..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let ny = (y as i32 + dy) as usize;
+                            let nx = (x as i32 + dx) as usize;
+                            if ny < self.height && nx < self.width {
+                                let n_act = self.cells[ny][nx][KNOWLEDGE_ACTIVATION];
+                                if n_act > ACTIVATION_THRESHOLD {
+                                    active_neighbors += 1;
+                                }
+                                neighbor_count += 1;
+                                // Collect embedding values for diffusion
+                                for slot in 0..6 {
+                                    neighbor_embedding_sum[slot] +=
+                                        self.cells[ny][nx][KNOWLEDGE_CHANNELS_START + slot];
+                                }
+                            }
+                        }
+                    }
+
+                    // Rule 1: Decay for inactive cells (not recently accessed)
+                    // High activation resists decay
+                    if activation < ACTIVATION_THRESHOLD {
+                        let decay = DECAY_RATE * (1.0 - activation);
+                        activation_updates.push((x, y, -decay));
+                    } else {
+                        // Rule 2: Strengthen active cells with active neighbors (Hebbian)
+                        if active_neighbors >= 2 {
+                            let strengthen = STRENGTHEN_RATE * activation;
+                            activation_updates.push((x, y, strengthen));
+
+                            // Boost confidence for stable, well-connected knowledge
+                            let conf_boost = CONFIDENCE_BOOST * confidence.min(1.0);
+                            confidence_updates.push((x, y, conf_boost));
+                        }
+                    }
+
+                    // Rule 3: Spread activation to neighbors (Hebbian association)
+                    if activation > ACTIVATION_THRESHOLD && neighbor_count > 0 {
+                        let spread = SPREAD_RATE * activation / neighbor_count as f64;
+                        for dy in -1i32..=1 {
+                            for dx in -1i32..=1 {
+                                if dx == 0 && dy == 0 {
+                                    continue;
+                                }
+                                let ny = (y as i32 + dy) as usize;
+                                let nx = (x as i32 + dx) as usize;
+                                if ny < self.height && nx < self.width {
+                                    // Only spread to cells with some knowledge (avoid noise)
+                                    if self.cells[ny][nx][KNOWLEDGE_ACTIVATION] > 0.01 {
+                                        activation_updates.push((nx, ny, spread));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Rule 4: Light embedding diffusion for semantic spreading
+                    if activation > 0.1 && neighbor_count > 0 {
+                        for slot in 0..6 {
+                            let avg_neighbor = neighbor_embedding_sum[slot] / neighbor_count as f64;
+                            let current = self.cells[y][x][KNOWLEDGE_CHANNELS_START + slot];
+                            // 95% current + 5% neighbor average (very light diffusion)
+                            let new_val = current * 0.95 + avg_neighbor * 0.05;
+                            embedding_updates.push((x, y, slot, new_val));
+                        }
+                    }
+                }
+            }
+
+            // Apply all updates
+            for (x, y, delta) in &activation_updates {
+                self.cells[*y][*x][KNOWLEDGE_ACTIVATION] =
+                    (self.cells[*y][*x][KNOWLEDGE_ACTIVATION] + delta).clamp(0.0, 1.0);
+            }
+            for (x, y, delta) in &confidence_updates {
+                self.cells[*y][*x][KNOWLEDGE_CONFIDENCE] =
+                    (self.cells[*y][*x][KNOWLEDGE_CONFIDENCE] + delta).clamp(0.0, 1.0);
+            }
+            for (x, y, slot, val) in &embedding_updates {
+                self.cells[*y][*x][KNOWLEDGE_CHANNELS_START + slot] = *val;
+            }
+        }
+    }
 }
 
 // Perception function - computes Sobel gradients for each channel
@@ -771,5 +904,241 @@ mod tests {
 
         // Should complete without panic
         assert!(grid.cells[16][16][5].is_finite());
+    }
+
+    #[test]
+    fn test_consolidate_knowledge_decays_inactive() {
+        let mut grid = Grid::new(64, 64);
+
+        // Set low-activation knowledge (below threshold)
+        grid.cells[32][32][KNOWLEDGE_ACTIVATION] = 0.1; // Below ACTIVATION_THRESHOLD (0.3)
+        grid.cells[32][32][KNOWLEDGE_CONFIDENCE] = 0.5;
+
+        let before = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        grid.consolidate_knowledge(1);
+        let after = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+
+        assert!(
+            after < before,
+            "Low-activation cell should decay: before={}, after={}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn test_consolidate_knowledge_strengthens_active_with_neighbors() {
+        let mut grid = Grid::new(64, 64);
+
+        // Create a cluster of active cells (center + 4 neighbors above threshold)
+        grid.cells[32][32][KNOWLEDGE_ACTIVATION] = 0.8; // Center
+        grid.cells[31][32][KNOWLEDGE_ACTIVATION] = 0.6; // Above
+        grid.cells[33][32][KNOWLEDGE_ACTIVATION] = 0.6; // Below
+        grid.cells[32][31][KNOWLEDGE_ACTIVATION] = 0.6; // Left
+        grid.cells[32][33][KNOWLEDGE_ACTIVATION] = 0.6; // Right
+        grid.cells[32][32][KNOWLEDGE_CONFIDENCE] = 0.5;
+
+        let before = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        grid.consolidate_knowledge(1);
+        let after = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+
+        assert!(
+            after >= before,
+            "Active cell with active neighbors should strengthen or stay stable: before={}, after={}",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn test_consolidate_knowledge_stays_in_bounds() {
+        let mut grid = Grid::new(64, 64);
+
+        // Set high activation at edge
+        grid.cells[0][0][KNOWLEDGE_ACTIVATION] = 0.9;
+        grid.cells[0][0][KNOWLEDGE_CONFIDENCE] = 0.8;
+        grid.cells[0][1][KNOWLEDGE_ACTIVATION] = 0.7; // Neighbor
+        grid.cells[1][0][KNOWLEDGE_ACTIVATION] = 0.7; // Neighbor
+
+        // Should not panic
+        grid.consolidate_knowledge(3);
+
+        // All channels should remain in [0, 1]
+        for ch in KNOWLEDGE_CHANNELS_START..NUM_CHANNELS {
+            let val = grid.cells[0][0][ch];
+            assert!(
+                val >= 0.0 && val <= 1.0,
+                "Knowledge channel {} out of bounds: {}",
+                ch,
+                val
+            );
+        }
+    }
+
+    // ── Integration Tests: Knowledge Consolidation with Retrieval ────────────────
+    //
+    // These tests verify that consolidate_knowledge() works correctly with
+    // actual knowledge encoding and retrieval, not just raw grid cells.
+
+    /// Test that consolidation preserves retrieval recall for encoded facts.
+    ///
+    /// The consolidation algorithm decays inactive cells and strengthens
+    /// active cells with active neighbors. This should not destroy encoded
+    /// knowledge that was recently accessed.
+    #[test]
+    fn test_consolidation_preserves_recently_accessed_knowledge() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None; // Use hash-based embeddings
+
+        // Encode several related facts about Python
+        knowledge.encode("Python is a programming language", 0.9);
+        knowledge.encode("Python has dynamic typing", 0.85);
+        knowledge.encode("Python supports object-oriented programming", 0.8);
+
+        // Query to establish access patterns
+        let before = knowledge.query("Python programming", 10);
+        let before_count = before.iter().filter(|r| r.relevance > 0.3).count();
+
+        // Run consolidation (simulates "dream cycle")
+        knowledge.grid.consolidate_knowledge(3);
+
+        // Query after consolidation
+        let after = knowledge.query("Python programming", 10);
+        let after_count = after.iter().filter(|r| r.relevance > 0.3).count();
+
+        // Consolidation should preserve at least half of recall quality
+        assert!(
+            after_count >= before_count / 2,
+            "Consolidation destroyed too much recall: before={}, after={}",
+            before_count,
+            after_count
+        );
+    }
+
+    /// Test that consolidation survives save/load persistence.
+    ///
+    /// Knowledge should remain retrievable after consolidation + serialization.
+    #[test]
+    fn test_consolidation_survives_persistence() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let path = "/tmp/sage_test_consolidation_persistence.bin";
+        let _ = std::fs::remove_file(path);
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None;
+
+        // Encode a fact with high confidence
+        knowledge.encode("Rust has ownership semantics", 0.9);
+
+        // Run consolidation
+        knowledge.grid.consolidate_knowledge(2);
+
+        // Save
+        knowledge.save(path).expect("Save should succeed");
+
+        // Load into fresh instance
+        let mut loaded = NCAKnowledge::new();
+        loaded.load(path).expect("Load should succeed");
+
+        // Query should still find the knowledge
+        let results = loaded.query("Rust ownership", 5);
+        assert!(
+            !results.is_empty(),
+            "Knowledge should survive consolidation + save/load"
+        );
+
+        // Verify relevance is reasonable
+        assert!(
+            results[0].relevance > 0.1,
+            "Retrieved knowledge should have meaningful relevance: {:?}",
+            results[0]
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Test that consolidation respects activation thresholds.
+    ///
+    /// Cells below ACTIVATION_THRESHOLD should decay, cells above with
+    /// active neighbors should strengthen.
+    #[test]
+    fn test_consolidation_threshold_behavior() {
+        let mut grid = Grid::new(64, 64);
+
+        // High-activation cell with active neighbors (should strengthen)
+        grid.cells[32][32][KNOWLEDGE_ACTIVATION] = 0.8;
+        grid.cells[32][32][KNOWLEDGE_CONFIDENCE] = 0.9;
+        grid.cells[31][32][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[33][32][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[32][31][KNOWLEDGE_ACTIVATION] = 0.6;
+        grid.cells[32][33][KNOWLEDGE_ACTIVATION] = 0.6;
+
+        // Low-activation cell (should decay)
+        grid.cells[10][10][KNOWLEDGE_ACTIVATION] = 0.1;
+        grid.cells[10][10][KNOWLEDGE_CONFIDENCE] = 0.5;
+
+        let high_before = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        let low_before = grid.cells[10][10][KNOWLEDGE_ACTIVATION];
+
+        grid.consolidate_knowledge(1);
+
+        let high_after = grid.cells[32][32][KNOWLEDGE_ACTIVATION];
+        let low_after = grid.cells[10][10][KNOWLEDGE_ACTIVATION];
+
+        // High-activation should stay high or increase
+        assert!(
+            high_after >= high_before * 0.9,
+            "High-activation cell should not decay significantly: before={}, after={}",
+            high_before,
+            high_after
+        );
+
+        // Low-activation should have decayed
+        assert!(
+            low_after < low_before,
+            "Low-activation cell should decay: before={}, after={}",
+            low_before,
+            low_after
+        );
+    }
+
+    /// Test that multiple consolidation steps don't destroy knowledge.
+    ///
+    /// Repeated consolidation should converge, not collapse to zero.
+    #[test]
+    fn test_repeated_consolidation_converges() {
+        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+
+        let mut knowledge = NCAKnowledge::new();
+        knowledge.config.ollama_url = None;
+
+        // Encode multiple facts
+        knowledge.encode("Neural networks learn from data", 0.9);
+        knowledge.encode("Training requires gradient descent", 0.85);
+        knowledge.encode("Backpropagation computes gradients", 0.8);
+
+        // Initial query
+        let initial = knowledge.query("neural network training", 5);
+        let initial_relevance = initial.first().map(|r| r.relevance).unwrap_or(0.0);
+
+        // Run multiple consolidation rounds
+        for _ in 0..5 {
+            knowledge.grid.consolidate_knowledge(2);
+        }
+
+        // Query after repeated consolidation
+        let final_result = knowledge.query("neural network training", 5);
+        let final_relevance = final_result.first().map(|r| r.relevance).unwrap_or(0.0);
+
+        // Should maintain at least 30% of original relevance
+        assert!(
+            final_relevance >= initial_relevance * 0.3,
+            "Repeated consolidation destroyed too much: initial={}, final={}",
+            initial_relevance,
+            final_relevance
+        );
     }
 }
