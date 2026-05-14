@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.5.0] - 2026-05-14
+
+### Added
+- **NCA-Style Knowledge Consolidation** — Implements principled dream cycle for
+  knowledge channels (26-33) using local NCA update rules:
+  - Hebbian reinforcement: frequently accessed cells strengthen over time
+  - Decay: inactive cells fade, preventing stale knowledge accumulation
+  - Spreading activation: neighbors gain activation (association formation)
+  - Embedding diffusion: semantic vectors spread locally for clustering
+
+  This replaces the disabled dream cycle that attempted to blend the token-
+  prediction NCA with knowledge channels (architecturally incoherent). The new
+  `consolidate_knowledge()` function operates directly on knowledge channels
+  with grounded, local 3x3 neighborhood rules.
+
+### Changed
+- `step_knowledge()` now calls `consolidate_knowledge(2)` instead of being
+  disabled entirely. Knowledge grids now have real NCA dynamics.
+
+### Tests
+- 5 new integration tests verify consolidation preserves recall, survives
+  persistence, respects thresholds, and converges over multiple rounds.
+
+This release addresses the sage-ml-engineer recommendation to design knowledge
+update rules that modify activation/confidence channels based on usage, decay,
+and Hebbian-like spreading.
+
 ## [0.4.1] - 2026-05-07
 
 ### Fixed
