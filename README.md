@@ -61,9 +61,10 @@ Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer v
 - **Raspberry Pi Ready** — Runs on a $35 board
 - **Zero API Keys** — No OpenAI, no monthly fees
 
-> **Note:** The "Neural Cellular Automata" branding is aspirational. Current NCA dynamics
-> are fixed neighbor-averaging, not learned update rules. See
-> [Architecture docs](docs/architecture/nca-brain.md) for details.
+> **Note:** The "Neural Cellular Automata" branding is aspirational for the token-prediction
+> grid (NcaPredictor). The knowledge grid now has real NCA-style dynamics (v0.5.0) through
+> `consolidate_knowledge()` — Hebbian reinforcement, decay, and spreading activation.
+> See [Architecture docs](docs/architecture/nca-brain.md) for details.
 
 ## Architecture
 
