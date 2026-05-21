@@ -189,6 +189,14 @@ impl NetworkManager {
         self.peers.read().await.len()
     }
 
+    /// Broadcast a gossip message via the transport.
+    pub async fn broadcast(&self, message: GossipMessage) -> Result<(), GossipError> {
+        let Some(ref transport) = self.transport else {
+            return Err(GossipError::NotStarted);
+        };
+        transport.broadcast(message).await
+    }
+
     /// Get info about all known peers.
     pub async fn get_peers(&self) -> Vec<PeerInfo> {
         self.peers.read().await.values().cloned().collect()
@@ -471,6 +479,13 @@ impl NetworkManager {
     pub async fn record_conversation(&self) -> bool {
         let mut agg = self.aggregation.lock().await;
         agg.record_conversation()
+    }
+
+    /// Check if aggregation threshold is met (ready to sync).
+    /// Does NOT increment the counter.
+    pub async fn is_ready_to_sync(&self) -> bool {
+        let agg = self.aggregation.lock().await;
+        agg.is_ready()
     }
 
     /// Reset aggregation counter (call after successful sync).

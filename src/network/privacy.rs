@@ -86,6 +86,11 @@ impl AggregationTracker {
         self.conversations_since_last_sync >= self.threshold
     }
 
+    /// Check if ready to sync WITHOUT incrementing counter.
+    pub fn is_ready(&self) -> bool {
+        self.conversations_since_last_sync >= self.threshold
+    }
+
     /// Reset the counter after a sync.
     pub fn reset(&mut self) {
         self.conversations_since_last_sync = 0;

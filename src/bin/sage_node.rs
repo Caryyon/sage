@@ -26,7 +26,6 @@ use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::GRID_SIZE;
 use sage::inference::distributed::{handle_knowledge_query, DistributedInference, InferenceStats};
 use sage::inference::{self, ChatMessage as InfChatMessage, ChatRole, InferenceEngine};
-use sage::network::diff::KnowledgeDiff;
 use sage::network::gossip::{GossipMessage, GossipTransport};
 use sage::network::identity::NodeIdentity;
 use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
@@ -103,11 +102,7 @@ struct NodeState {
     engine: Arc<dyn InferenceEngine>,
     node_id: String,
     transport: Arc<Libp2pTransport>,
-    #[allow(dead_code)]
     manager: Arc<NetworkManager>,
-    #[allow(dead_code)]
-    last_broadcast_state: Option<Vec<Vec<Vec<f64>>>>,
-    diff_sequence: u64,
     distributed: Arc<DistributedInference>,
     inference_stats: InferenceStats,
 }
@@ -291,28 +286,11 @@ async fn handle_client(
             };
             let _ = (dist_peer_count, dist_source_count); // used for future status reporting
 
-            // Encode user message into grid + compute diff for broadcast
+            // Encode user message into grid (privacy: defer broadcast until aggregation threshold met)
             {
                 let mut s = state.lock().await;
-                let grid_before = s.knowledge.grid.cells.clone();
                 s.knowledge.encode(&message, 0.8);
-                // Broadcast diff
-                let diff = KnowledgeDiff::compute(
-                    &grid_before,
-                    &s.knowledge.grid.cells,
-                    s.node_id.clone(),
-                    s.diff_sequence,
-                    0.8,
-                    1e-6,
-                );
-                s.diff_sequence += 1;
-                if !diff.is_empty() {
-                    let transport = Arc::clone(&s.transport);
-                    let msg = GossipMessage::KnowledgeDiff(diff);
-                    tokio::spawn(async move {
-                        let _ = transport.broadcast(msg).await;
-                    });
-                }
+                s.manager.record_conversation().await;
             }
 
             // Build inference messages
@@ -378,7 +356,7 @@ async fn handle_client(
 
             let _ = writer.write_all(b"DONE\n").await;
 
-            // Encode response into grid + save + broadcast diff
+            // Encode response into grid + save (privacy: defer broadcast until aggregation threshold met)
             if !full_response.is_empty() {
                 session.conversation.push(InfChatMessage {
                     role: ChatRole::Assistant,
@@ -386,26 +364,9 @@ async fn handle_client(
                 });
 
                 let mut s = state.lock().await;
-                let grid_before = s.knowledge.grid.cells.clone();
                 s.knowledge.encode(&full_response, 0.7);
                 let _ = s.knowledge.save(&s.brain_path);
-
-                let diff = KnowledgeDiff::compute(
-                    &grid_before,
-                    &s.knowledge.grid.cells,
-                    s.node_id.clone(),
-                    s.diff_sequence,
-                    0.7,
-                    1e-6,
-                );
-                s.diff_sequence += 1;
-                if !diff.is_empty() {
-                    let transport = Arc::clone(&s.transport);
-                    let msg = GossipMessage::KnowledgeDiff(diff);
-                    tokio::spawn(async move {
-                        let _ = transport.broadcast(msg).await;
-                    });
-                }
+                s.manager.record_conversation().await;
             }
         } else if let Some(query) = line.strip_prefix("KNOWLEDGE_QUERY ") {
             // Distributed inference: peer is querying our knowledge
@@ -586,8 +547,6 @@ async fn main() {
         node_id: node_id.clone(),
         transport: Arc::clone(&transport),
         manager: Arc::clone(&manager),
-        last_broadcast_state: None,
-        diff_sequence: 0,
         distributed: Arc::clone(&distributed),
         inference_stats: InferenceStats::new(),
     }));
@@ -618,34 +577,38 @@ async fn main() {
     });
 
     // Spawn periodic sync broadcaster
+    // Uses NetworkManager to enforce aggregation threshold (min conversations before sync)
+    // and apply differential privacy + local-only channel filtering.
     let state_for_sync = Arc::clone(&state);
-    let transport_sync = Arc::clone(&transport);
+    let network_for_sync = Arc::clone(&manager);
     let sync_interval = cli.sync_interval;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(sync_interval));
         loop {
             interval.tick().await;
-            let mut s = state_for_sync.lock().await;
-            // Capture current grid as the before state if we haven't tracked one
-            let grid_before = s.last_broadcast_state.take().unwrap_or_else(|| {
-                s.knowledge.grid.cells.clone()
-            });
-            // Compute diff from last broadcast state
-            let diff = KnowledgeDiff::compute(
-                &grid_before,
-                &s.knowledge.grid.cells,
-                s.node_id.clone(),
-                s.diff_sequence,
-                0.7,
-                1e-6,
-            );
-            s.diff_sequence += 1;
-            if !diff.is_empty() {
-                println!("[sync] Broadcasting {} cell changes", diff.changes.len());
-                let _ = transport_sync.broadcast(GossipMessage::KnowledgeDiff(diff)).await;
+
+            // Skip sync if aggregation threshold not yet met (privacy via aggregation)
+            // The threshold is tracked by conversations recorded in CHAT handling
+            if !network_for_sync.is_ready_to_sync().await {
+                // Not enough conversations yet — skip this sync window
+                continue;
             }
-            // Store current state for next interval
-            s.last_broadcast_state = Some(s.knowledge.grid.cells.clone());
+
+            // Compute outgoing diff via NetworkManager (applies privacy filtering,
+            // differential privacy noise, and signs with Ed25519)
+            let current_grid: Vec<Vec<Vec<f64>>> = {
+                let s = state_for_sync.lock().await;
+                s.knowledge.grid.cells.clone()
+            };
+
+            if let Some(diff) = network_for_sync.compute_outgoing_diff(&current_grid).await {
+                println!(
+                    "[sync] Broadcasting {} cell changes (aggregation threshold met)",
+                    diff.changes.len()
+                );
+                let _ = network_for_sync.broadcast(GossipMessage::KnowledgeDiff(diff)).await;
+                network_for_sync.reset_aggregation().await;
+            }
         }
     });
 
