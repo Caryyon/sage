@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.2] - 2026-05-21
+
+### Added
+- **Reservoir Computing Benchmark Command** — New `sage-reservoir bench` command
+  provides structured benchmark comparing:
+  - Random NCA + linear readout (tests if topology alone provides signal)
+  - Random NCA + spatial stats features (alternative feature extraction)
+  - Trained NCA + linear readout (baseline for comparison)
+  
+  Outputs JSON results to `~/.sage/reservoir_bench.json` with verdict:
+  - `nca_viable`: Random NCA + readout beats baseline by 1.5× or more
+  - `nca_requires_training`: Trained NCA works but random doesn't
+  - `nca_not_viable`: Neither provides significant signal
+  
+  This gives researchers concrete data to evaluate whether NCA topology
+  provides useful signal for token prediction, informing the Phase 3→4
+  decision (whether to invest in NCA research or pivot to attention-only).
+
 ## [0.5.1] - 2026-05-21
 
 ### Fixed
