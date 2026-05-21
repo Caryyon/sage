@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.1] - 2026-05-21
+
+### Fixed
+- **Aggregation Threshold Enforcement in Sync Loop** — Privacy fix that
+  defers knowledge sync until minimum conversations accumulated. Previously,
+  every chat message immediately broadcast knowledge diffs to peers, leaking
+  user data and enabling reconstruction attacks. Now enforces the
+  `min_conversations_before_sync` threshold (default: 5) before any sync.
+
+  This completes the privacy infrastructure started in v0.5.0. The
+  NetworkManager's `AggregationTracker` now integrates with the periodic
+  sync loop, ensuring privacy-preserving knowledge sharing.
+
 ## [0.5.0] - 2026-05-14
 
 ### Added
