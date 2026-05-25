@@ -4,6 +4,7 @@
 //!   sage-reservoir train --corpus text.txt [--grid-size 16] [--epochs 50] [--readout-epochs 200]
 //!   sage-reservoir eval --corpus text.txt [--weights path/to/readout.bin]
 //!   sage-reservoir compare --corpus text.txt  # Side-by-side reservoir vs ES
+//!   sage-reservoir bench [--corpus text.txt] [--output results.json]  # Structured benchmark
 //!   sage-reservoir --demo  # Quick demo on Shakespeare excerpt
 
 use sage::inference::nca_predictor::{
@@ -28,6 +29,7 @@ fn main() {
         "standalone" => cmd_standalone(&args[2..]),
         "eval" => cmd_eval(&args[2..]),
         "compare" => cmd_compare(&args[2..]),
+        "bench" => cmd_bench(&args[2..]),
         "--demo" => cmd_demo(),
         "--help" | "-h" | "help" => print_help(),
         other => {
@@ -44,8 +46,9 @@ fn print_help() {
     eprintln!("  train      Train NCA (ES) then train linear readout");
     eprintln!("  standalone Train linear readout on RANDOM NCA (no ES training)");
     eprintln!("  eval       Evaluate a trained readout on a corpus");
-    eprintln!("  compare  Side-by-side comparison: reservoir vs ES-only");
-    eprintln!("  --demo   Quick demo on Shakespeare excerpt");
+    eprintln!("  compare    Side-by-side comparison: reservoir vs ES-only");
+    eprintln!("  bench      Run structured benchmark with JSON output");
+    eprintln!("  --demo     Quick demo on Shakespeare excerpt");
     eprintln!();
     eprintln!("Train options:");
     eprintln!("  --corpus <file>          Text corpus");
@@ -454,6 +457,202 @@ fn cmd_standalone(args: &[String]) {
             eprintln!("❌ Standalone readout training failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+fn cmd_bench(args: &[String]) {
+    use std::path::PathBuf;
+    
+    let opts = parse_opts(args);
+    let mut output_path: Option<PathBuf> = None;
+    
+    // Parse output path
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--output" | "-o" => {
+                i += 1;
+                if i < args.len() {
+                    output_path = Some(PathBuf::from(args[i].clone()));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    
+    let corpus = load_corpus(&opts);
+    
+    eprintln!("📊 Reservoir Computing Benchmark");
+    eprintln!("   Corpus: {} chars, {} words", corpus.len(), corpus.split_whitespace().count());
+    eprintln!("   Grid: {}×{}, Max examples: {}", opts.grid_size, opts.grid_size, opts.max_examples);
+    eprintln!();
+    
+    // Test 1: Standalone reservoir (random NCA) - FlatState features
+    eprintln!("━━━ Test 1: Random NCA + FlatState readout ━━━");
+    let rc_flat = ReservoirConfig {
+        readout_epochs: opts.readout_epochs,
+        learning_rate: opts.lr,
+        feature_strategy: FeatureStrategy::FlatState,
+        max_examples: opts.max_examples,
+        context_window: 5,
+        ..Default::default()
+    };
+    
+    let standalone_flat = train_standalone_readout(&corpus, opts.grid_size, 3, &rc_flat, false);
+    let (random_flat_top1, random_flat_top5, random_baseline) = match &standalone_flat {
+        Ok((_, top1, top5, baseline)) => {
+            eprintln!("   Top-1: {:.2}% ({:.2}× random)", top1 * 100.0, top1 / baseline);
+            eprintln!("   Top-5: {:.2}% ({:.2}× random)", top5 * 100.0, top5 / baseline);
+            (*top1, *top5, *baseline)
+        }
+        Err(e) => {
+            eprintln!("   ❌ Failed: {}", e);
+            (0.0, 0.0, 0.0)
+        }
+    };
+    
+    // Test 2: Standalone reservoir (random NCA) - SpatialStats features
+    eprintln!("\n━━━ Test 2: Random NCA + SpatialStats readout ━━━");
+    let rc_stats = ReservoirConfig {
+        readout_epochs: opts.readout_epochs,
+        learning_rate: opts.lr,
+        feature_strategy: FeatureStrategy::SpatialStats,
+        max_examples: opts.max_examples,
+        context_window: 5,
+        ..Default::default()
+    };
+    
+    let standalone_stats = train_standalone_readout(&corpus, opts.grid_size, 3, &rc_stats, false);
+    let (random_stats_top1, random_stats_top5, _) = match &standalone_stats {
+        Ok((_, top1, top5, baseline)) => {
+            eprintln!("   Top-1: {:.2}% ({:.2}× random)", top1 * 100.0, top1 / baseline);
+            eprintln!("   Top-5: {:.2}% ({:.2}× random)", top5 * 100.0, top5 / baseline);
+            (*top1, *top5, *baseline)
+        }
+        Err(e) => {
+            eprintln!("   ❌ Failed: {}", e);
+            (0.0, 0.0, random_baseline)
+        }
+    };
+    
+    // Test 3: Trained NCA + Linear readout
+    eprintln!("\n━━━ Test 3: Trained NCA (ES) + Linear readout ━━━");
+    let nca_config = TrainingConfig {
+        epochs: opts.epochs,
+        grid_size: opts.grid_size,
+        max_examples: opts.max_examples.min(30),
+        ..Default::default()
+    };
+    
+    let (trained_nca_top1, trained_nca_top5) = match nca_predictor::train_nca(&corpus, &nca_config, false) {
+        Ok((mut predictor, nca_acc, baseline)) => {
+            eprintln!("   ES-only accuracy: {:.2}% ({:.2}× random)", nca_acc * 100.0, nca_acc / baseline);
+            
+            // Now train linear readout on trained NCA
+            let rc = ReservoirConfig {
+                readout_epochs: opts.readout_epochs,
+                learning_rate: opts.lr,
+                feature_strategy: FeatureStrategy::FlatState,
+                max_examples: opts.max_examples,
+                context_window: 5,
+                ..Default::default()
+            };
+            match train_reservoir_readout(&mut predictor, &corpus, &rc, false) {
+                Ok((_, top1, top5)) => {
+                    eprintln!("   Readout on trained NCA:");
+                    eprintln!("     Top-1: {:.2}% ({:.2}× random)", top1 * 100.0, top1 / baseline);
+                    eprintln!("     Top-5: {:.2}% ({:.2}× random)", top5 * 100.0, top5 / baseline);
+                    (top1, top5)
+                }
+                Err(e) => {
+                    eprintln!("   ❌ Readout failed: {}", e);
+                    (0.0, 0.0)
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("   ❌ NCA training failed: {}", e);
+            (0.0, 0.0)
+        }
+    };
+    
+    // Analysis
+    eprintln!("\n━━━ Analysis ━━━");
+    eprintln!("   Random baseline: {:.4}%", random_baseline * 100.0);
+    
+    let random_signal_flat = random_flat_top1 / random_baseline;
+    let random_signal_stats = random_stats_top1 / random_baseline;
+    let trained_signal = trained_nca_top1 / random_baseline;
+    
+    eprintln!("\n   Signal detection (higher = better):");
+    eprintln!("   Random NCA + FlatState:   {:.2}× baseline", random_signal_flat);
+    eprintln!("   Random NCA + SpatialStats: {:.2}× baseline", random_signal_stats);
+    eprintln!("   Trained NCA + Readout:    {:.2}× baseline", trained_signal);
+    
+    // Verdict
+    eprintln!("\n━━━ Verdict ━━━");
+    if random_signal_flat > 1.5 || random_signal_stats > 1.5 {
+        eprintln!("   ✅ NCA topology provides signal for token prediction");
+        eprintln!("      Random NCA + linear readout beats baseline.");
+        eprintln!("      Recommendation: Investigate NCA dynamics further.");
+    } else if trained_signal > 2.0 {
+        eprintln!("   ⚠️  Trained NCA provides signal, but random doesn't.");
+        eprintln!("      NCA must be trained; topology alone isn't enough.");
+    } else {
+        eprintln!("   ❌ NCA provides limited signal for token prediction.");
+        eprintln!("      Reservoir computing approach may not be viable.");
+    }
+    
+    // Write JSON results
+    let output = output_path.unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".sage")
+            .join("reservoir_bench.json")
+    });
+    
+    if let Err(e) = std::fs::create_dir_all(output.parent().unwrap_or(&PathBuf::from("."))) {
+        eprintln!("   ⚠️ Failed to create output directory: {}", e);
+    }
+    
+    let results_json = serde_json::json!({
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "corpus_size": corpus.len(),
+        "word_count": corpus.split_whitespace().count(),
+        "grid_size": opts.grid_size,
+        "readout_epochs": opts.readout_epochs,
+        "max_examples": opts.max_examples,
+        "random_baseline": random_baseline,
+        "tests": {
+            "random_nca_flat": {
+                "top1_accuracy": random_flat_top1,
+                "top5_accuracy": random_flat_top5,
+                "signal_ratio": random_signal_flat,
+            },
+            "random_nca_spatial": {
+                "top1_accuracy": random_stats_top1,
+                "top5_accuracy": random_stats_top5,
+                "signal_ratio": random_signal_stats,
+            },
+            "trained_nca_readout": {
+                "top1_accuracy": trained_nca_top1,
+                "top5_accuracy": trained_nca_top5,
+                "signal_ratio": trained_signal,
+            },
+        },
+        "verdict": if random_signal_flat > 1.5 || random_signal_stats > 1.5 {
+            "nca_viable"
+        } else if trained_signal > 2.0 {
+            "nca_requires_training"
+        } else {
+            "nca_not_viable"
+        }
+    });
+    
+    match std::fs::write(&output, serde_json::to_string_pretty(&results_json).unwrap()) {
+        Ok(()) => eprintln!("\n💾 Results saved to {}", output.display()),
+        Err(e) => eprintln!("   ❌ Failed to save results: {}", e),
     }
 }
 
