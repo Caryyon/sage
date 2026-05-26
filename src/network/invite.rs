@@ -59,8 +59,8 @@ impl InviteCode {
 
         let created_at_ms = u64::from_le_bytes(data[0..8].try_into().unwrap());
         let expires_at_ms = u64::from_le_bytes(data[8..16].try_into().unwrap());
-        let multiaddr = String::from_utf8(data[16..].to_vec())
-            .map_err(|_| InviteError::InvalidFormat)?;
+        let multiaddr =
+            String::from_utf8(data[16..].to_vec()).map_err(|_| InviteError::InvalidFormat)?;
 
         // Check expiration
         let now_ms = SystemTime::now()

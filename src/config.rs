@@ -56,7 +56,11 @@ impl Default for SageConfig {
 #[allow(clippy::derivable_impls)]
 impl Default for NodeConfig {
     fn default() -> Self {
-        Self { name: String::new(), port: 7433, sync_interval: 300 }
+        Self {
+            name: String::new(),
+            port: 7433,
+            sync_interval: 300,
+        }
     }
 }
 
@@ -73,7 +77,10 @@ impl Default for ChatConfig {
 #[allow(clippy::derivable_impls)]
 impl Default for NetworkSettings {
     fn default() -> Self {
-        Self { enable_mdns: true, bootstrap_peers: Vec::new() }
+        Self {
+            enable_mdns: true,
+            bootstrap_peers: Vec::new(),
+        }
     }
 }
 
@@ -107,21 +114,19 @@ pub fn load_config() -> SageConfig {
 /// Load config from a specific path.
 pub fn load_config_from(path: &str) -> SageConfig {
     match std::fs::read_to_string(path) {
-        Ok(contents) => {
-            match toml::from_str::<SageConfig>(&contents) {
-                Ok(mut cfg) => {
-                    if let Err(e) = cfg.grid.validate() {
-                        eprintln!("Warning: {e}, using default grid size 256");
-                        cfg.grid.size = 256;
-                    }
-                    cfg
+        Ok(contents) => match toml::from_str::<SageConfig>(&contents) {
+            Ok(mut cfg) => {
+                if let Err(e) = cfg.grid.validate() {
+                    eprintln!("Warning: {e}, using default grid size 256");
+                    cfg.grid.size = 256;
                 }
-                Err(e) => {
-                    eprintln!("Warning: failed to parse config: {e}");
-                    SageConfig::default()
-                }
+                cfg
             }
-        }
+            Err(e) => {
+                eprintln!("Warning: failed to parse config: {e}");
+                SageConfig::default()
+            }
+        },
         Err(_) => SageConfig::default(),
     }
 }

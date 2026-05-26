@@ -8,13 +8,13 @@
 use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
 use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
+use crate::feedback::FeedbackCollector;
 use crate::grid::{GRID_SIZE, MEMORY_RECENCY};
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
-use crate::feedback::FeedbackCollector;
 use crate::query_router_intelligent::IntelligentRouter;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -103,8 +103,7 @@ impl KnowledgeLoop {
             response_encode_confidence: 0.8,
             nca_predictor: None,
             nca_load_attempted: false,
-            attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE)
-                .with_recency_weight(0.3),
+            attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE).with_recency_weight(0.3),
             encoder_config: EncoderConfig::default(),
             retrieval_feedback: RetrievalFeedback::new(RETRIEVAL_FEATURE_DIM),
             relevance_readout: BinaryRelevanceReadout::new(RETRIEVAL_FEATURE_DIM),
@@ -132,8 +131,7 @@ impl KnowledgeLoop {
     /// Higher values boost recently-encoded knowledge during retrieval.
     pub fn with_recency_weight(mut self, weight: f64) -> Self {
         let w = weight.clamp(0.0, 1.0);
-        self.attention_decoder = AttentionDecoder::new(GRID_SIZE, GRID_SIZE)
-            .with_recency_weight(w);
+        self.attention_decoder = AttentionDecoder::new(GRID_SIZE, GRID_SIZE).with_recency_weight(w);
         self
     }
 
@@ -239,7 +237,10 @@ impl KnowledgeLoop {
 
             attention_results
                 .into_iter()
-                .filter(|r| r.attention_weight * readout_scale > self.relevance_threshold && r.text.is_some())
+                .filter(|r| {
+                    r.attention_weight * readout_scale > self.relevance_threshold
+                        && r.text.is_some()
+                })
                 .filter_map(|r| r.text)
                 .collect()
         };
@@ -261,7 +262,10 @@ impl KnowledgeLoop {
         );
 
         // Check if we should train the relevance readout
-        if let Some((loss, accuracy)) = self.retrieval_feedback.maybe_train(&mut self.relevance_readout) {
+        if let Some((loss, accuracy)) = self
+            .retrieval_feedback
+            .maybe_train(&mut self.relevance_readout)
+        {
             tracing::info!(
                 "Retrieval feedback training round {}: loss={:.4}, accuracy={:.1}%",
                 self.retrieval_feedback.rounds_completed,
@@ -377,7 +381,12 @@ impl KnowledgeLoop {
     /// pollute the main knowledge store.
     ///
     /// Returns None if the grid has no significant activations.
-    pub fn build_nca_thought_summary(&mut self, query: &str, n_steps: usize, top_k: usize) -> Option<String> {
+    pub fn build_nca_thought_summary(
+        &mut self,
+        query: &str,
+        n_steps: usize,
+        top_k: usize,
+    ) -> Option<String> {
         use crate::distributed_knowledge::decoder::query_knowledge_by_features_with_text;
 
         // Encode query — this is the only NCA-coherent way to find relevant cells.
@@ -421,7 +430,8 @@ impl KnowledgeLoop {
 
         // Format as COCONUT-style activation summary
         let mut summary = String::from("## NCA Activation Summary\n");
-        summary.push_str("(Dense summary of neural grid state after query-seeded NCA dynamics):\n\n");
+        summary
+            .push_str("(Dense summary of neural grid state after query-seeded NCA dynamics):\n\n");
         for (i, text) in top_texts.iter().enumerate() {
             // Truncate long texts to first 120 chars for prompt efficiency
             let snippet = if text.len() > 120 {
@@ -592,10 +602,12 @@ impl KnowledgeLoop {
 
         // Sync router with latest feedback data before routing
         self.intelligent_router.sync_with_feedback();
-        
+
         // 5. Generate response using intelligent query router
-        let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
-        
+        let (backend, pattern, confidence) = self
+            .intelligent_router
+            .route(user_input, self.nca_available);
+
         // Start tracking this query for feedback
         let query_start = Instant::now();
         self.feedback_collector.start_query(
@@ -603,12 +615,14 @@ impl KnowledgeLoop {
             pattern,
             true, // NCA was attempted (we always try it first conceptually)
         );
-        
+
         tracing::debug!(
             "Intelligent routing: {:?} for pattern {:?} (confidence: {:.3})",
-            backend, pattern, confidence
+            backend,
+            pattern,
+            confidence
         );
-        
+
         let response: String = match backend {
             crate::query_router_intelligent::Backend::Nca => {
                 // Try NCA predictor for queries that router thinks NCA can handle
@@ -676,7 +690,7 @@ impl KnowledgeLoop {
 
         // Track timing and complete feedback
         let response_time_ms = query_start.elapsed().as_millis() as u64;
-        
+
         // Determine if NCA satisfied user based on routing decision
         match backend {
             crate::query_router_intelligent::Backend::Nca => {
@@ -688,7 +702,7 @@ impl KnowledgeLoop {
                 self.feedback_collector.mark_llm_fallback();
             }
         }
-        
+
         self.feedback_collector.complete(response_time_ms);
 
         // 6. Encode response into NCA grid
@@ -705,7 +719,8 @@ impl KnowledgeLoop {
 
         // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
-        self.knowledge.smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
+        self.knowledge
+            .smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
         // Update history
         self.history.push(ChatMessage {
@@ -782,13 +797,17 @@ impl KnowledgeLoop {
         // 5. Stream response using intelligent query router
         // Note: For streaming, we always use LLM since NCA doesn't support true streaming
         // but we still record the routing decision for learning purposes
-        let (backend, pattern, confidence) = self.intelligent_router.route(user_input, self.nca_available);
-        
+        let (backend, pattern, confidence) = self
+            .intelligent_router
+            .route(user_input, self.nca_available);
+
         tracing::debug!(
             "Intelligent routing (streaming): {:?} for pattern {:?} (confidence: {:.3})",
-            backend, pattern, confidence
+            backend,
+            pattern,
+            confidence
         );
-        
+
         let response_collector = Arc::new(std::sync::Mutex::new(String::new()));
         let collector = Arc::clone(&response_collector);
         let mut user_cb = callback;
@@ -801,7 +820,7 @@ impl KnowledgeLoop {
         // Always use LLM for streaming (NCA doesn't support token-by-token streaming)
         self.engine.chat_streaming(&messages, 1000, combined_cb)?;
         let response = response_collector.lock().unwrap().clone();
-        
+
         // Record the outcome based on what backend was *chosen* (not what was used for streaming)
         let used_backend = if backend == crate::query_router_intelligent::Backend::Nca {
             // We chose NCA but used LLM for streaming - record as LLM success
@@ -809,7 +828,7 @@ impl KnowledgeLoop {
         } else {
             crate::query_router_intelligent::Backend::Llm
         };
-        
+
         self.intelligent_router.record_outcome(
             pattern,
             crate::query_router_intelligent::RoutingOutcome {
@@ -832,7 +851,8 @@ impl KnowledgeLoop {
 
         // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
-        self.knowledge.smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
+        self.knowledge
+            .smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
         // Update history
         self.history.push(ChatMessage {
@@ -1047,10 +1067,11 @@ mod tests {
             let engine = Arc::new(MockEngine::echo());
             let mut kl = KnowledgeLoop::new(engine).with_brain_path(path);
             kl.load_brain().unwrap();
-            
+
             // Verify cell count matches
             assert_eq!(
-                kl.active_cells(), cell_count,
+                kl.active_cells(),
+                cell_count,
                 "Saved brain should restore same number of active cells"
             );
 
@@ -1099,7 +1120,7 @@ mod tests {
         // With hash-based encoding, exact recall depends on hash collisions
         // but the retrieval mechanism itself should not panic and should return
         // either results or None gracefully
-        
+
         // Final conversation should work
         let response = kl.chat("What is my favorite color?").unwrap();
         assert!(response.len() > 0, "Should get a response");
@@ -1180,11 +1201,7 @@ mod tests {
         }
 
         // Should have 5 events
-        assert_eq!(
-            feedback.event_count(),
-            5,
-            "Should have 5 events recorded"
-        );
+        assert_eq!(feedback.event_count(), 5, "Should have 5 events recorded");
 
         // Relevance rate should be 3/5 = 0.6 (events 0, 2, 4 are relevant)
         let rate = feedback.relevance_rate();

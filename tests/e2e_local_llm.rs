@@ -29,15 +29,27 @@ fn test_generation_backend_detection() {
 
     // We can't know which backend will be available, but it should be one of the valid types
     match backend {
-        GenerationBackend::Local { model_name, model_size } => {
-            assert!(!model_name.is_empty(), "Local model name should not be empty");
-            assert!(!model_size.is_empty(), "Local model size should not be empty");
+        GenerationBackend::Local {
+            model_name,
+            model_size,
+        } => {
+            assert!(
+                !model_name.is_empty(),
+                "Local model name should not be empty"
+            );
+            assert!(
+                !model_size.is_empty(),
+                "Local model size should not be empty"
+            );
         }
         GenerationBackend::Ollama { model } => {
             assert!(!model.is_empty(), "Ollama model should not be empty");
         }
         GenerationBackend::Embedded { model_name } => {
-            assert!(!model_name.is_empty(), "Embedded model name should not be empty");
+            assert!(
+                !model_name.is_empty(),
+                "Embedded model name should not be empty"
+            );
         }
         GenerationBackend::Offline => {
             // Offline mode is always valid
@@ -86,7 +98,11 @@ fn test_sage_model_list_shows_presets() {
     }
 
     // Verify there are exactly 3 presets as specified
-    assert_eq!(MODEL_PRESETS.len(), 3, "Should have exactly 3 model presets");
+    assert_eq!(
+        MODEL_PRESETS.len(),
+        3,
+        "Should have exactly 3 model presets"
+    );
 }
 
 /// Test that GenerationBackend formats correctly

@@ -63,8 +63,8 @@ fn test_export_import_roundtrip_preserves_facts() {
 
     // Parse header
     let header_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-    let imported_header: TestExportHeader = bincode::deserialize(&data[4..4+header_len])
-        .expect("Failed to parse header");
+    let imported_header: TestExportHeader =
+        bincode::deserialize(&data[4..4 + header_len]).expect("Failed to parse header");
 
     assert_eq!(&imported_header.magic, b"SGEX", "Magic bytes should match");
     assert_eq!(imported_header.version, 1, "Version should match");
@@ -72,11 +72,15 @@ fn test_export_import_roundtrip_preserves_facts() {
     // Parse grid
     let grid_offset = 4 + header_len;
     let grid_len = u32::from_le_bytes([
-        data[grid_offset], data[grid_offset+1], data[grid_offset+2], data[grid_offset+3]
+        data[grid_offset],
+        data[grid_offset + 1],
+        data[grid_offset + 2],
+        data[grid_offset + 3],
     ]) as usize;
     let grid_data_offset = grid_offset + 4;
-    let imported_grid: sage::grid::Grid = bincode::deserialize(&data[grid_data_offset..grid_data_offset+grid_len])
-        .expect("Failed to parse grid");
+    let imported_grid: sage::grid::Grid =
+        bincode::deserialize(&data[grid_data_offset..grid_data_offset + grid_len])
+            .expect("Failed to parse grid");
 
     // Create new store with imported grid
     let mut imported = NCAKnowledge::new();
@@ -96,7 +100,11 @@ fn test_export_import_roundtrip_preserves_facts() {
     // Query for original facts - should find at least some
     let mut hits = 0;
     for fact in &facts {
-        let query: String = fact.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+        let query: String = fact
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ");
         let results = imported.query(&query, 10);
         if !results.is_empty() {
             hits += 1;
@@ -111,7 +119,9 @@ fn test_export_import_roundtrip_preserves_facts() {
 
     eprintln!(
         "Export/Import test: {} active cells preserved, {}/{} facts retrievable",
-        imported_active, hits, facts.len()
+        imported_active,
+        hits,
+        facts.len()
     );
 }
 
@@ -157,11 +167,15 @@ fn test_export_file_format() {
     // Header length should be first 4 bytes
     assert!(data.len() >= 4, "File too short");
     let header_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-    assert!(header_len > 0 && header_len < 1000, "Header length should be reasonable: {}", header_len);
+    assert!(
+        header_len > 0 && header_len < 1000,
+        "Header length should be reasonable: {}",
+        header_len
+    );
 
     // Parse header
-    let parsed_header: TestExportHeader = bincode::deserialize(&data[4..4+header_len])
-        .expect("Parse header");
+    let parsed_header: TestExportHeader =
+        bincode::deserialize(&data[4..4 + header_len]).expect("Parse header");
 
     assert_eq!(&parsed_header.magic, b"SGEX", "Magic should be SGEX");
     assert_eq!(parsed_header.version, 1, "Version should be 1");
@@ -171,8 +185,8 @@ fn test_export_file_format() {
 /// Test: Import with invalid magic bytes fails gracefully
 #[test]
 fn test_import_invalid_magic_fails() {
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     let dir = tempdir().expect("temp dir");
     let bad_path = dir.path().join("bad.sage");
@@ -198,8 +212,7 @@ fn test_import_invalid_magic_fails() {
 
     let data = fs::read(&bad_path).expect("read");
     let header_len = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-    let parsed: TestExportHeader = bincode::deserialize(&data[4..4+header_len])
-        .expect("parse");
+    let parsed: TestExportHeader = bincode::deserialize(&data[4..4 + header_len]).expect("parse");
 
     assert_ne!(&parsed.magic, b"SGEX", "Should detect wrong magic");
 }

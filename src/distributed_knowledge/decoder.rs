@@ -4,11 +4,12 @@
 //! Uses cosine similarity for semantic matching when embeddings are available.
 //! Returns actual text snippets via the TextStore.
 
-use super::encoder::{encode_text, feature_to_position, load_projection, LinearProjection, EncoderConfig, FeatureVector, NUM_EMBED_SLOTS};
-use super::text_store::TextStore;
-use crate::grid::{
-    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
+use super::encoder::{
+    encode_text, feature_to_position, load_projection, EncoderConfig, FeatureVector,
+    LinearProjection, NUM_EMBED_SLOTS,
 };
+use super::text_store::TextStore;
+use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
 use std::sync::OnceLock;
 
 /// Lazily-loaded projection matrix, shared across all decoder calls.
@@ -16,9 +17,7 @@ static CACHED_PROJECTION: OnceLock<Option<LinearProjection>> = OnceLock::new();
 
 /// Get the cached projection, loading it once from disk.
 fn get_cached_projection() -> Option<&'static LinearProjection> {
-    CACHED_PROJECTION
-        .get_or_init(load_projection)
-        .as_ref()
+    CACHED_PROJECTION.get_or_init(load_projection).as_ref()
 }
 
 /// A knowledge activation result from querying the grid
@@ -43,7 +42,10 @@ pub struct KnowledgeActivation {
 /// Read the first embedding slot value for a cell (backward-compat helper).
 /// Returns 0.0 if the channel doesn't exist (graceful degradation).
 fn cell_embedding(grid: &Grid, y: usize, x: usize) -> f64 {
-    grid.cells[y][x].get(KNOWLEDGE_CHANNELS_START).copied().unwrap_or(0.0)
+    grid.cells[y][x]
+        .get(KNOWLEDGE_CHANNELS_START)
+        .copied()
+        .unwrap_or(0.0)
 }
 
 /// Safely read knowledge activation from a cell.
@@ -109,7 +111,11 @@ fn cosine_sim_query_cell(
         *slot = values[feat_idx];
     }
 
-    let dot: f64 = query_slots.iter().zip(cell_embed.iter()).map(|(a, b)| a * b).sum();
+    let dot: f64 = query_slots
+        .iter()
+        .zip(cell_embed.iter())
+        .map(|(a, b)| a * b)
+        .sum();
     let mag_q: f64 = query_slots.iter().map(|v| v * v).sum::<f64>().sqrt();
     let mag_c: f64 = cell_embed.iter().map(|v| v * v).sum::<f64>().sqrt();
     if mag_q < 1e-10 || mag_c < 1e-10 {
@@ -483,10 +489,7 @@ mod tests {
 
         // Should return empty vec, not panic
         let results = scan_active_knowledge(&grid, 0.01);
-        assert!(
-            results.is_empty(),
-            "Fresh grid should have no active cells"
-        );
+        assert!(results.is_empty(), "Fresh grid should have no active cells");
 
         // Edge case: min_activation = 0 (all cells "active" with 0 activation)
         let results_zero = scan_active_knowledge(&grid, 0.0);

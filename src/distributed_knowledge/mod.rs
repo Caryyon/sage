@@ -27,9 +27,7 @@ use crate::grid::{
 };
 use decoder::{scan_active_knowledge, KnowledgeActivation};
 use encoder::{encode_text, write_knowledge, EncoderConfig};
-pub use encoder::{
-    encode_text_with_projection, LinearProjection, PROJECTION_WEIGHTS_PATH,
-};
+pub use encoder::{encode_text_with_projection, LinearProjection, PROJECTION_WEIGHTS_PATH};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -101,7 +99,8 @@ impl RetrievalStats {
         // Track mean top-result relevance
         if let Some(top) = results.first() {
             let scaled = (top.relevance.clamp(0.0, 1.0) * 1_000_000.0) as u64;
-            self.relevance_sum_scaled.fetch_add(scaled, Ordering::Relaxed);
+            self.relevance_sum_scaled
+                .fetch_add(scaled, Ordering::Relaxed);
         }
     }
 
@@ -403,8 +402,8 @@ impl KnowledgeStore for NCAKnowledge {
                     // Blend all embedding slots
                     for slot in 0..NUM_KNOWLEDGE_CHANNELS {
                         let ch = KNOWLEDGE_CHANNELS_START + slot;
-                        self.grid.cells[y][x][ch] = self.grid.cells[y][x][ch] * (1.0 - s)
-                            + other.cells[y][x][ch] * s;
+                        self.grid.cells[y][x][ch] =
+                            self.grid.cells[y][x][ch] * (1.0 - s) + other.cells[y][x][ch] * s;
                     }
                     // Activation
                     self.grid.cells[y][x][KNOWLEDGE_ACTIVATION] =
@@ -662,9 +661,7 @@ fn update_daily_stats() {
     };
 
     // Increment today's counter
-    let daily_facts = stats
-        .get_mut("daily_facts")
-        .and_then(|d| d.as_object_mut());
+    let daily_facts = stats.get_mut("daily_facts").and_then(|d| d.as_object_mut());
 
     if let Some(daily) = daily_facts {
         let count = daily.get(&today).and_then(|v| v.as_u64()).unwrap_or(0);
@@ -675,7 +672,10 @@ fn update_daily_stats() {
     if let Some(parent) = std::path::Path::new(&stats_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&stats_path, serde_json::to_string_pretty(&stats).unwrap_or_default());
+    let _ = std::fs::write(
+        &stats_path,
+        serde_json::to_string_pretty(&stats).unwrap_or_default(),
+    );
 }
 
 #[cfg(test)]
@@ -987,7 +987,11 @@ mod tests {
         assert_eq!(stats.relevance_excellent.load(Ordering::Relaxed), 1);
         // mean_top_relevance is the first result's relevance = 0.1
         let mean = stats.mean_top_relevance();
-        assert!((mean - 0.1).abs() < 0.001, "mean_top_relevance should be ~0.1, got {}", mean);
+        assert!(
+            (mean - 0.1).abs() < 0.001,
+            "mean_top_relevance should be ~0.1, got {}",
+            mean
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1007,15 +1011,39 @@ mod tests {
         // 10 simple, semantically distinct facts
         let facts = [
             ("Paris is the capital of France", "Paris France capital"),
-            ("Water freezes at zero degrees Celsius", "water freezes zero"),
+            (
+                "Water freezes at zero degrees Celsius",
+                "water freezes zero",
+            ),
             ("The Eiffel Tower is in Paris", "Eiffel Tower Paris"),
-            ("Rust is a systems programming language", "Rust programming language"),
-            ("Elephants are the largest land mammals", "elephants largest mammals"),
-            ("Mount Everest is the tallest mountain", "Everest tallest mountain"),
-            ("The Pacific Ocean is the largest ocean", "Pacific largest ocean"),
-            ("DNA contains genetic information", "DNA genetic information"),
-            ("Einstein developed relativity theory", "Einstein relativity theory"),
-            ("The Nile is the longest river in Africa", "Nile longest river"),
+            (
+                "Rust is a systems programming language",
+                "Rust programming language",
+            ),
+            (
+                "Elephants are the largest land mammals",
+                "elephants largest mammals",
+            ),
+            (
+                "Mount Everest is the tallest mountain",
+                "Everest tallest mountain",
+            ),
+            (
+                "The Pacific Ocean is the largest ocean",
+                "Pacific largest ocean",
+            ),
+            (
+                "DNA contains genetic information",
+                "DNA genetic information",
+            ),
+            (
+                "Einstein developed relativity theory",
+                "Einstein relativity theory",
+            ),
+            (
+                "The Nile is the longest river in Africa",
+                "Nile longest river",
+            ),
         ];
 
         // Encode all facts
@@ -1029,9 +1057,9 @@ mod tests {
             let results = store.query(query, 10);
 
             // A "hit" is when the queried fact appears in results
-            let is_hit = results.iter().any(|r| {
-                r.text.as_ref().map(|t| t == *fact).unwrap_or(false)
-            });
+            let is_hit = results
+                .iter()
+                .any(|r| r.text.as_ref().map(|t| t == *fact).unwrap_or(false));
 
             if is_hit {
                 hits += 1;
@@ -1048,11 +1076,7 @@ mod tests {
             hits * 10
         );
 
-        eprintln!(
-            "End-to-end hit rate: {}/10 ({}%)",
-            hits,
-            hits * 10
-        );
+        eprintln!("End-to-end hit rate: {}/10 ({}%)", hits, hits * 10);
     }
 
     /// Test that NCAKnowledge works correctly with text store persistence.

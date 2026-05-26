@@ -296,14 +296,22 @@ fn main() {
                 run_export(&file);
             }
         }
-        Some(Commands::Import { file, weight, merge }) => {
+        Some(Commands::Import {
+            file,
+            weight,
+            merge,
+        }) => {
             if merge {
                 run_import_merge(&file, weight);
             } else {
                 run_import(&file, weight);
             }
         }
-        Some(Commands::Search { query, max_results, json }) => {
+        Some(Commands::Search {
+            query,
+            max_results,
+            json,
+        }) => {
             run_search(&query, max_results, json);
         }
         Some(Commands::Feedback { command }) => match command {
@@ -319,7 +327,7 @@ fn main() {
         },
         Some(Commands::Prune { threshold, dry_run }) => {
             run_prune(threshold, dry_run);
-        },
+        }
         Some(Commands::Node { command }) => match command {
             NodeCommands::Start {
                 port,
@@ -339,7 +347,14 @@ fn main() {
                         let _ = std::fs::create_dir_all(sage_home());
                         let _ = std::fs::write(&pid_file, std::process::id().to_string());
                     }
-                    run_node_start(port, chat_port, sync_interval, no_mdns, foreground, no_beacon);
+                    run_node_start(
+                        port,
+                        chat_port,
+                        sync_interval,
+                        no_mdns,
+                        foreground,
+                        no_beacon,
+                    );
                     if daemon_internal {
                         // Clean up PID file on exit
                         let _ = std::fs::remove_file(sage_home().join("node.pid"));
@@ -434,8 +449,14 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
 
     // Load identity to show the node name
     let identity = NodeIdentity::load_or_generate(None).ok();
-    let node_name = identity.as_ref().map(|i| i.human_name.as_str()).unwrap_or("unknown");
-    let node_id = identity.as_ref().map(|i| i.node_id.as_str()).unwrap_or("unknown");
+    let node_name = identity
+        .as_ref()
+        .map(|i| i.human_name.as_str())
+        .unwrap_or("unknown");
+    let node_id = identity
+        .as_ref()
+        .map(|i| i.node_id.as_str())
+        .unwrap_or("unknown");
 
     let exe = std::env::current_exe().expect("Failed to determine executable path");
     let log = std::fs::OpenOptions::new()
@@ -479,7 +500,10 @@ fn daemonize_node(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, 
             println!("🔑 Node ID: {} ({})", node_name, node_id);
             println!("📡 Listening on: /ip4/0.0.0.0/tcp/{}", port);
             println!("🔍 Searching for peers...");
-            println!("✅ Node running (PID {}). Press Ctrl+C to stop.", child.id());
+            println!(
+                "✅ Node running (PID {}). Press Ctrl+C to stop.",
+                child.id()
+            );
             println!();
             println!("   Log: {}", log_file.display());
             println!("   Stop: sage node stop");
@@ -529,14 +553,21 @@ impl LiveNodeStats {
 }
 
 /// Start the SAGE node with live knowledge feed.
-fn run_node_start(port: u16, chat_port: u16, sync_interval: u64, no_mdns: bool, foreground: bool, no_beacon: bool) {
+fn run_node_start(
+    port: u16,
+    chat_port: u16,
+    sync_interval: u64,
+    no_mdns: bool,
+    foreground: bool,
+    no_beacon: bool,
+) {
     use sage::network::contribution::ContributionStats;
+    use sage::network::gossip::GossipTransport;
     use sage::network::identity::NodeIdentity;
     use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
-    use sage::network::gossip::GossipTransport;
     use sage::network::{NetworkConfig, NetworkManager};
-    use std::sync::Arc;
     use std::io::Write;
+    use std::sync::Arc;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
     use tokio::sync::Mutex;
@@ -968,8 +999,8 @@ fn generate_peer_display_name(peer_id: &str) -> String {
 }
 
 const PEER_ADJECTIVES: &[&str] = &[
-    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure",
-    "rare", "sage", "warm", "wise", "wild", "amber", "azure", "coral", "dusty", "golden",
+    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure", "rare",
+    "sage", "warm", "wise", "wild", "amber", "azure", "coral", "dusty", "golden",
 ];
 
 const PEER_NOUNS: &[&str] = &[
@@ -1177,7 +1208,9 @@ fn run_node_health() {
 
     let last_sync_str = if sync_log.exists() {
         if let Ok(content) = std::fs::read_to_string(&sync_log) {
-            content.lines().last()
+            content
+                .lines()
+                .last()
                 .and_then(|line| line.strip_prefix('[').and_then(|s| s.split(']').next()))
                 .map(|s| s.to_string())
         } else {
@@ -1275,7 +1308,10 @@ fn run_node_invite() {
     let invite = InviteCode::generate(&multiaddr);
 
     println!();
-    println!("🔗 Invite Code for {} ({})", identity.human_name, identity.node_id);
+    println!(
+        "🔗 Invite Code for {} ({})",
+        identity.human_name, identity.node_id
+    );
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!();
     println!("  {}", invite.code);
@@ -1283,7 +1319,10 @@ fn run_node_invite() {
     println!("Share this code with a friend. They can run:");
     println!("  sage node join {}", invite.code);
     println!();
-    println!("Valid for: 24 hours (expires in {})", invite.time_remaining());
+    println!(
+        "Valid for: 24 hours (expires in {})",
+        invite.time_remaining()
+    );
     println!();
 }
 
@@ -1298,7 +1337,10 @@ fn run_node_join(code: &str) {
                 std::process::exit(1);
             }
 
-            println!("🔗 Invite code valid (expires in {})", invite.time_remaining());
+            println!(
+                "🔗 Invite code valid (expires in {})",
+                invite.time_remaining()
+            );
             println!("   Connecting to: {}", invite.multiaddr);
             println!();
 
@@ -1468,7 +1510,10 @@ fn run_node_stats(json_output: bool) {
             "contribution_tier": tier.name()
         });
 
-        println!("{}", serde_json::to_string_pretty(&stats).unwrap_or_else(|_| "{}".to_string()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&stats).unwrap_or_else(|_| "{}".to_string())
+        );
     } else {
         println!();
         println!("SAGE Node Stats");
@@ -1744,7 +1789,11 @@ fn run_node_status() {
     // Show node identity with human name
     if let Some(id) = &identity {
         println!("Node:     {}", id.human_name);
-        let uptime_display = if uptime_str.is_empty() { "running" } else { &uptime_str };
+        let uptime_display = if uptime_str.is_empty() {
+            "running"
+        } else {
+            &uptime_str
+        };
         println!("State:    running (PID {}, uptime {})", pid, uptime_display);
     } else {
         println!("State:    running (PID {})", pid);
@@ -1782,18 +1831,23 @@ fn run_node_status() {
 
     // Show sync stats from log
     if synced_received > 0 || synced_sent > 0 {
-        println!("Synced:   {} patterns received, {} sent", synced_received, synced_sent);
+        println!(
+            "Synced:   {} patterns received, {} sent",
+            synced_received, synced_sent
+        );
     }
 
     // Brain stats
     let mut knowledge = NCAKnowledge::new();
-    if std::path::Path::new(&brain_path).exists()
-        && knowledge.load(&brain_path).is_ok()
-    {
+    if std::path::Path::new(&brain_path).exists() && knowledge.load(&brain_path).is_ok() {
         let active = knowledge.active_knowledge(0.01);
         let total_cells = knowledge.grid.width * knowledge.grid.height;
         let utilization = (active.len() as f64 / total_cells as f64) * 100.0;
-        println!("Brain:    {} active cells ({:.1}% of grid)", active.len(), utilization);
+        println!(
+            "Brain:    {} active cells ({:.1}% of grid)",
+            active.len(),
+            utilization
+        );
     }
 
     // Network address (from config or default)
@@ -1985,7 +2039,10 @@ fn run_model_status() {
 
     // Backend status
     match backend {
-        GenerationBackend::Local { model_name, model_size } => {
+        GenerationBackend::Local {
+            model_name,
+            model_size,
+        } => {
             println!("  ⚡ Generation: local ({}, {})", model_name, model_size);
         }
         GenerationBackend::Ollama { model } => {
@@ -2038,7 +2095,10 @@ fn run_dream(steps: usize) {
             std::process::exit(1);
         }
     } else {
-        eprintln!("No brain found at {}. Run `sage chat` first to build knowledge.", brain_path);
+        eprintln!(
+            "No brain found at {}. Run `sage chat` first to build knowledge.",
+            brain_path
+        );
         std::process::exit(1);
     }
 
@@ -2063,7 +2123,11 @@ fn run_dream(steps: usize) {
         return;
     }
 
-    println!("🔍 Found {} active cells, examining top {}...", activations.len(), top_cells.len());
+    println!(
+        "🔍 Found {} active cells, examining top {}...",
+        activations.len(),
+        top_cells.len()
+    );
 
     // Step 2: Run curiosity probes on each top cell
     // For each top cell, look at nearby cells and see what related concepts exist
@@ -2245,7 +2309,10 @@ fn run_insights() {
             // Get first significant word (skip common words)
             let words: Vec<_> = text.split_whitespace().collect();
             for word in words.iter().take(3) {
-                let word_lower = word.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+                let word_lower = word
+                    .to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string();
                 if word_lower.len() > 3 && !is_stop_word(&word_lower) {
                     *word_counts.entry(word_lower).or_insert(0) += 1;
                     break;
@@ -2276,7 +2343,8 @@ fn run_insights() {
                     let mut days: Vec<_> = daily.iter().collect();
                     days.sort_by(|a, b| a.0.cmp(b.0));
                     let recent: Vec<_> = days.iter().rev().take(7).collect();
-                    let max_facts = recent.iter()
+                    let max_facts = recent
+                        .iter()
                         .map(|(_, v)| v.as_u64().unwrap_or(0))
                         .max()
                         .unwrap_or(1) as usize;
@@ -2295,7 +2363,9 @@ fn run_insights() {
 
     // 4. Retrieval quality stats
     let stats = knowledge.stats_handle();
-    let total_queries = stats.total_queries.load(std::sync::atomic::Ordering::Relaxed);
+    let total_queries = stats
+        .total_queries
+        .load(std::sync::atomic::Ordering::Relaxed);
     let hits = stats.hits.load(std::sync::atomic::Ordering::Relaxed);
     let misses = stats.misses.load(std::sync::atomic::Ordering::Relaxed);
 
@@ -2308,14 +2378,27 @@ fn run_insights() {
         println!();
 
         // Relevance distribution bar chart
-        let low = stats.relevance_low.load(std::sync::atomic::Ordering::Relaxed);
-        let mid = stats.relevance_mid.load(std::sync::atomic::Ordering::Relaxed);
-        let good = stats.relevance_good.load(std::sync::atomic::Ordering::Relaxed);
-        let exc = stats.relevance_excellent.load(std::sync::atomic::Ordering::Relaxed);
+        let low = stats
+            .relevance_low
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let mid = stats
+            .relevance_mid
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let good = stats
+            .relevance_good
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let exc = stats
+            .relevance_excellent
+            .load(std::sync::atomic::Ordering::Relaxed);
         let max_rel = [low, mid, good, exc].into_iter().max().unwrap_or(1) as usize;
 
         println!("   Relevance Distribution:");
-        for (label, count) in [("  low (0-0.3)", low), ("  mid (0.3-0.6)", mid), ("  good (0.6-0.8)", good), ("  exc (0.8+)", exc)] {
+        for (label, count) in [
+            ("  low (0-0.3)", low),
+            ("  mid (0.3-0.6)", mid),
+            ("  good (0.6-0.8)", good),
+            ("  exc (0.8+)", exc),
+        ] {
             let c = count as usize;
             let bar_len = (c * 15 / max_rel.max(1)).max(if c > 0 { 1 } else { 0 });
             let bar: String = "█".repeat(bar_len);
@@ -2330,10 +2413,40 @@ fn run_insights() {
 /// Check if a word is a common stop word
 fn is_stop_word(word: &str) -> bool {
     const STOP_WORDS: &[&str] = &[
-        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-        "her", "was", "one", "our", "out", "has", "have", "been", "were", "this",
-        "that", "with", "they", "from", "what", "there", "their", "will", "when",
-        "your", "user", "assistant", "echo", "test",
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "had",
+        "her",
+        "was",
+        "one",
+        "our",
+        "out",
+        "has",
+        "have",
+        "been",
+        "were",
+        "this",
+        "that",
+        "with",
+        "they",
+        "from",
+        "what",
+        "there",
+        "their",
+        "will",
+        "when",
+        "your",
+        "user",
+        "assistant",
+        "echo",
+        "test",
     ];
     STOP_WORDS.contains(&word)
 }
@@ -2344,7 +2457,9 @@ fn is_stop_word(word: &str) -> bool {
 
 /// Show SAGE system status dashboard
 fn run_status() {
-    use sage::distributed_knowledge::encoder::{detect_embedding_status, EmbeddingStatus, EncoderConfig};
+    use sage::distributed_knowledge::encoder::{
+        detect_embedding_status, EmbeddingStatus, EncoderConfig,
+    };
     use sage::inference::{detect_generation_backend, GenerationBackend};
     use std::sync::atomic::Ordering;
 
@@ -2367,7 +2482,9 @@ fn run_status() {
     // Embedding backend
     let embed_status = detect_embedding_status(&EncoderConfig::default());
     let embed_str = match &embed_status {
-        EmbeddingStatus::Fastembed { model, dim } => format!("FastEmbed bundled ({}, {}-dim) ✓", model, dim),
+        EmbeddingStatus::Fastembed { model, dim } => {
+            format!("FastEmbed bundled ({}, {}-dim) ✓", model, dim)
+        }
         EmbeddingStatus::Ollama { model } => format!("Ollama ({}) ✓", model),
         EmbeddingStatus::HashFallback => "Hash fallback (reduced quality) ⚠".to_string(),
     };
@@ -2376,7 +2493,10 @@ fn run_status() {
     // Generation backend
     let gen_backend = detect_generation_backend();
     let gen_str = match &gen_backend {
-        GenerationBackend::Local { model_name, model_size } => format!("local llama.cpp ({}, {}) ⚡", model_name, model_size),
+        GenerationBackend::Local {
+            model_name,
+            model_size,
+        } => format!("local llama.cpp ({}, {}) ⚡", model_name, model_size),
         GenerationBackend::Ollama { model } => format!("Ollama ({}) 🔗", model),
         GenerationBackend::Embedded { model_name } => format!("embedded ({}) 🧠", model_name),
         GenerationBackend::Offline => "offline (retrieval only) 📚".to_string(),
@@ -2398,16 +2518,21 @@ fn run_status() {
         let active = knowledge.active_knowledge(0.01);
         let active_count = active.len();
         let utilization = (active_count as f64 / total_cells as f64) * 100.0;
-        println!("  Grid size:        {}×{} ({} channels)",
-            knowledge.grid.width, knowledge.grid.height, knowledge.grid.cells[0][0].len());
-        println!("  Grid utilization: {:.2}% ({} / {} cells active)",
-            utilization, active_count, total_cells);
+        println!(
+            "  Grid size:        {}×{} ({} channels)",
+            knowledge.grid.width,
+            knowledge.grid.height,
+            knowledge.grid.cells[0][0].len()
+        );
+        println!(
+            "  Grid utilization: {:.2}% ({} / {} cells active)",
+            utilization, active_count, total_cells
+        );
 
         // Knowledge stats
         let text_count = knowledge.text_store.len();
-        let unique_positions: std::collections::HashSet<_> = active.iter()
-            .map(|a| a.position)
-            .collect();
+        let unique_positions: std::collections::HashSet<_> =
+            active.iter().map(|a| a.position).collect();
         println!("  Facts encoded:    {}", text_count);
         println!("  Unique positions: {}", unique_positions.len());
 
@@ -2417,8 +2542,10 @@ fn run_status() {
         if total_queries > 0 {
             let hit_rate = stats.hit_rate() * 100.0;
             let mean_rel = stats.mean_top_relevance();
-            println!("  Queries (session): {} (hit rate: {:.1}%, mean relevance: {:.3})",
-                total_queries, hit_rate, mean_rel);
+            println!(
+                "  Queries (session): {} (hit rate: {:.1}%, mean relevance: {:.3})",
+                total_queries, hit_rate, mean_rel
+            );
         }
         println!();
 
@@ -2470,10 +2597,18 @@ fn run_status() {
                         .unwrap_or(false)
                 }
                 #[cfg(not(unix))]
-                { true }
-            } else { false }
-        } else { false }
-    } else { false };
+                {
+                    true
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     if node_running {
         println!("  Network node:     Running ✓");
@@ -2503,7 +2638,7 @@ fn run_export(file: &str) {
 
     // Create export header with SAGE export magic
     let export_header = SageExportHeader {
-        magic: *b"SGEX",  // SAGE EXport
+        magic: *b"SGEX", // SAGE EXport
         version: 1,
         sage_version: VERSION.to_string(),
         grid_size: knowledge.grid.width as u32,
@@ -2565,7 +2700,10 @@ fn run_export(file: &str) {
 
     let active_count = knowledge.active_knowledge(0.01).len();
     println!("✅ Exported to: {}", file_path);
-    println!("   Grid: {}×{}", knowledge.grid.width, knowledge.grid.height);
+    println!(
+        "   Grid: {}×{}",
+        knowledge.grid.width, knowledge.grid.height
+    );
     println!("   Active cells: {}", active_count);
     println!("   Text entries: {}", knowledge.text_store.len());
     println!("   File size: {}", format_size(output.len() as u64));
@@ -2596,7 +2734,7 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    let header: SageExportHeader = match bincode::deserialize(&data[4..4+header_len]) {
+    let header: SageExportHeader = match bincode::deserialize(&data[4..4 + header_len]) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("Failed to parse export header: {}", e);
@@ -2610,8 +2748,14 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    println!("📦 Importing from SAGE export v{} (created by SAGE {})", header.version, header.sage_version);
-    println!("   Grid: {}×{}, {} channels", header.grid_size, header.grid_size, header.channels);
+    println!(
+        "📦 Importing from SAGE export v{} (created by SAGE {})",
+        header.version, header.sage_version
+    );
+    println!(
+        "   Grid: {}×{}, {} channels",
+        header.grid_size, header.grid_size, header.channels
+    );
     println!("   Text entries: {}", header.text_entries);
 
     // Parse grid
@@ -2621,7 +2765,10 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
     let grid_len = u32::from_le_bytes([
-        data[grid_offset], data[grid_offset+1], data[grid_offset+2], data[grid_offset+3]
+        data[grid_offset],
+        data[grid_offset + 1],
+        data[grid_offset + 2],
+        data[grid_offset + 3],
     ]) as usize;
 
     let grid_data_offset = grid_offset + 4;
@@ -2630,13 +2777,14 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    let import_grid: sage::grid::Grid = match bincode::deserialize(&data[grid_data_offset..grid_data_offset+grid_len]) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("Failed to parse grid: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let import_grid: sage::grid::Grid =
+        match bincode::deserialize(&data[grid_data_offset..grid_data_offset + grid_len]) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("Failed to parse grid: {}", e);
+                std::process::exit(1);
+            }
+        };
 
     // Parse text store
     let text_offset = grid_data_offset + grid_len;
@@ -2645,7 +2793,10 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
     let text_len = u32::from_le_bytes([
-        data[text_offset], data[text_offset+1], data[text_offset+2], data[text_offset+3]
+        data[text_offset],
+        data[text_offset + 1],
+        data[text_offset + 2],
+        data[text_offset + 3],
     ]) as usize;
 
     let text_data_offset = text_offset + 4;
@@ -2654,13 +2805,14 @@ fn run_import(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    let _import_text: sage::distributed_knowledge::TextStore = match bincode::deserialize(&data[text_data_offset..text_data_offset+text_len]) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Failed to parse text store: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let _import_text: sage::distributed_knowledge::TextStore =
+        match bincode::deserialize(&data[text_data_offset..text_data_offset + text_len]) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Failed to parse text store: {}", e);
+                std::process::exit(1);
+            }
+        };
 
     // Load existing brain (or create new)
     let mut knowledge = NCAKnowledge::new();
@@ -2701,14 +2853,20 @@ fn run_search(query: &str, max_results: usize, json_output: bool) {
         if json_output {
             println!("{{\"error\": \"No brain found\", \"results\": []}}");
         } else {
-            eprintln!("No brain found at {}. Run `sage chat` first to learn some facts.", brain_path);
+            eprintln!(
+                "No brain found at {}. Run `sage chat` first to learn some facts.",
+                brain_path
+            );
         }
         std::process::exit(1);
     }
 
     if let Err(e) = knowledge.load(&brain_path) {
         if json_output {
-            println!("{{\"error\": \"Failed to load brain: {}\", \"results\": []}}", e);
+            println!(
+                "{{\"error\": \"Failed to load brain: {}\", \"results\": []}}",
+                e
+            );
         } else {
             eprintln!("Failed to load brain: {}", e);
         }
@@ -2720,7 +2878,8 @@ fn run_search(query: &str, max_results: usize, json_output: bool) {
 
     if json_output {
         // JSON output
-        let json_results: Vec<serde_json::Value> = results.iter()
+        let json_results: Vec<serde_json::Value> = results
+            .iter()
             .filter(|r| r.text.is_some())
             .map(|r| {
                 serde_json::json!({
@@ -2739,12 +2898,13 @@ fn run_search(query: &str, max_results: usize, json_output: bool) {
             "total": json_results.len()
         });
 
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
+        );
     } else {
         // Human-readable output
-        let relevant: Vec<_> = results.iter()
-            .filter(|r| r.text.is_some())
-            .collect();
+        let relevant: Vec<_> = results.iter().filter(|r| r.text.is_some()).collect();
 
         if relevant.is_empty() {
             println!("No results found for: {}", query);
@@ -2869,13 +3029,22 @@ fn run_export_share(file: &str) {
         match std::fs::read(&last_export_path) {
             Ok(data) => bincode::deserialize(&data).unwrap_or_else(|_| {
                 // Create empty grid with same dimensions
-                vec![vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width]; knowledge.grid.height]
+                vec![
+                    vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width];
+                    knowledge.grid.height
+                ]
             }),
-            Err(_) => vec![vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width]; knowledge.grid.height],
+            Err(_) => vec![
+                vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width];
+                knowledge.grid.height
+            ],
         }
     } else {
         // No previous export — all cells are "new"
-        vec![vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width]; knowledge.grid.height]
+        vec![
+            vec![vec![0.0; knowledge.grid.cells[0][0].len()]; knowledge.grid.width];
+            knowledge.grid.height
+        ]
     };
 
     // Compute diff
@@ -2895,8 +3064,8 @@ fn run_export_share(file: &str) {
         &last_state,
         &knowledge.grid.cells,
         node_id.clone(),
-        0, // sequence
-        0.9, // confidence
+        0,    // sequence
+        0.9,  // confidence
         0.01, // threshold
     );
 
@@ -2958,7 +3127,10 @@ fn run_export_share(file: &str) {
     println!("   File size: {}", format_size(output.len() as u64));
     println!();
     println!("Share this file via Discord, USB, or email.");
-    println!("Recipients can import with: sage import --merge {}", file_path);
+    println!(
+        "Recipients can import with: sage import --merge {}",
+        file_path
+    );
 }
 
 /// Import a diff file (from --share export) and merge it.
@@ -2988,7 +3160,7 @@ fn run_import_merge(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    let header: SageDiffHeader = match bincode::deserialize(&data[4..4+header_len]) {
+    let header: SageDiffHeader = match bincode::deserialize(&data[4..4 + header_len]) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("Failed to parse diff header: {}", e);
@@ -2999,11 +3171,17 @@ fn run_import_merge(file: &str, weight: f64) {
     // Verify magic
     if &header.magic != b"SGDF" {
         eprintln!("Invalid .sage-diff file: bad magic bytes (expected SGDF)");
-        eprintln!("Hint: This might be a full export. Try: sage import {}", file);
+        eprintln!(
+            "Hint: This might be a full export. Try: sage import {}",
+            file
+        );
         std::process::exit(1);
     }
 
-    println!("📦 Importing diff from {} (SAGE {})", header.source_node, header.sage_version);
+    println!(
+        "📦 Importing diff from {} (SAGE {})",
+        header.source_node, header.sage_version
+    );
     println!("   Changed cells: {}", header.num_changes);
 
     // Parse diff
@@ -3013,7 +3191,10 @@ fn run_import_merge(file: &str, weight: f64) {
         std::process::exit(1);
     }
     let diff_len = u32::from_le_bytes([
-        data[diff_offset], data[diff_offset+1], data[diff_offset+2], data[diff_offset+3]
+        data[diff_offset],
+        data[diff_offset + 1],
+        data[diff_offset + 2],
+        data[diff_offset + 3],
     ]) as usize;
 
     let diff_data_offset = diff_offset + 4;
@@ -3022,13 +3203,14 @@ fn run_import_merge(file: &str, weight: f64) {
         std::process::exit(1);
     }
 
-    let diff: KnowledgeDiff = match KnowledgeDiff::from_bytes(&data[diff_data_offset..diff_data_offset+diff_len]) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Failed to parse diff: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let diff: KnowledgeDiff =
+        match KnowledgeDiff::from_bytes(&data[diff_data_offset..diff_data_offset + diff_len]) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Failed to parse diff: {}", e);
+                std::process::exit(1);
+            }
+        };
 
     // Load existing brain (or create new)
     let mut knowledge = NCAKnowledge::new();
@@ -3063,10 +3245,10 @@ fn run_import_merge(file: &str, weight: f64) {
 /// Show feedback statistics
 fn run_feedback_stats() {
     use sage::feedback::FeedbackStore;
-    
+
     let store = FeedbackStore::load_or_new();
     let summary = store.summary();
-    
+
     println!("╔══════════════════════════════════════════╗");
     println!("║         SAGE Feedback Statistics         ║");
     println!("╚══════════════════════════════════════════╝");
@@ -3074,11 +3256,17 @@ fn run_feedback_stats() {
     println!("Total queries tracked: {}", summary.total_queries);
     println!("NCA attempts:          {}", summary.nca_attempts);
     if summary.nca_attempts > 0 {
-        println!("NCA satisfaction rate: {:.1}%", summary.nca_satisfaction_rate * 100.0);
+        println!(
+            "NCA satisfaction rate: {:.1}%",
+            summary.nca_satisfaction_rate * 100.0
+        );
     }
-    println!("LLM fallback rate:     {:.1}%", summary.llm_fallback_rate * 100.0);
+    println!(
+        "LLM fallback rate:     {:.1}%",
+        summary.llm_fallback_rate * 100.0
+    );
     println!();
-    
+
     if !summary.pattern_breakdown.is_empty() {
         println!("Pattern breakdown:");
         for (pattern, stats) in &summary.pattern_breakdown {
@@ -3087,8 +3275,10 @@ fn run_feedback_stats() {
             } else {
                 0.0
             };
-            println!("  {}: {} queries, {:.1}% NCA success", 
-                pattern, stats.total_attempts, rate);
+            println!(
+                "  {}: {} queries, {:.1}% NCA success",
+                pattern, stats.total_attempts, rate
+            );
         }
     }
 }
@@ -3105,7 +3295,7 @@ fn run_feedback_submit(rating: &str) {
             num.parse::<f64>().ok().map(|n| n.clamp(-1.0, 1.0))
         }
     };
-    
+
     if let Some(_rating) = explicit_rating {
         // Note: In a real implementation, we'd need to track the last query
         // and update it with the rating. For now, we just acknowledge.
@@ -3120,7 +3310,7 @@ fn run_feedback_submit(rating: &str) {
 /// Export feedback data
 fn run_feedback_export(output: Option<&str>) {
     use sage::feedback::FeedbackStore;
-    
+
     let store = FeedbackStore::load_or_new();
     let json = match serde_json::to_string_pretty(&store) {
         Ok(j) => j,
@@ -3129,7 +3319,7 @@ fn run_feedback_export(output: Option<&str>) {
             std::process::exit(1);
         }
     };
-    
+
     if let Some(path) = output {
         match std::fs::write(path, json) {
             Ok(_) => println!("✅ Feedback exported to {}", path),
@@ -3146,21 +3336,21 @@ fn run_feedback_export(output: Option<&str>) {
 /// Prune inactive knowledge from the brain
 fn run_prune(threshold: f64, dry_run: bool) {
     let brain_path = default_brain_path();
-    
+
     if !std::path::Path::new(&brain_path).exists() {
         println!("No brain found at {}. Nothing to prune.", brain_path);
         return;
     }
-    
+
     let mut knowledge = NCAKnowledge::new();
     if let Err(e) = knowledge.load(&brain_path) {
         eprintln!("Failed to load brain: {}", e);
         std::process::exit(1);
     }
-    
+
     let before = knowledge.active_knowledge(0.0).len();
     let to_prune = knowledge.active_knowledge(threshold).len();
-    
+
     if dry_run {
         println!("🔍 Dry run — no changes will be made.");
         println!("   Active cells before: {}", before);
@@ -3168,27 +3358,31 @@ fn run_prune(threshold: f64, dry_run: bool) {
         println!("   Cells that would remain: {}", before - to_prune);
         return;
     }
-    
+
     // Zero out cells below threshold
     let mut pruned_count = 0;
     for y in 0..knowledge.grid.height {
         for x in 0..knowledge.grid.width {
             if knowledge.grid.cells[y][x][sage::grid::KNOWLEDGE_ACTIVATION] < threshold {
-                for ch in sage::grid::KNOWLEDGE_CHANNELS_START..sage::grid::KNOWLEDGE_CHANNELS_START + sage::grid::NUM_KNOWLEDGE_CHANNELS {
+                for ch in sage::grid::KNOWLEDGE_CHANNELS_START
+                    ..sage::grid::KNOWLEDGE_CHANNELS_START + sage::grid::NUM_KNOWLEDGE_CHANNELS
+                {
                     knowledge.grid.cells[y][x][ch] = 0.0;
                 }
                 pruned_count += 1;
             }
         }
     }
-    
-    
+
     if let Err(e) = knowledge.save(&brain_path) {
         eprintln!("Failed to save brain after pruning: {}", e);
         std::process::exit(1);
     }
-    
-    println!("✅ Pruned {} cells (activation < {}) from brain.", pruned_count, threshold);
+
+    println!(
+        "✅ Pruned {} cells (activation < {}) from brain.",
+        pruned_count, threshold
+    );
     println!("   Active cells before: {}", before);
     println!("   Active cells after: {}", before - pruned_count);
     println!("   Brain saved to {}", brain_path);

@@ -20,7 +20,9 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
 use diff::{merkle_hash, KnowledgeDiff};
-use gossip::{GossipError, GossipMessage, GridStateRequest, GridStateResponse, GossipTransport, PeerAnnounce};
+use gossip::{
+    GossipError, GossipMessage, GossipTransport, GridStateRequest, GridStateResponse, PeerAnnounce,
+};
 use identity::NodeIdentity;
 use privacy::{
     apply_differential_privacy, filter_local_only_channels, AggregationTracker, PiiFilter,
@@ -531,28 +533,26 @@ impl NetworkManager {
                 );
                 self.handle_grid_state_request(req, local_grid).await;
             }
-            GossipMessage::GridStateResponse(resp) => {
-                match resp {
-                    GridStateResponse::InSync => {
-                        println!("[network] Peer confirmed in-sync");
-                    }
-                    GridStateResponse::Diff(diff) => {
-                        self.handle_incoming_diff(diff, local_grid).await;
-                    }
-                    GridStateResponse::FullState {
-                        ref node_id,
-                        ref grid,
-                        confidence,
-                        ..
-                    } => {
-                        println!(
-                            "[network] Received full state from {node_id} ({} rows)",
-                            grid.len()
-                        );
-                        self.merge_full_state(grid, confidence, local_grid);
-                    }
+            GossipMessage::GridStateResponse(resp) => match resp {
+                GridStateResponse::InSync => {
+                    println!("[network] Peer confirmed in-sync");
                 }
-            }
+                GridStateResponse::Diff(diff) => {
+                    self.handle_incoming_diff(diff, local_grid).await;
+                }
+                GridStateResponse::FullState {
+                    ref node_id,
+                    ref grid,
+                    confidence,
+                    ..
+                } => {
+                    println!(
+                        "[network] Received full state from {node_id} ({} rows)",
+                        grid.len()
+                    );
+                    self.merge_full_state(grid, confidence, local_grid);
+                }
+            },
         }
     }
 
@@ -637,7 +637,11 @@ impl NetworkManager {
         let local_h = local_grid.len();
         let local_w = if local_h > 0 { local_grid[0].len() } else { 0 };
         let remote_h = remote_grid.len();
-        let remote_w = if remote_h > 0 { remote_grid[0].len() } else { 0 };
+        let remote_w = if remote_h > 0 {
+            remote_grid[0].len()
+        } else {
+            0
+        };
 
         if local_h == 0 || local_w == 0 || remote_h == 0 || remote_w == 0 {
             return;
@@ -651,9 +655,9 @@ impl NetworkManager {
                 let remote_row = (local_row * remote_h / local_h).min(remote_h - 1);
                 let remote_col = (local_col * remote_w / local_w).min(remote_w - 1);
 
-                let num_channels = local_grid[local_row][local_col].len().min(
-                    remote_grid[remote_row][remote_col].len(),
-                );
+                let num_channels = local_grid[local_row][local_col]
+                    .len()
+                    .min(remote_grid[remote_row][remote_col].len());
                 for ch in 0..num_channels {
                     if !is_shared_channel(ch) {
                         continue;

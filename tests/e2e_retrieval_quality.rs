@@ -25,13 +25,28 @@ fn test_encode_10_facts_retrieve_all() {
     let facts = [
         ("Paris is the capital of France", "Paris France capital"),
         ("Cats are furry mammals that meow", "cats mammals meow"),
-        ("Python is a programming language", "python programming language"),
+        (
+            "Python is a programming language",
+            "python programming language",
+        ),
         ("The Pacific Ocean is the largest", "Pacific Ocean largest"),
         ("Einstein developed relativity", "Einstein relativity"),
-        ("DNA contains genetic information", "DNA genetic information"),
-        ("Mount Everest is the tallest mountain", "Everest tallest mountain"),
-        ("The Nile is the longest river in Africa", "Nile longest river"),
-        ("Rust is a systems programming language", "Rust systems programming"),
+        (
+            "DNA contains genetic information",
+            "DNA genetic information",
+        ),
+        (
+            "Mount Everest is the tallest mountain",
+            "Everest tallest mountain",
+        ),
+        (
+            "The Nile is the longest river in Africa",
+            "Nile longest river",
+        ),
+        (
+            "Rust is a systems programming language",
+            "Rust systems programming",
+        ),
         ("Water freezes at zero degrees", "water freezes zero"),
     ];
 
@@ -125,7 +140,11 @@ fn test_hash_fallback_works() {
     let mut total_hits = 0;
     for fact in &facts {
         // Use first 2 words as query
-        let query: String = fact.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+        let query: String = fact
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
         let results = store.query(&query, 5);
 
         // Count any result as a "hit" for this test
@@ -209,10 +228,7 @@ fn test_retrieval_does_not_mutate_grid() {
                 if (before - after).abs() > 1e-15 {
                     mutations += 1;
                     if mutations <= 5 {
-                        eprintln!(
-                            "MUTATION at [{y}][{x}][{ch}]: {} -> {}",
-                            before, after
-                        );
+                        eprintln!("MUTATION at [{y}][{x}][{ch}]: {} -> {}", before, after);
                     }
                 }
             }
@@ -339,7 +355,9 @@ fn test_retrieval_stats_tracking() {
 
     // Initially zero
     assert_eq!(
-        stats.total_queries.load(std::sync::atomic::Ordering::Relaxed),
+        stats
+            .total_queries
+            .load(std::sync::atomic::Ordering::Relaxed),
         0
     );
 
@@ -353,7 +371,9 @@ fn test_retrieval_stats_tracking() {
 
     // Should have recorded 3 queries
     assert_eq!(
-        stats.total_queries.load(std::sync::atomic::Ordering::Relaxed),
+        stats
+            .total_queries
+            .load(std::sync::atomic::Ordering::Relaxed),
         3,
         "Should track all queries"
     );
@@ -361,9 +381,5 @@ fn test_retrieval_stats_tracking() {
     // Hit + miss should equal total
     let hits = stats.hits.load(std::sync::atomic::Ordering::Relaxed);
     let misses = stats.misses.load(std::sync::atomic::Ordering::Relaxed);
-    assert_eq!(
-        hits + misses,
-        3,
-        "hits + misses should equal total queries"
-    );
+    assert_eq!(hits + misses, 3, "hits + misses should equal total queries");
 }

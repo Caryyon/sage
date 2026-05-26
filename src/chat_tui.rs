@@ -260,7 +260,9 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
 
     // Retrieval quality stats line
     let stats = &state.retrieval_stats;
-    let total_q = stats.total_queries.load(std::sync::atomic::Ordering::Relaxed);
+    let total_q = stats
+        .total_queries
+        .load(std::sync::atomic::Ordering::Relaxed);
     let hit_rate_pct = (stats.hit_rate() * 100.0).round() as u32;
     let mean_rel = stats.mean_top_relevance();
     let stats_line = if total_q == 0 {
@@ -273,7 +275,13 @@ fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
             Span::styled("idle", Style::default().fg(DIM)),
         ])
     } else {
-        let hr_color = if hit_rate_pct >= 60 { GREEN } else if hit_rate_pct >= 30 { ORANGE } else { Color::Rgb(0xcc, 0x44, 0x44) };
+        let hr_color = if hit_rate_pct >= 60 {
+            GREEN
+        } else if hit_rate_pct >= 30 {
+            ORANGE
+        } else {
+            Color::Rgb(0xcc, 0x44, 0x44)
+        };
         Line::from(vec![
             Span::styled("hit:", Style::default().fg(DIM)),
             Span::styled(format!("{}%", hit_rate_pct), Style::default().fg(hr_color)),
@@ -674,7 +682,10 @@ fn was_node_prompted() -> bool {
     if config_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
-                return config.get("node_prompted").and_then(|v| v.as_bool()).unwrap_or(false);
+                return config
+                    .get("node_prompted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
             }
         }
     }
@@ -774,7 +785,10 @@ pub fn run(
                     eprintln!("⚠️  Could not backup old brain: {}", copy_err);
                 }
                 let _ = std::fs::remove_file(&brain_path);
-                eprintln!("⚠️  Brain file version mismatch — starting fresh. (Old brain backed up to {})", backup_path);
+                eprintln!(
+                    "⚠️  Brain file version mismatch — starting fresh. (Old brain backed up to {})",
+                    backup_path
+                );
                 eprintln!("    Reason: {}", e);
                 kloop = KnowledgeLoop::new(Arc::clone(&engine)).with_brain_path(&brain_path);
             }
@@ -1251,10 +1265,18 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
             Ok(()) => eprintln!("🧠 Brain saved to {}", brain_path),
             Err(e) => eprintln!("⚠️  Failed to save brain: {}", e),
         }
-        eprintln!("📊 Retrieval stats: {}", k.knowledge().retrieval_stats.summary());
+        eprintln!(
+            "📊 Retrieval stats: {}",
+            k.knowledge().retrieval_stats.summary()
+        );
         let (events, rel_rate, rounds) = k.retrieval_feedback_stats();
         if events > 0 {
-            eprintln!("🎯 Feedback: {} events, {:.0}% relevant, {} training rounds", events, rel_rate * 100.0, rounds);
+            eprintln!(
+                "🎯 Feedback: {} events, {:.0}% relevant, {} training rounds",
+                events,
+                rel_rate * 100.0,
+                rounds
+            );
         }
     }
 
@@ -1348,7 +1370,8 @@ fn handle_command(
                     \n  /feedback      Show retrieval feedback training stats\
                     \n  /node          Show network status\
                     \n  /quit or /exit Exit SAGE\
-                    \n\nEverything else is a chat message.".into(),
+                    \n\nEverything else is a chat message."
+                    .into(),
             });
             CommandResult::Handled
         }
@@ -1365,7 +1388,8 @@ fn handle_command(
                      └────────────────────────────────────",
                     version,
                     state.engine_name,
-                    crate::grid::GRID_SIZE, crate::grid::GRID_SIZE,
+                    crate::grid::GRID_SIZE,
+                    crate::grid::GRID_SIZE,
                     crate::grid::NUM_CHANNELS,
                     state.active_cells,
                     state.brain_path,
@@ -1414,7 +1438,9 @@ fn handle_command(
             k.mark_last_retrieval_irrelevant();
             state.messages.push(TuiChatMessage {
                 role: Role::System,
-                content: "👎 Marked last retrieval as not helpful. Retrieval will improve over time.".to_string(),
+                content:
+                    "👎 Marked last retrieval as not helpful. Retrieval will improve over time."
+                        .to_string(),
             });
             CommandResult::Handled
         }

@@ -100,7 +100,7 @@ struct MessageInput {
 /// Accept content as either a plain string or an array of content parts
 /// (OpenAI multi-modal format: [{"type": "text", "text": "..."}])
 fn deserialize_content<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    use serde::de::{self, Visitor, SeqAccess};
+    use serde::de::{self, SeqAccess, Visitor};
     use std::fmt;
 
     struct ContentVisitor;
@@ -670,11 +670,7 @@ async fn sage_brain(
 
     let normalized: Vec<Vec<f64>> = grid
         .iter()
-        .map(|row| {
-            row.iter()
-                .map(|v| (v - min_val) / range)
-                .collect()
-        })
+        .map(|row| row.iter().map(|v| (v - min_val) / range).collect())
         .collect();
 
     Ok(Json(serde_json::json!({

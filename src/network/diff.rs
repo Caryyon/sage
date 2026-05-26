@@ -265,15 +265,18 @@ impl KnowledgeDiff {
     /// Returns `Ok(())` if signature is valid.
     /// Returns `Err(SignatureError)` if missing/invalid.
     pub fn verify_signature(&self) -> Result<(), SignatureError> {
-        let public_key_bytes = self.signer_public_key.as_ref().ok_or(SignatureError::Missing)?;
+        let public_key_bytes = self
+            .signer_public_key
+            .as_ref()
+            .ok_or(SignatureError::Missing)?;
         let sig_bytes = self.signature.as_ref().ok_or(SignatureError::Missing)?;
 
         let pk_array: [u8; 32] = public_key_bytes
             .as_slice()
             .try_into()
             .map_err(|_| SignatureError::InvalidPublicKey)?;
-        let verifying_key = VerifyingKey::from_bytes(&pk_array)
-            .map_err(|_| SignatureError::InvalidPublicKey)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(&pk_array).map_err(|_| SignatureError::InvalidPublicKey)?;
 
         let sig_array: [u8; 64] = sig_bytes
             .as_slice()

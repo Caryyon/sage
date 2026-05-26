@@ -15,9 +15,13 @@
 //! matter for a given query, compared to pure cosine+proximity scoring.
 
 use super::decoder::KnowledgeActivation;
-use super::encoder::{feature_to_position, load_projection, LinearProjection, FeatureVector, NUM_EMBED_SLOTS};
+use super::encoder::{
+    feature_to_position, load_projection, FeatureVector, LinearProjection, NUM_EMBED_SLOTS,
+};
 use super::text_store::TextStore;
-use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE, MEMORY_RECENCY};
+use crate::grid::{
+    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE, MEMORY_RECENCY,
+};
 use std::sync::OnceLock;
 
 /// Lazily-loaded projection matrix, shared across all AttentionDecoder instances.
@@ -25,9 +29,7 @@ static CACHED_PROJECTION: OnceLock<Option<LinearProjection>> = OnceLock::new();
 
 /// Get the cached projection, loading it once from disk.
 fn get_cached_projection() -> Option<&'static LinearProjection> {
-    CACHED_PROJECTION
-        .get_or_init(load_projection)
-        .as_ref()
+    CACHED_PROJECTION.get_or_init(load_projection).as_ref()
 }
 
 /// Safely read knowledge activation from a cell.
@@ -676,7 +678,9 @@ impl AttentionDecoder {
         candidates.sort_by(|a, b| {
             let score_a = 0.3 * a.2 + 0.7 * a.3;
             let score_b = 0.3 * b.2 + 0.7 * b.3;
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         candidates.truncate(top_k * 3); // Get more candidates before dedup
 
@@ -780,10 +784,7 @@ mod tests {
         let results = decoder.attend(&query_features, &grid, 5);
 
         assert!(!results.is_empty(), "Should return results for query");
-        assert!(
-            results.len() <= 5,
-            "Should return at most top_k=5 results"
-        );
+        assert!(results.len() <= 5, "Should return at most top_k=5 results");
 
         // Verify results are sorted by attention weight (descending)
         for i in 1..results.len() {
@@ -939,16 +940,15 @@ mod tests {
             .flat_map(|y| (0..64).map(move |x| (x, y)))
             .filter(|&(x, y)| grid.cells[y][x][KNOWLEDGE_ACTIVATION] > 0.01)
             .collect();
-        assert!(!active_before.is_empty(), "Should have active cells after encoding");
+        assert!(
+            !active_before.is_empty(),
+            "Should have active cells after encoding"
+        );
 
         // Run delta retrieval with a query to test query-conditioning
         let query_features = encode_text("rust programming", &config);
-        let results = decoder.attend_with_delta(
-            &mut grid,
-            Some(&query_features),
-            10,
-            Some(&text_store),
-        );
+        let results =
+            decoder.attend_with_delta(&mut grid, Some(&query_features), 10, Some(&text_store));
 
         // Should find some results (cells that changed during smoothing steps)
         // Note: smooth_hidden_channels only modifies hidden channels 4-15, NOT knowledge channels (26-33).
@@ -1147,8 +1147,8 @@ mod tests {
     /// boosted when recency_weight > 0.
     #[test]
     fn test_recency_weighted_retrieval() {
-        use crate::grid::{MEMORY_RECENCY, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START};
         use crate::distributed_knowledge::encoder::NUM_EMBED_SLOTS;
+        use crate::grid::{KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, MEMORY_RECENCY};
 
         let mut grid = Grid::new(32, 32);
         let decoder_no_recency = AttentionDecoder::new(32, 32).with_recency_weight(0.0);
@@ -1187,8 +1187,10 @@ mod tests {
         assert_eq!(results_with.len(), 2, "Should find both active cells");
 
         if !results_with.is_empty() {
-            assert_eq!(results_with[0].position, cell_a,
-                "With recency weight, cell A (recent) should be top-ranked");
+            assert_eq!(
+                results_with[0].position, cell_a,
+                "With recency weight, cell A (recent) should be top-ranked"
+            );
         }
     }
 }

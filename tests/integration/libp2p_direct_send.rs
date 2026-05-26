@@ -18,15 +18,15 @@ use tokio::time::timeout;
 /// Helper: make a minimal `PeerAnnounce` for a given node ID.
 fn make_announce(node_id: &str) -> GossipMessage {
     GossipMessage::PeerAnnounce(PeerAnnounce {
-        node_id:          node_id.to_string(),
-        human_name:       node_id.to_string(),
-        public_key:       [0u8; 32],
-        state_hash:       [1u8; 32],
-        grid_width:       256,
-        grid_height:      256,
-        grid_channels:    38,
-        diff_count:       0,
-        timestamp_ms:     0,
+        node_id: node_id.to_string(),
+        human_name: node_id.to_string(),
+        public_key: [0u8; 32],
+        state_hash: [1u8; 32],
+        grid_width: 256,
+        grid_height: 256,
+        grid_channels: 38,
+        diff_count: 0,
+        timestamp_ms: 0,
         protocol_version: PeerAnnounce::CURRENT_PROTOCOL_VERSION,
     })
 }
@@ -35,13 +35,13 @@ fn make_announce(node_id: &str) -> GossipMessage {
 async fn test_direct_send_delivers_message() {
     // ── Spin up two transports ──────────────────────────────────────────────
     let config_a = Libp2pConfig {
-        listen_port:    0, // OS assigns ephemeral port
-        mdns_enabled:   false,
+        listen_port: 0, // OS assigns ephemeral port
+        mdns_enabled: false,
         bootstrap_nodes: vec![],
     };
     let config_b = Libp2pConfig {
-        listen_port:    0,
-        mdns_enabled:   false,
+        listen_port: 0,
+        mdns_enabled: false,
         bootstrap_nodes: vec![],
     };
 
@@ -75,7 +75,10 @@ async fn test_direct_send_delivers_message() {
     let msg_a = make_announce("node-a");
     let fallback_result = node_a.send_to("unknown-peer", msg_a.clone()).await;
     // Fallback to broadcast — should succeed (publish attempt, not delivery)
-    assert!(fallback_result.is_ok(), "fallback broadcast should not error: {fallback_result:?}");
+    assert!(
+        fallback_result.is_ok(),
+        "fallback broadcast should not error: {fallback_result:?}"
+    );
 
     // ── Test 2: direct send via register_peer_id ───────────────────────────
     // To test direct send without a full dialing ceremony, we check that
@@ -93,7 +96,9 @@ async fn test_direct_send_delivers_message() {
     //
     // Register a random PeerId for "node-b" and verify command enqueues cleanly.
     let dummy_peer = libp2p::PeerId::random();
-    node_a.register_peer_id("node-b".to_string(), dummy_peer).await;
+    node_a
+        .register_peer_id("node-b".to_string(), dummy_peer)
+        .await;
 
     // After registration, send_to() should route through direct_send
     // (not broadcast). The underlying request will fail with OutboundFailure
@@ -113,8 +118,8 @@ async fn test_direct_send_delivers_message() {
     let recv_result = timeout(Duration::from_millis(100), node_b.recv()).await;
     match recv_result {
         Ok(Err(_)) => {} // expected: NotStarted or channel closed
-        Err(_)     => {} // timeout: acceptable if the channel is still draining
-        Ok(Ok(_))  => panic!("should not receive on stopped transport"),
+        Err(_) => {}     // timeout: acceptable if the channel is still draining
+        Ok(Ok(_)) => panic!("should not receive on stopped transport"),
     }
 
     node_a.stop().await.expect("node_a stop");
@@ -123,8 +128,8 @@ async fn test_direct_send_delivers_message() {
 #[tokio::test]
 async fn test_register_peer_id_overwrites() {
     let config = Libp2pConfig {
-        listen_port:    0,
-        mdns_enabled:   false,
+        listen_port: 0,
+        mdns_enabled: false,
         bootstrap_nodes: vec![],
     };
     let transport = Libp2pTransport::new(config, None);
@@ -135,14 +140,21 @@ async fn test_register_peer_id_overwrites() {
     let peer_b = libp2p::PeerId::random();
 
     // Register, then overwrite
-    transport.register_peer_id("sage-node-1".to_string(), peer_a).await;
-    transport.register_peer_id("sage-node-1".to_string(), peer_b).await;
+    transport
+        .register_peer_id("sage-node-1".to_string(), peer_a)
+        .await;
+    transport
+        .register_peer_id("sage-node-1".to_string(), peer_b)
+        .await;
 
     // send_to should use peer_b now (command enqueues without error)
     let result = transport
         .send_to("sage-node-1", make_announce("sage-node-1"))
         .await;
-    assert!(result.is_ok(), "send after re-register should succeed: {result:?}");
+    assert!(
+        result.is_ok(),
+        "send after re-register should succeed: {result:?}"
+    );
 
     transport.stop().await.expect("stop");
 }

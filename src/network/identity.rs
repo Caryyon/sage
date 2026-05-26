@@ -17,19 +17,19 @@ use std::path::{Path, PathBuf};
 // 50 adjectives × 50 nouns = 2500 combinations
 
 const ADJECTIVES: &[&str] = &[
-    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure",
-    "rare", "sage", "warm", "wise", "zest", "amber", "azure", "coral", "dusty", "faded",
-    "golden", "hazy", "ivory", "jade", "lapis", "maple", "noble", "olive", "pearl", "quiet",
-    "rosy", "silken", "tawny", "urban", "velvet", "wild", "young", "agile", "brave", "clear",
-    "dusk", "eager", "fleet", "gentle", "humble", "inner", "jolly", "kindred", "lively", "merry",
+    "swift", "calm", "bold", "bright", "deep", "fair", "glad", "keen", "mild", "pure", "rare",
+    "sage", "warm", "wise", "zest", "amber", "azure", "coral", "dusty", "faded", "golden", "hazy",
+    "ivory", "jade", "lapis", "maple", "noble", "olive", "pearl", "quiet", "rosy", "silken",
+    "tawny", "urban", "velvet", "wild", "young", "agile", "brave", "clear", "dusk", "eager",
+    "fleet", "gentle", "humble", "inner", "jolly", "kindred", "lively", "merry",
 ];
 
 const NOUNS: &[&str] = &[
     "harbor", "ridge", "creek", "grove", "haven", "brook", "cliff", "delta", "forge", "glade",
-    "hill", "inlet", "knoll", "lake", "marsh", "nexus", "oasis", "peak", "quay", "river",
-    "shore", "trail", "vale", "wharf", "zenith", "anchor", "beacon", "canyon", "drift", "ember",
-    "fjord", "glacier", "hollow", "island", "jetty", "kelp", "ledge", "meadow", "north", "orbit",
-    "prism", "quest", "reef", "summit", "tundra", "union", "vista", "woods", "yard", "zone",
+    "hill", "inlet", "knoll", "lake", "marsh", "nexus", "oasis", "peak", "quay", "river", "shore",
+    "trail", "vale", "wharf", "zenith", "anchor", "beacon", "canyon", "drift", "ember", "fjord",
+    "glacier", "hollow", "island", "jetty", "kelp", "ledge", "meadow", "north", "orbit", "prism",
+    "quest", "reef", "summit", "tundra", "union", "vista", "woods", "yard", "zone",
 ];
 
 /// Generate a human-readable name from a seed (deterministic).
@@ -203,7 +203,6 @@ impl NodeIdentity {
     }
 }
 
-
 /// Default path for node name file.
 fn default_name_path() -> PathBuf {
     let home = dirs::home_dir().expect("could not determine home directory");
@@ -285,7 +284,11 @@ mod tests {
         let seed = [42u8; 32];
         let name = generate_human_name(&seed);
         // Should be adjective-noun format
-        assert!(name.contains('-'), "human name should contain hyphen: {}", name);
+        assert!(
+            name.contains('-'),
+            "human name should contain hyphen: {}",
+            name
+        );
         let parts: Vec<_> = name.split('-').collect();
         assert_eq!(parts.len(), 2, "human name should have exactly 2 parts");
         assert!(!parts[0].is_empty(), "adjective should not be empty");
@@ -303,8 +306,15 @@ mod tests {
     #[test]
     fn test_identity_has_human_name() {
         let id = NodeIdentity::generate();
-        assert!(!id.human_name.is_empty(), "identity should have a human name");
-        assert!(id.human_name.contains('-'), "human name should be adjective-noun: {}", id.human_name);
+        assert!(
+            !id.human_name.is_empty(),
+            "identity should have a human name"
+        );
+        assert!(
+            id.human_name.contains('-'),
+            "human name should be adjective-noun: {}",
+            id.human_name
+        );
     }
 
     /// Public key must be the real Ed25519 verifying key for the given seed.
@@ -313,7 +323,10 @@ mod tests {
         let seed = [42u8; 32];
         let id = NodeIdentity::from_seed(seed);
         let expected_pk = *SigningKey::from_bytes(&seed).verifying_key().as_bytes();
-        assert_eq!(id.public_key, expected_pk, "public_key must be real Ed25519 verifying key");
+        assert_eq!(
+            id.public_key, expected_pk,
+            "public_key must be real Ed25519 verifying key"
+        );
     }
 
     /// `to_libp2p_keypair()` must produce the same PeerId every time for the same seed.

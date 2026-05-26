@@ -69,7 +69,10 @@ fn test_attention_decoder_spatial_gating() {
     let query_features = encode_text("artificial intelligence", &config);
     let results = decoder.attend_with_spatial_gate(&query_features, &grid, 5, 32);
 
-    assert!(!results.is_empty(), "Spatial gated query should return results");
+    assert!(
+        !results.is_empty(),
+        "Spatial gated query should return results"
+    );
 
     // Results should be sorted by attention weight
     for i in 1..results.len() {

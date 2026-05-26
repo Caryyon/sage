@@ -534,9 +534,7 @@ impl NcaPredictor {
 
             // Stop if predicted token is a sentence-ending punctuation
             if let Some(token_str) = self.tokenizer.id_to_token.get(next_id) {
-                if token_str.ends_with('.')
-                    || token_str.ends_with('?')
-                    || token_str.ends_with('!')
+                if token_str.ends_with('.') || token_str.ends_with('?') || token_str.ends_with('!')
                 {
                     break;
                 }

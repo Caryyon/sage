@@ -2,39 +2,50 @@
 
 Thank you for your interest! SAGE is built by the community.
 
-## Getting Started
+## Quick Start
 
-1. Fork the repo
-2. Clone your fork
-3. Build: `cargo build`
-4. Test: `cargo test --lib`
+See [docs/getting-started/contributing.md](docs/getting-started/contributing.md) for the full guide — environment setup, project structure, test commands, example authoring, and areas needing help.
 
-## Development
+## TL;DR
 
-### Adding Features
+```bash
+# Build
+cargo build --release
+
+# Test (fast)
+cargo test --lib
+
+# Check style
+cargo fmt
+cargo clippy --all-targets
+
+# Try an example
+cargo run --example simple-chat
+```
+
+## Before Contributing
+
+- Read [ARCHITECTURE.md](ARCHITECTURE.md) for system overview
+- Read [ROADMAP.md](ROADMAP.md) for current direction
 - Open an issue first for large changes
 - Write tests for new code
-- Update docs if needed
-
-### Code Style
-- Follow `rustfmt`
-- Run `cargo clippy` before committing
-- Keep functions small and focused
-
-### Testing
-- Unit tests: `cargo test --lib`
-- Integration tests: `cargo test --test integration`
-- Benchmarks: `cargo bench`
+- Update docs if behavior changes
 
 ## Areas Needing Help
 
-- [ ] NCA predictor training (bigger corpus)
-- [ ] Mobile/browser support (WASM)
-- [ ] Documentation (tutorials, examples)
-- [ ] Performance optimization (Pi 4)
-- [ ] UI/UX (TUI improvements)
+- **Documentation** — Tutorials, API docs, architecture explainers
+- **Examples** — Build something cool, show others how
+- **Performance** — Profile and optimize grid operations  
+- **Platform support** — WASM, Raspberry Pi optimizations
+- **Networking** — libp2p improvements, NAT traversal
+- **Tests** — More edge cases, property-based tests
 
 ## Community
 
-- Discord: https://discord.gg/U999zZUuUV
-- GitHub Issues: Bug reports, feature requests
+- **Discord:** https://discord.gg/U999zZUuUV
+- **GitHub Issues:** Bug reports, feature requests, discussions
+- **Network Dashboard:** https://whatssage.ai/network
+
+## License
+
+MIT — your contributions are yours, the project stays free and open.

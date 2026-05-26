@@ -58,10 +58,7 @@ impl TestNode {
 
     /// Gossip: serialise the diff from an empty grid and broadcast it.
     fn gossip_out(&self, bus: &GossipBus) {
-        let empty = sage::grid::Grid::new(
-            self.knowledge.grid.width,
-            self.knowledge.grid.height,
-        );
+        let empty = sage::grid::Grid::new(self.knowledge.grid.width, self.knowledge.grid.height);
         let delta = self.knowledge.diff(&empty);
         // Serialize the delta with bincode
         match bincode::serialize(&delta) {
@@ -81,7 +78,10 @@ impl TestNode {
                     self.knowledge.apply_delta(&delta);
                 }
                 Err(e) => {
-                    eprintln!("[node {}] Deserialization error from node {sender}: {e}", self.id);
+                    eprintln!(
+                        "[node {}] Deserialization error from node {sender}: {e}",
+                        self.id
+                    );
                 }
             }
         }

@@ -36,10 +36,10 @@ use super::gossip::{GossipError, GossipMessage, GossipTransport, TOPIC_KNOWLEDGE
 /// Combined libp2p behaviour: GossipSub + mDNS + Kademlia + Identify + DirectSend.
 #[derive(NetworkBehaviour)]
 pub struct SageBehaviour {
-    pub gossipsub:   gossipsub::Behaviour,
-    pub mdns:        mdns::tokio::Behaviour,
-    pub kademlia:    kad::Behaviour<kad::store::MemoryStore>,
-    pub identify:    identify::Behaviour,
+    pub gossipsub: gossipsub::Behaviour,
+    pub mdns: mdns::tokio::Behaviour,
+    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub identify: identify::Behaviour,
     /// Request-response behaviour for direct peer-to-peer messages.
     pub direct_send: DirectSendBehaviour,
 }
@@ -52,16 +52,16 @@ pub struct SageBehaviour {
 /// This struct is constructed once in main and passed directly to `Libp2pTransport`.
 #[derive(Debug)]
 pub struct Libp2pConfig {
-    pub listen_port:    u16,
-    pub mdns_enabled:   bool,
+    pub listen_port: u16,
+    pub mdns_enabled: bool,
     pub bootstrap_nodes: Vec<String>,
 }
 
 impl Default for Libp2pConfig {
     fn default() -> Self {
         Self {
-            listen_port:    0,
-            mdns_enabled:   true,
+            listen_port: 0,
+            mdns_enabled: true,
             bootstrap_nodes: Vec::new(),
         }
     }
@@ -72,7 +72,10 @@ impl Default for Libp2pConfig {
 enum SwarmCommand {
     Broadcast(Vec<u8>),
     /// Send directly to a known libp2p PeerId.
-    SendTo { peer: PeerId, data: Vec<u8> },
+    SendTo {
+        peer: PeerId,
+        data: Vec<u8>,
+    },
     Stop,
 }
 
@@ -177,9 +180,9 @@ impl GossipTransport for Libp2pTransport {
 
                 Ok(SageBehaviour {
                     gossipsub: gossipsub_behaviour,
-                    mdns:      mdns_behaviour,
+                    mdns: mdns_behaviour,
                     kademlia,
-                    identify:  identify_behaviour,
+                    identify: identify_behaviour,
                     direct_send,
                 })
             })
@@ -216,8 +219,8 @@ impl GossipTransport for Libp2pTransport {
         // Create channels
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SwarmCommand>(256);
         let (incoming_tx, incoming_rx) = mpsc::channel::<(String, GossipMessage)>(256);
-        let peers        = Arc::clone(&self.peers);
-        let peer_id_map  = Arc::clone(&self.peer_id_map);
+        let peers = Arc::clone(&self.peers);
+        let peer_id_map = Arc::clone(&self.peer_id_map);
         let running_flag = Arc::clone(&self.running);
         let mdns_enabled = self.config.mdns_enabled;
 
@@ -356,7 +359,7 @@ impl GossipTransport for Libp2pTransport {
         });
 
         // Store channels
-        *self.cmd_tx.lock().await      = Some(cmd_tx);
+        *self.cmd_tx.lock().await = Some(cmd_tx);
         *self.incoming_rx.lock().await = Some(incoming_rx);
         *self.task_handle.lock().await = Some(handle);
         *running = true;

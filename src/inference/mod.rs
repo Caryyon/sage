@@ -73,7 +73,10 @@ pub enum ChatRole {
 #[derive(Clone, Debug)]
 pub enum GenerationBackend {
     /// Local llama.cpp model
-    Local { model_name: String, model_size: String },
+    Local {
+        model_name: String,
+        model_size: String,
+    },
     /// Ollama with model name
     Ollama { model: String },
     /// Embedded SmolLM2 via candle
@@ -85,7 +88,10 @@ pub enum GenerationBackend {
 impl std::fmt::Display for GenerationBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GenerationBackend::Local { model_name, model_size } => {
+            GenerationBackend::Local {
+                model_name,
+                model_size,
+            } => {
                 write!(f, "local ({}, {})", model_name, model_size)
             }
             GenerationBackend::Ollama { model } => {

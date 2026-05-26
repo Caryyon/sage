@@ -153,19 +153,13 @@ fn test_node_handles_port_conflict_gracefully() {
 
     // Bind to a port to create a conflict
     let port = find_available_port(14001);
-    let listener = std::net::TcpListener::bind(format!("0.0.0.0:{}", port))
-        .expect("Failed to bind test port");
+    let listener =
+        std::net::TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind test port");
 
     // Try to start a SAGE node on the same port (foreground mode with timeout)
     let output = Command::new(env!("CARGO_BIN_EXE_sage-cli"))
         .env("SAGE_HOME", &home)
-        .args([
-            "node",
-            "start",
-            "--foreground",
-            "--port",
-            &port.to_string(),
-        ])
+        .args(["node", "start", "--foreground", "--port", &port.to_string()])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();

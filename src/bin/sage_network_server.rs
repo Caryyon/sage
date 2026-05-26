@@ -7,11 +7,13 @@
  * Usage: sage-network-server [--port 3001] [--sage-api http://localhost:19176]
  */
 use axum::{
-    routing::{get, post},
-    Router, Json, extract::State,
+    extract::State,
     http::StatusCode,
     response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
 };
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -19,7 +21,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{interval, Duration};
 use tower_http::cors::CorsLayer;
-use clap::Parser;
 
 const DEFAULT_PORT: u16 = 3001;
 const DEFAULT_SAGE_API: &str = "http://localhost:19176";
@@ -33,7 +34,7 @@ struct NodeStats {
     peers: usize,
     patterns: usize,
     grid_utilization: f32, // 0.0 - 1.0
-    last_seen: u64, // unix timestamp
+    last_seen: u64,        // unix timestamp
     uptime_seconds: u64,
     contribution_tier: String, // "seedling", "sprout", "grove", "forest"
     /// Retrieval quality metrics (optional, from /STATUS endpoint)
@@ -95,11 +96,11 @@ struct Args {
     /// Port to serve on
     #[arg(short, long, default_value_t = DEFAULT_PORT)]
     port: u16,
-    
+
     /// SAGE API URL to poll for stats
     #[arg(short, long, default_value = DEFAULT_SAGE_API)]
     sage_api: String,
-    
+
     /// Poll interval in seconds
     #[arg(long, default_value_t = 30)]
     poll_interval: u64,
@@ -116,11 +117,11 @@ async fn health() -> impl IntoResponse {
 // GET /api/v1/network/stats - Aggregate network stats
 async fn get_network_stats(State(state): State<AppState>) -> impl IntoResponse {
     let nodes = state.nodes.lock().unwrap();
-    
+
     let online = nodes.values().filter(|n| n.status == "online").count();
     let total_patterns: usize = nodes.values().map(|n| n.patterns).sum();
     let active_peers: usize = nodes.values().map(|n| n.peers).sum();
-    
+
     let stats = NetworkStats {
         total_nodes: nodes.len(),
         online_nodes: online,
@@ -128,7 +129,7 @@ async fn get_network_stats(State(state): State<AppState>) -> impl IntoResponse {
         active_peers,
         last_updated: now(),
     };
-    
+
     Json(stats)
 }
 
@@ -145,12 +146,15 @@ async fn get_node(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let nodes = state.nodes.lock().unwrap();
-    
+
     match nodes.get(&node_id) {
         Some(node) => (StatusCode::OK, Json(serde_json::json!(node))),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "Node not found"
-        })))
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "Node not found"
+            })),
+        ),
     }
 }
 
@@ -175,30 +179,32 @@ async fn get_router_stats() -> impl IntoResponse {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".sage")
         .join("intelligent_router.json");
-    
+
     match std::fs::read_to_string(&router_path) {
-        Ok(json) => {
-            match serde_json::from_str::<serde_json::Value>(&json) {
-                Ok(stats) => (StatusCode::OK, Json(stats)),
-                Err(e) => {
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                        "error": format!("Failed to parse router stats: {}", e)
-                    })))
-                }
-            }
-        }
+        Ok(json) => match serde_json::from_str::<serde_json::Value>(&json) {
+            Ok(stats) => (StatusCode::OK, Json(stats)),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to parse router stats: {}", e)
+                })),
+            ),
+        },
         Err(e) => {
             // No router stats yet - return empty structure
-            (StatusCode::OK, Json(serde_json::json!({
-                "pattern_stats": {},
-                "min_attempts_for_learning": 10,
-                "use_learning": true,
-                "default_complexity": "Moderate",
-                "nca_available": false,
-                "exploration_rate": 0.1,
-                "status": "no_data",
-                "message": format!("No router stats found yet: {}", e)
-            })))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "pattern_stats": {},
+                    "min_attempts_for_learning": 10,
+                    "use_learning": true,
+                    "default_complexity": "Moderate",
+                    "nca_available": false,
+                    "exploration_rate": 0.1,
+                    "status": "no_data",
+                    "message": format!("No router stats found yet: {}", e)
+                })),
+            )
         }
     }
 }
@@ -220,7 +226,7 @@ async fn node_ping(
     Json(req): Json<PingRequest>,
 ) -> impl IntoResponse {
     let mut nodes = state.nodes.lock().unwrap();
-    
+
     // Determine contribution tier based on patterns
     let tier = if req.patterns > 10000 {
         "forest"
@@ -231,7 +237,7 @@ async fn node_ping(
     } else {
         "seedling"
     };
-    
+
     let node = NodeStats {
         id: req.node_id.clone(),
         name: req.name.clone(),
@@ -245,24 +251,27 @@ async fn node_ping(
         contribution_tier: tier.to_string(),
         retrieval: None,
     };
-    
+
     nodes.insert(req.node_id.clone(), node);
-    
+
     // Log activity
     let mut activities = state.activities.lock().unwrap();
     activities.push(ActivityEvent {
         timestamp: now(),
         node_id: req.node_id.clone(),
         event_type: "ping".to_string(),
-        details: format!("Node {} checked in with {} patterns", req.name, req.patterns),
+        details: format!(
+            "Node {} checked in with {} patterns",
+            req.name, req.patterns
+        ),
         severity: "info".to_string(),
     });
-    
+
     // Keep only last 1000 events
     if activities.len() > 1000 {
         activities.remove(0);
     }
-    
+
     Json(serde_json::json!({
         "status": "ok",
         "tier": tier
@@ -273,31 +282,38 @@ async fn node_ping(
 async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
     let client = reqwest::Client::new();
     let mut interval = interval(Duration::from_secs(poll_interval_secs));
-    
+
     loop {
         interval.tick().await;
-        
+
         // Try to get status from local SAGE API
-        match client.get(format!("{}/v1/sage/status", state.sage_api_url)).send().await {
+        match client
+            .get(format!("{}/v1/sage/status", state.sage_api_url))
+            .send()
+            .await
+        {
             Ok(resp) => {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     // Extract stats from response
-                    let node_id = json.get("node_id")
+                    let node_id = json
+                        .get("node_id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("local")
                         .to_string();
-                    
-                    let patterns = json.get("patterns_matched")
+
+                    let patterns = json
+                        .get("patterns_matched")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0) as usize;
-                    
-                    let grid_active = json.get("grid_active_cells")
+
+                    let grid_active = json
+                        .get("grid_active_cells")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0) as usize;
-                    
+
                     let grid_total = 65536; // 256x256
                     let utilization = grid_active as f32 / grid_total as f32;
-                    
+
                     // Extract retrieval quality metrics if present
                     let retrieval = json.get("retrieval").and_then(|r| {
                         Some(RetrievalMetrics {
@@ -310,22 +326,34 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
                             relevance_excellent: r.get("relevance_excellent")?.as_u64()?,
                         })
                     });
-                    
+
                     let mut nodes = state.nodes.lock().unwrap();
-                    nodes.insert(node_id.clone(), NodeStats {
-                        id: node_id.clone(),
-                        name: "Local Node".to_string(),
-                        version: json.get("version").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
-                        status: "online".to_string(),
-                        peers: json.get("peer_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                        patterns,
-                        grid_utilization: utilization,
-                        last_seen: now(),
-                        uptime_seconds: 0,
-                        contribution_tier: if patterns > 1000 { "grove".to_string() } else { "seedling".to_string() },
-                        retrieval,
-                    });
-                    
+                    nodes.insert(
+                        node_id.clone(),
+                        NodeStats {
+                            id: node_id.clone(),
+                            name: "Local Node".to_string(),
+                            version: json
+                                .get("version")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string(),
+                            status: "online".to_string(),
+                            peers: json.get("peer_count").and_then(|v| v.as_u64()).unwrap_or(0)
+                                as usize,
+                            patterns,
+                            grid_utilization: utilization,
+                            last_seen: now(),
+                            uptime_seconds: 0,
+                            contribution_tier: if patterns > 1000 {
+                                "grove".to_string()
+                            } else {
+                                "seedling".to_string()
+                            },
+                            retrieval,
+                        },
+                    );
+
                     // Log successful poll
                     let mut activities = state.activities.lock().unwrap();
                     activities.push(ActivityEvent {
@@ -335,7 +363,7 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
                         details: format!("Polled local node: {} patterns", patterns),
                         severity: "info".to_string(),
                     });
-                    
+
                     if activities.len() > 1000 {
                         activities.remove(0);
                     }
@@ -343,7 +371,7 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
             }
             Err(e) => {
                 eprintln!("Failed to poll SAGE node: {}", e);
-                
+
                 // Log error
                 let mut activities = state.activities.lock().unwrap();
                 activities.push(ActivityEvent {
@@ -353,13 +381,13 @@ async fn poll_sage_node(state: AppState, poll_interval_secs: u64) {
                     details: format!("Failed to connect to stats API: {}", e),
                     severity: "error".to_string(),
                 });
-                
+
                 if activities.len() > 1000 {
                     activities.remove(0);
                 }
             }
         }
-        
+
         // Clean up stale nodes (not seen in 5 minutes)
         let mut nodes = state.nodes.lock().unwrap();
         let cutoff = now() - 300;
@@ -377,26 +405,26 @@ fn now() -> u64 {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    
+
     println!("🌐 SAGE Network Stats Server");
     println!("   Port: {}", args.port);
     println!("   SAGE API: {}", args.sage_api);
     println!("   Poll interval: {}s", args.poll_interval);
     println!();
-    
+
     let state = AppState {
         nodes: Arc::new(Mutex::new(HashMap::new())),
         activities: Arc::new(Mutex::new(Vec::new())),
         pending: Arc::new(Mutex::new(Vec::new())),
         sage_api_url: args.sage_api.clone(),
     };
-    
+
     // Start background polling task
     let poll_state = state.clone();
     tokio::spawn(async move {
         poll_sage_node(poll_state, args.poll_interval).await;
     });
-    
+
     // Build router with CORS
     let app = Router::new()
         .route("/health", get(health))
@@ -409,10 +437,10 @@ async fn main() {
         .route("/api/v1/router/stats", get(get_router_stats))
         .layer(CorsLayer::permissive())
         .with_state(state);
-    
+
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
     println!("🚀 Server running on http://{}", addr);
-    
+
     // Start server using tokio
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("🚀 Server running on http://{}", addr);

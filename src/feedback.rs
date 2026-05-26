@@ -84,10 +84,10 @@ impl FeedbackStore {
     /// Record a new feedback event
     pub fn record(&mut self, event: FeedbackEvent) {
         let pattern_key = format!("{:?}", event.pattern);
-        
+
         let stats = self.pattern_stats.entry(pattern_key).or_default();
         stats.total_attempts += 1;
-        
+
         if let Some(satisfied) = event.nca_satisfied {
             if satisfied {
                 stats.nca_satisfactory += 1;
@@ -95,20 +95,20 @@ impl FeedbackStore {
                 stats.nca_unsatisfactory += 1;
             }
         }
-        
+
         if event.llm_used {
             stats.llm_fallbacks += 1;
         }
-        
+
         if let Some(rating) = event.explicit_rating {
             // Update running average
             let n = stats.total_attempts as f64;
             stats.avg_rating = (stats.avg_rating * (n - 1.0) + rating) / n;
         }
-        
+
         self.events.push(event);
         self.total_events += 1;
-        
+
         // Auto-save every 10 events
         if self.total_events.is_multiple_of(10) {
             let _ = self.save();
@@ -131,9 +131,13 @@ impl FeedbackStore {
     /// Overall statistics for display
     pub fn summary(&self) -> FeedbackSummary {
         let total_nca = self.events.iter().filter(|e| e.nca_attempted).count();
-        let satisfied_nca = self.events.iter().filter(|e| e.nca_satisfied == Some(true)).count();
+        let satisfied_nca = self
+            .events
+            .iter()
+            .filter(|e| e.nca_satisfied == Some(true))
+            .count();
         let llm_fallbacks = self.events.iter().filter(|e| e.llm_used).count();
-        
+
         FeedbackSummary {
             total_queries: self.events.len(),
             nca_attempts: total_nca,
@@ -195,7 +199,7 @@ impl FeedbackCollector {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         self.pending_event = Some(FeedbackEvent {
             timestamp,
             query,
@@ -270,7 +274,7 @@ mod tests {
             response_time_ms: 150,
             explicit_rating: Some(0.8),
         };
-        
+
         assert_eq!(event.query, "What is Rust?");
         assert!(event.nca_satisfied.unwrap());
     }
@@ -279,10 +283,10 @@ mod tests {
     fn test_pattern_stats_update() {
         let mut stats = PatternStats::default();
         assert_eq!(stats.total_attempts, 0);
-        
+
         stats.total_attempts += 1;
         stats.nca_satisfactory += 1;
-        
+
         assert_eq!(stats.total_attempts, 1);
         assert_eq!(stats.nca_satisfactory, 1);
     }
@@ -290,16 +294,16 @@ mod tests {
     #[test]
     fn test_collector_flow() {
         let mut collector = FeedbackCollector::new();
-        
+
         collector.start_query(
             "How does SAGE work?".to_string(),
             QueryPattern::Procedural,
             true,
         );
-        
+
         collector.mark_nca_success();
         collector.complete(200);
-        
+
         let summary = collector.summary();
         assert_eq!(summary.total_queries, 1);
         assert_eq!(summary.nca_attempts, 1);

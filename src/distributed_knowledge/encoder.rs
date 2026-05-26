@@ -10,9 +10,7 @@
 //! Spatial locality: related knowledge clusters in nearby cells.
 
 use super::embedder;
-use crate::grid::{
-    Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE,
-};
+use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{Read as IoRead, Write as IoWrite};
@@ -313,9 +311,9 @@ impl LinearProjection {
             std::fs::create_dir_all(parent)?;
         }
         let mut f = std::fs::File::create(&expanded)?;
-        f.write_all(b"SAGP")?;                            // magic
-        f.write_all(&1u32.to_le_bytes())?;                // version
-        f.write_all(&(self.dim as u32).to_le_bytes())?;   // dim
+        f.write_all(b"SAGP")?; // magic
+        f.write_all(&1u32.to_le_bytes())?; // version
+        f.write_all(&(self.dim as u32).to_le_bytes())?; // dim
         for &w in &self.weights {
             f.write_all(&w.to_le_bytes())?;
         }
@@ -513,17 +511,15 @@ pub fn encode_text_hash(text: &str, config: &EncoderConfig) -> FeatureVector {
 
 /// Common English stopwords that should have low IDF weight
 const STOPWORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
-    "may", "might", "must", "shall", "can", "need", "dare", "ought", "used",
-    "to", "of", "in", "for", "on", "with", "at", "by", "from", "up", "about",
-    "into", "over", "after", "beneath", "under", "above", "it", "this", "that",
-    "and", "but", "or", "nor", "so", "yet", "both", "either", "neither",
-    "not", "only", "own", "same", "than", "too", "very", "just", "also",
-    "i", "me", "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
-    "they", "them", "their", "what", "which", "who", "whom", "where", "when", "why", "how",
-    "all", "each", "every", "both", "few", "more", "most", "other", "some", "such",
-    "no", "nor", "not", "only", "own", "same", "than", "too", "very",
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+    "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+    "from", "up", "about", "into", "over", "after", "beneath", "under", "above", "it", "this",
+    "that", "and", "but", "or", "nor", "so", "yet", "both", "either", "neither", "not", "only",
+    "own", "same", "than", "too", "very", "just", "also", "i", "me", "my", "we", "our", "you",
+    "your", "he", "him", "his", "she", "her", "they", "them", "their", "what", "which", "who",
+    "whom", "where", "when", "why", "how", "all", "each", "every", "both", "few", "more", "most",
+    "other", "some", "such", "no", "nor", "not", "only", "own", "same", "than", "too", "very",
     "as", "if", "then", "because", "while", "although", "though", "even",
 ];
 
@@ -621,19 +617,9 @@ pub fn feature_to_position(
 
     // X address: weighted mix of even-index dims (0,2,4,6,8,10)
     // Weights sum to ~1.0 for normalised input
-    let fx_raw = f(0) * 0.30
-        + f(2) * 0.22
-        + f(4) * 0.17
-        + f(6) * 0.13
-        + f(8) * 0.10
-        + f(10) * 0.08;
+    let fx_raw = f(0) * 0.30 + f(2) * 0.22 + f(4) * 0.17 + f(6) * 0.13 + f(8) * 0.10 + f(10) * 0.08;
     // Y address: weighted mix of odd-index dims (1,3,5,7,9,11)
-    let fy_raw = f(1) * 0.30
-        + f(3) * 0.22
-        + f(5) * 0.17
-        + f(7) * 0.13
-        + f(9) * 0.10
-        + f(11) * 0.08;
+    let fy_raw = f(1) * 0.30 + f(3) * 0.22 + f(5) * 0.17 + f(7) * 0.13 + f(9) * 0.10 + f(11) * 0.08;
 
     // Map [-1, 1] → [0, 1]
     let fx = (fx_raw.clamp(-1.0, 1.0) + 1.0) / 2.0;
@@ -673,7 +659,14 @@ pub fn feature_to_secondary_positions(
         // Secondary 2: reversed even dims + blend
         (f(10), f(8), f(6), f(11), f(9), f(7)),
         // Secondary 3: combined XOR-like mix of dims 0-11
-        (f(0) * f(6), f(2) * f(8), f(4) * f(10), f(1) * f(7), f(3) * f(9), f(5) * f(11)),
+        (
+            f(0) * f(6),
+            f(2) * f(8),
+            f(4) * f(10),
+            f(1) * f(7),
+            f(3) * f(9),
+            f(5) * f(11),
+        ),
     ];
 
     let mut positions = Vec::with_capacity(max_secondary.min(subsets.len()));
@@ -715,8 +708,12 @@ pub fn write_knowledge(
         && grid.cells[primary.1][primary.0][KNOWLEDGE_ACTIVATION] > COLLISION_THRESHOLD
     {
         // Primary is occupied — try secondary positions
-        let secondaries =
-            feature_to_secondary_positions(features, grid.width, grid.height, config.num_hash_positions - 1);
+        let secondaries = feature_to_secondary_positions(
+            features,
+            grid.width,
+            grid.height,
+            config.num_hash_positions - 1,
+        );
         let mut chosen = primary;
         let mut min_act = grid.cells[primary.1][primary.0][KNOWLEDGE_ACTIVATION];
         for (sx, sy) in &secondaries {
@@ -930,7 +927,10 @@ mod tests {
         assert!(
             x1 != x2 || y1 != y2,
             "12-dim hash should differentiate vectors that differ in dims 6-11: ({},{}) == ({},{})",
-            x1, y1, x2, y2
+            x1,
+            y1,
+            x2,
+            y2
         );
     }
 
@@ -1006,8 +1006,7 @@ mod tests {
 
         let features = encode_text_hash("test secondary hashing", &config);
         let primary = feature_to_position(&features, GRID_SIZE, GRID_SIZE);
-        let secondaries =
-            feature_to_secondary_positions(&features, GRID_SIZE, GRID_SIZE, 3);
+        let secondaries = feature_to_secondary_positions(&features, GRID_SIZE, GRID_SIZE, 3);
 
         // All positions must be in bounds
         for (x, y) in &secondaries {
@@ -1088,7 +1087,10 @@ mod tests {
             ("Rust is a systems programming language", "Rust programming"),
             ("The sun is a yellow dwarf star", "sun star"),
             ("Water boils at 100 degrees Celsius", "water boils"),
-            ("Einstein developed the theory of relativity", "Einstein relativity"),
+            (
+                "Einstein developed the theory of relativity",
+                "Einstein relativity",
+            ),
             ("The Pacific is the largest ocean", "Pacific ocean"),
             ("DNA contains genetic information", "DNA genetic"),
             ("Mount Everest is the tallest mountain", "Everest mountain"),
@@ -1117,12 +1119,12 @@ mod tests {
         // For each fact, retrieve with its key query and check if we get it back
         let mut hits = 0;
         for (fact, query) in &facts {
-            let results =
-                query_knowledge_with_text(&grid, query, &config, 10, Some(&text_store));
+            let results = query_knowledge_with_text(&grid, query, &config, 10, Some(&text_store));
 
-            if results.iter().any(|r| {
-                r.text.as_ref().map(|t| t == *fact).unwrap_or(false)
-            }) {
+            if results
+                .iter()
+                .any(|r| r.text.as_ref().map(|t| t == *fact).unwrap_or(false))
+            {
                 hits += 1;
             }
         }
@@ -1154,20 +1156,30 @@ mod tests {
         let f_content = encode_text_hash(content_heavy, &config);
 
         // Content-heavy should have higher variance (more distinctive features)
-        let var_stop: f64 = f_stop.values.iter().map(|v| v * v).sum::<f64>() / f_stop.values.len() as f64;
-        let var_content: f64 = f_content.values.iter().map(|v| v * v).sum::<f64>() / f_content.values.len() as f64;
+        let var_stop: f64 =
+            f_stop.values.iter().map(|v| v * v).sum::<f64>() / f_stop.values.len() as f64;
+        let var_content: f64 =
+            f_content.values.iter().map(|v| v * v).sum::<f64>() / f_content.values.len() as f64;
 
         // After normalization both should have similar magnitude, but the
         // pre-normalization variance of content words should be higher
         // This is implicit in the IDF weighting
-        eprintln!("TF-IDF test: stopword variance={:.4}, content variance={:.4}",
-                  var_stop, var_content);
+        eprintln!(
+            "TF-IDF test: stopword variance={:.4}, content variance={:.4}",
+            var_stop, var_content
+        );
 
         // Both should be normalized
         let mag_stop: f64 = f_stop.values.iter().map(|v| v * v).sum::<f64>().sqrt();
         let mag_content: f64 = f_content.values.iter().map(|v| v * v).sum::<f64>().sqrt();
-        assert!((mag_stop - 1.0).abs() < 0.01, "Stopword vector should be normalized");
-        assert!((mag_content - 1.0).abs() < 0.01, "Content vector should be normalized");
+        assert!(
+            (mag_stop - 1.0).abs() < 0.01,
+            "Stopword vector should be normalized"
+        );
+        assert!(
+            (mag_content - 1.0).abs() < 0.01,
+            "Content vector should be normalized"
+        );
     }
 
     /// Test IDF weight computation
@@ -1178,9 +1190,20 @@ mod tests {
         let weight_quantum = super::compute_word_ngram_idf_weight(&["quantum"]);
         let weight_deoxyribonucleic = super::compute_word_ngram_idf_weight(&["deoxyribonucleic"]);
 
-        assert!(weight_the < 0.5, "'the' should have low weight: {}", weight_the);
-        assert!(weight_quantum > weight_the, "'quantum' should have higher weight than 'the'");
-        assert!(weight_deoxyribonucleic > 1.0, "Long technical word should have high weight: {}", weight_deoxyribonucleic);
+        assert!(
+            weight_the < 0.5,
+            "'the' should have low weight: {}",
+            weight_the
+        );
+        assert!(
+            weight_quantum > weight_the,
+            "'quantum' should have higher weight than 'the'"
+        );
+        assert!(
+            weight_deoxyribonucleic > 1.0,
+            "Long technical word should have high weight: {}",
+            weight_deoxyribonucleic
+        );
     }
 
     // ── LinearProjection tests ──────────────────────────────────────────────
@@ -1197,7 +1220,11 @@ mod tests {
 
         // Result should be normalized
         let mag: f64 = out.iter().map(|x| x * x).sum::<f64>().sqrt();
-        assert!((mag - 1.0).abs() < 1e-9, "Output should be normalized, mag={}", mag);
+        assert!(
+            (mag - 1.0).abs() < 1e-9,
+            "Output should be normalized, mag={}",
+            mag
+        );
 
         // Check that identity projection is detected as identity
         assert!(super::is_identity_projection(&proj));
@@ -1214,13 +1241,19 @@ mod tests {
     fn test_linear_projection_forward_output_normalized() {
         let dim = 16;
         let proj = super::LinearProjection::random(dim);
-        let config = EncoderConfig { num_features: dim, ..Default::default() };
+        let config = EncoderConfig {
+            num_features: dim,
+            ..Default::default()
+        };
         let fv = encode_text_hash("hello world", &config);
 
         let out = proj.forward(&fv.values);
         assert_eq!(out.len(), dim);
         let mag: f64 = out.iter().map(|x| x * x).sum::<f64>().sqrt();
-        assert!((mag - 1.0).abs() < 1e-9, "projected output must be normalized");
+        assert!(
+            (mag - 1.0).abs() < 1e-9,
+            "projected output must be normalized"
+        );
     }
 
     #[test]
@@ -1246,14 +1279,20 @@ mod tests {
     #[test]
     fn test_encode_text_with_projection_produces_valid_vector() {
         let dim = 16;
-        let config = EncoderConfig { num_features: dim, ..Default::default() };
+        let config = EncoderConfig {
+            num_features: dim,
+            ..Default::default()
+        };
         let proj = super::LinearProjection::random(dim);
 
         let fv = super::encode_text_with_projection("test projection", &config, &proj);
         assert_eq!(fv.values.len(), dim);
 
         let mag: f64 = fv.values.iter().map(|x| x * x).sum::<f64>().sqrt();
-        assert!((mag - 1.0).abs() < 1e-9, "projected feature vector must be normalized");
+        assert!(
+            (mag - 1.0).abs() < 1e-9,
+            "projected feature vector must be normalized"
+        );
     }
 
     #[test]
@@ -1308,7 +1347,10 @@ mod tests {
         // Encode facts using the projection explicitly
         let facts = [
             ("The capital of France is Paris", "France Paris capital"),
-            ("Rust is a systems programming language", "Rust programming systems"),
+            (
+                "Rust is a systems programming language",
+                "Rust programming systems",
+            ),
             ("The sun is a yellow dwarf star", "sun star yellow"),
         ];
 
@@ -1338,13 +1380,20 @@ mod tests {
             let (fx, fy) = feature_to_position(&fact_features, grid.width, grid.height);
 
             // They should be reasonably close (within search radius)
-            let dist = (((qx as i32 - fx as i32).pow(2) + (qy as i32 - fy as i32).pow(2)) as f64).sqrt();
+            let dist =
+                (((qx as i32 - fx as i32).pow(2) + (qy as i32 - fy as i32).pow(2)) as f64).sqrt();
             // With 64-dim random projection and hash encoding, related texts should
             // land within the search radius (spread_radius * 4 = 24)
             assert!(
                 dist < (config.spread_radius * 8) as f64,
                 "Query '{}' for fact '{}' landed too far: dist={:.1}, qpos=({},{}), fpos=({},{})",
-                query, fact, dist, qx, qy, fx, fy
+                query,
+                fact,
+                dist,
+                qx,
+                qy,
+                fx,
+                fy
             );
         }
 
@@ -1382,17 +1431,23 @@ mod tests {
         assert_eq!(pos1, pos2, "Same text should map to same position");
 
         // Test that similar texts land closer than dissimilar texts
-        let similar = super::encode_text_with_projection("deep learning neural networks", &config, &proj);
-        let dissimilar = super::encode_text_with_projection("cooking recipes italian pasta", &config, &proj);
+        let similar =
+            super::encode_text_with_projection("deep learning neural networks", &config, &proj);
+        let dissimilar =
+            super::encode_text_with_projection("cooking recipes italian pasta", &config, &proj);
 
         let pos_orig = feature_to_position(&features1, GRID_SIZE, GRID_SIZE);
         let pos_similar = feature_to_position(&similar, GRID_SIZE, GRID_SIZE);
         let pos_dissimilar = feature_to_position(&dissimilar, GRID_SIZE, GRID_SIZE);
 
         let dist_similar = (((pos_orig.0 as i32 - pos_similar.0 as i32).pow(2)
-            + (pos_orig.1 as i32 - pos_similar.1 as i32).pow(2)) as f64).sqrt();
+            + (pos_orig.1 as i32 - pos_similar.1 as i32).pow(2))
+            as f64)
+            .sqrt();
         let dist_dissimilar = (((pos_orig.0 as i32 - pos_dissimilar.0 as i32).pow(2)
-            + (pos_orig.1 as i32 - pos_dissimilar.1 as i32).pow(2)) as f64).sqrt();
+            + (pos_orig.1 as i32 - pos_dissimilar.1 as i32).pow(2))
+            as f64)
+            .sqrt();
 
         // Similar text should generally be closer (though with hash-based encoding
         // this isn't guaranteed, we just check it doesn't wildly fail)

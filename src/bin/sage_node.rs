@@ -606,7 +606,9 @@ async fn main() {
                     "[sync] Broadcasting {} cell changes (aggregation threshold met)",
                     diff.changes.len()
                 );
-                let _ = network_for_sync.broadcast(GossipMessage::KnowledgeDiff(diff)).await;
+                let _ = network_for_sync
+                    .broadcast(GossipMessage::KnowledgeDiff(diff))
+                    .await;
                 network_for_sync.reset_aggregation().await;
             }
         }

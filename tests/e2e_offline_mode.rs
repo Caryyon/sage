@@ -80,7 +80,11 @@ fn test_encode_retrieve_without_ollama() {
     // Retrieve should return results (not panic, not hang)
     let mut hits = 0;
     for fact in &facts {
-        let query: String = fact.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+        let query: String = fact
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
         let results = store.query(&query, 5);
 
         if !results.is_empty() {
@@ -145,10 +149,7 @@ fn test_embedding_status_reflects_reality() {
 
     // Test 3: Status formatting is valid
     let status_str = format!("{}", detect_embedding_status(&config_none));
-    assert!(
-        !status_str.is_empty(),
-        "Status message should not be empty"
-    );
+    assert!(!status_str.is_empty(), "Status message should not be empty");
     assert!(
         status_str.contains("bundled")
             || status_str.contains("Ollama")
@@ -179,7 +180,12 @@ fn test_hash_encoding_deterministic() {
         "Feature vector length should match"
     );
 
-    for (i, (v1, v2)) in features1.values.iter().zip(features2.values.iter()).enumerate() {
+    for (i, (v1, v2)) in features1
+        .values
+        .iter()
+        .zip(features2.values.iter())
+        .enumerate()
+    {
         assert!(
             (v1 - v2).abs() < 1e-10,
             "Feature {} should be identical: {} vs {}",
@@ -198,10 +204,7 @@ fn test_hash_encoding_deterministic() {
     let pos1 = store1.encode(text, 0.9);
     let pos2 = store2.encode(text, 0.9);
 
-    assert_eq!(
-        pos1, pos2,
-        "Same input should encode to same position"
-    );
+    assert_eq!(pos1, pos2, "Same input should encode to same position");
 }
 
 /// Test: System degrades gracefully when all embedding backends unavailable.
@@ -233,10 +236,7 @@ fn test_graceful_degradation() {
 
     // Active knowledge should accumulate
     let active = store.active_knowledge(0.01).len();
-    assert!(
-        active > 0,
-        "Should have active cells in degraded mode"
-    );
+    assert!(active > 0, "Should have active cells in degraded mode");
 }
 
 /// Test: Large batch encoding doesn't cause memory issues in offline mode.
@@ -249,11 +249,7 @@ fn test_offline_batch_encoding_stability() {
     for i in 0..100 {
         let fact = format!("Batch fact number {} about various topics", i);
         let pos = store.encode(&fact, 0.7);
-        assert!(
-            pos.0 < 256 && pos.1 < 256,
-            "Position {} should be valid",
-            i
-        );
+        assert!(pos.0 < 256 && pos.1 < 256, "Position {} should be valid", i);
     }
 
     let active = store.active_knowledge(0.01).len();
@@ -307,10 +303,7 @@ fn test_embedding_status_detection_timeout() {
             panic!("Should not report Ollama available from hanging server");
         }
         EmbeddingStatus::Fastembed { .. } | EmbeddingStatus::HashFallback => {
-            eprintln!(
-                "Correctly fell back to {:?} after server hang",
-                status
-            );
+            eprintln!("Correctly fell back to {:?} after server hang", status);
         }
     }
 

@@ -272,8 +272,8 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::diff::CellChange;
+    use super::*;
 
     fn make_diff(changes: Vec<CellChange>) -> KnowledgeDiff {
         KnowledgeDiff {

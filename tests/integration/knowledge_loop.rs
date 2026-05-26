@@ -33,11 +33,7 @@ impl InferenceEngine for CapturingEngine {
         Ok(self.response.clone())
     }
 
-    fn chat(
-        &self,
-        messages: &[ChatMessage],
-        _max_tokens: usize,
-    ) -> Result<String, Box<dyn Error>> {
+    fn chat(&self, messages: &[ChatMessage], _max_tokens: usize) -> Result<String, Box<dyn Error>> {
         if let Some(sys) = messages.iter().find(|m| m.role == ChatRole::System) {
             self.system_prompts
                 .lock()
@@ -133,10 +129,7 @@ fn test_brain_survives_save_load_cycle() {
     {
         let mut kl = KnowledgeLoop::new(engine).with_brain_path(path);
         kl.load_brain().unwrap();
-        assert!(
-            kl.active_cells() > 0,
-            "Should have active cells after load"
-        );
+        assert!(kl.active_cells() > 0, "Should have active cells after load");
     }
 
     let _ = std::fs::remove_file(path);

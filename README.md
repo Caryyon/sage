@@ -42,7 +42,10 @@ Chat with SAGE about anything — your projects, ideas, preferences, notes. It s
 **2. Learns From Your Feedback**  
 SAGE tracks which responses satisfy you and which fall back to LLM. Over time, it gets better at serving you faster with local inference for queries it handles well.
 
-**3. Syncs Across Your Devices**
+**3. Grows Smarter With NCA Dynamics**
+Knowledge channels in the grid undergo real cellular automata updates: Hebbian reinforcement strengthens frequently used memories, decay fades inactive ones, spreading activation forms associations, and embedding diffusion clusters related concepts.
+
+**4. Syncs Across Your Devices**
 Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer via libp2p gossip — no cloud required, your data stays yours.
 
 **Try the Demo**
@@ -53,6 +56,7 @@ Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer v
 ## Features
 
 - **Grid-Based Knowledge Store** — 256×256 grid stores semantic embeddings with attention-based retrieval
+- **Real NCA Dynamics** — Hebbian reinforcement, decay, spreading activation, and embedding diffusion on knowledge channels (v0.5.0)
 - **Intelligent Query Router** — Learning-based routing (v0.3.7): detects 12 query patterns, tracks NCA vs LLM accuracy, adapts over time
 - **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge with delta attention spreading
 - **Peer-to-Peer Mesh** — Nodes share knowledge diffs via libp2p gossip protocols
@@ -61,15 +65,10 @@ Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer v
 - **Raspberry Pi Ready** — Runs on a $35 board
 - **Zero API Keys** — No OpenAI, no monthly fees
 
-> **Note:** The "Neural Cellular Automata" branding is aspirational for the token-prediction
-> grid (NcaPredictor). The knowledge grid now has real NCA-style dynamics (v0.5.0) through
-> `consolidate_knowledge()` — Hebbian reinforcement, decay, and spreading activation.
-> See [Architecture docs](docs/architecture/nca-brain.md) for details.
-
 ## Architecture
 
 - **Rust** — Memory-safe, fast, no Python dependency hell
-- **Grid Store** — Knowledge stored as semantic embeddings in 256×256 grid
+- **Grid Store** — Knowledge stored as semantic embeddings in 256×256 grid with real NCA dynamics
 - **libp2p** — Decentralized peer-to-peer networking
 - **Ollama** — LLM fallback for complex reasoning
 - **Ed25519** — Cryptographic identity and signed updates
@@ -90,6 +89,7 @@ Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer v
 - [Offline Mode](docs/getting-started/offline.md)
 - [Architecture](docs/architecture/nca-brain.md)
 - [Contributing](CONTRIBUTING.md)
+- [Roadmap](ROADMAP.md)
 
 ## Community
 

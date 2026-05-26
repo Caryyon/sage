@@ -198,8 +198,8 @@ pub fn detect_pattern(query: &str) -> QueryPattern {
                 QueryPattern::FactualLookup
             }
         }
-        "is" | "are" | "was" | "were" | "did" | "does" | "do" | "can" | "could"
-        | "would" | "should" | "will" => {
+        "is" | "are" | "was" | "were" | "did" | "does" | "do" | "can" | "could" | "would"
+        | "should" | "will" => {
             if word_count <= 5 {
                 QueryPattern::FactualLookup
             } else {
@@ -239,9 +239,24 @@ pub fn detect_pattern(query: &str) -> QueryPattern {
 }
 
 fn is_conversational(query: &str, words: &[&str]) -> bool {
-    let greetings = ["hello", "hi", "hey", "greetings", "good morning", "good afternoon", "good evening"];
-    let closings = ["thanks", "thank you", "bye", "goodbye", "see you", "talk later"];
-    
+    let greetings = [
+        "hello",
+        "hi",
+        "hey",
+        "greetings",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    ];
+    let closings = [
+        "thanks",
+        "thank you",
+        "bye",
+        "goodbye",
+        "see you",
+        "talk later",
+    ];
+
     if words.len() <= 3 {
         for greeting in &greetings {
             if query.starts_with(greeting) {
@@ -254,12 +269,18 @@ fn is_conversational(query: &str, words: &[&str]) -> bool {
             }
         }
     }
-    
+
     // Check for standalone acknowledgments
-    if words.len() <= 2 && (query == "ok" || query == "okay" || query == "sure" || query == "great" || query == "nice") {
+    if words.len() <= 2
+        && (query == "ok"
+            || query == "okay"
+            || query == "sure"
+            || query == "great"
+            || query == "nice")
+    {
         return true;
     }
-    
+
     false
 }
 
@@ -421,7 +442,11 @@ impl IntelligentRouter {
     /// Returns (backend, pattern, confidence)
     pub fn route(&self, query: &str, nca_available: bool) -> (Backend, QueryPattern, f64) {
         let pattern = detect_pattern(query);
-        let stats = self.pattern_stats.get(&pattern).cloned().unwrap_or_default();
+        let stats = self
+            .pattern_stats
+            .get(&pattern)
+            .cloned()
+            .unwrap_or_default();
 
         // If learning is disabled or we don't have enough data, use static rules
         if !self.use_learning || stats.total_queries < self.min_attempts_for_learning {
@@ -435,7 +460,7 @@ impl IntelligentRouter {
 
         // Use learned preferences
         let should_explore = rand::random::<f64>() < self.exploration_rate;
-        
+
         let backend = if should_explore {
             // Exploration: try the less-used backend
             if stats.nca_attempts <= stats.llm_attempts && nca_available {
@@ -461,9 +486,9 @@ impl IntelligentRouter {
     /// Record the outcome of a routing decision
     pub fn record_outcome(&mut self, pattern: QueryPattern, outcome: RoutingOutcome) {
         let stats = self.pattern_stats.entry(pattern).or_default();
-        
+
         stats.total_queries += 1;
-        
+
         match outcome.backend {
             Backend::Nca => {
                 stats.nca_attempts += 1;
@@ -471,9 +496,8 @@ impl IntelligentRouter {
                     stats.nca_successes += 1;
                 }
                 // Update running average
-                stats.nca_avg_time_ms = 
-                    (stats.nca_avg_time_ms * (stats.nca_attempts - 1) as f64 
-                     + outcome.response_time_ms as f64) 
+                stats.nca_avg_time_ms = (stats.nca_avg_time_ms * (stats.nca_attempts - 1) as f64
+                    + outcome.response_time_ms as f64)
                     / stats.nca_attempts as f64;
             }
             Backend::Llm => {
@@ -481,9 +505,8 @@ impl IntelligentRouter {
                 if outcome.success {
                     stats.llm_successes += 1;
                 }
-                stats.llm_avg_time_ms = 
-                    (stats.llm_avg_time_ms * (stats.llm_attempts - 1) as f64 
-                     + outcome.response_time_ms as f64) 
+                stats.llm_avg_time_ms = (stats.llm_avg_time_ms * (stats.llm_attempts - 1) as f64
+                    + outcome.response_time_ms as f64)
                     / stats.llm_attempts as f64;
             }
         }
@@ -539,19 +562,19 @@ impl IntelligentRouter {
     pub fn sync_with_feedback(&mut self) {
         let feedback_store = FeedbackStore::load_or_new();
         let summary = feedback_store.summary();
-        
+
         // Map feedback pattern names to QueryPattern
         for (pattern_name, stats) in &summary.pattern_breakdown {
             if let Some(pattern) = Self::pattern_from_name(pattern_name) {
                 let router_stats = self.pattern_stats.entry(pattern).or_default();
-                
+
                 // Update NCA success rate from feedback
                 let _nca_rate = if stats.total_attempts > 0 {
                     stats.nca_satisfactory as f64 / stats.total_attempts as f64
                 } else {
                     0.0
                 };
-                
+
                 // Only update if we have new data
                 if stats.total_attempts > router_stats.total_queries {
                     router_stats.nca_attempts = stats.total_attempts;
@@ -634,29 +657,53 @@ mod tests {
     #[test]
     fn test_detect_pattern_factual() {
         assert_eq!(detect_pattern("What is SAGE?"), QueryPattern::FactualLookup);
-        assert_eq!(detect_pattern("Who created this?"), QueryPattern::FactualLookup);
-        assert_eq!(detect_pattern("Where is the config file?"), QueryPattern::Spatial);
-        assert_eq!(detect_pattern("When was it released?"), QueryPattern::Temporal);
+        assert_eq!(
+            detect_pattern("Who created this?"),
+            QueryPattern::FactualLookup
+        );
+        assert_eq!(
+            detect_pattern("Where is the config file?"),
+            QueryPattern::Spatial
+        );
+        assert_eq!(
+            detect_pattern("When was it released?"),
+            QueryPattern::Temporal
+        );
     }
 
     #[test]
     fn test_detect_pattern_complex() {
-        assert_eq!(detect_pattern("Why does the NCA grid converge?"), QueryPattern::Causal);
-        assert_eq!(detect_pattern("Explain how gossip protocol works"), QueryPattern::Analytical);
-        assert_eq!(detect_pattern("Write a poem about neural networks"), QueryPattern::Creative);
+        assert_eq!(
+            detect_pattern("Why does the NCA grid converge?"),
+            QueryPattern::Causal
+        );
+        assert_eq!(
+            detect_pattern("Explain how gossip protocol works"),
+            QueryPattern::Analytical
+        );
+        assert_eq!(
+            detect_pattern("Write a poem about neural networks"),
+            QueryPattern::Creative
+        );
     }
 
     #[test]
     fn test_detect_pattern_comparative() {
-        assert_eq!(detect_pattern("Compare NCA and RNN"), QueryPattern::Comparative);
-        assert_eq!(detect_pattern("What is the difference between X and Y?"), QueryPattern::Comparative);
+        assert_eq!(
+            detect_pattern("Compare NCA and RNN"),
+            QueryPattern::Comparative
+        );
+        assert_eq!(
+            detect_pattern("What is the difference between X and Y?"),
+            QueryPattern::Comparative
+        );
         assert_eq!(detect_pattern("X vs Y"), QueryPattern::Comparative);
     }
 
     #[test]
     fn test_pattern_stats_accuracy() {
         let mut stats = PatternStats::new();
-        
+
         // Empty stats return 0.0 (no division by zero)
         assert_eq!(stats.nca_accuracy(), 0.0, "No NCA attempts → 0.0 accuracy");
         assert_eq!(stats.llm_accuracy(), 0.0, "No LLM attempts → 0.0 accuracy");
@@ -664,19 +711,28 @@ mod tests {
         // NCA: 7/10 = 0.7
         stats.nca_attempts = 10;
         stats.nca_successes = 7;
-        assert!((stats.nca_accuracy() - 0.7).abs() < 0.01, "NCA accuracy should be 0.7");
+        assert!(
+            (stats.nca_accuracy() - 0.7).abs() < 0.01,
+            "NCA accuracy should be 0.7"
+        );
 
         // LLM: 8/10 = 0.8
         stats.llm_attempts = 10;
         stats.llm_successes = 8;
-        assert!((stats.llm_accuracy() - 0.8).abs() < 0.01, "LLM accuracy should be 0.8");
+        assert!(
+            (stats.llm_accuracy() - 0.8).abs() < 0.01,
+            "LLM accuracy should be 0.8"
+        );
 
         // Mixed: NCA higher accuracy
         stats.nca_attempts = 10;
         stats.nca_successes = 9;
         stats.llm_attempts = 10;
         stats.llm_successes = 3;
-        assert!(stats.nca_accuracy() > stats.llm_accuracy(), "NCA should be more accurate");
+        assert!(
+            stats.nca_accuracy() > stats.llm_accuracy(),
+            "NCA should be more accurate"
+        );
     }
 
     #[test]
@@ -684,7 +740,7 @@ mod tests {
         let mut router = IntelligentRouter::new()
             .with_nca_available(true)
             .with_exploration_rate(0.0);
-        
+
         router.min_attempts_for_learning = 5;
 
         // Before learning threshold, uses static rules
@@ -710,7 +766,10 @@ mod tests {
         let (backend2, _, confidence2) = router.route("What is X?", true);
         assert_eq!(backend2, Backend::Nca, "Should prefer NCA after training");
         // With min_attempts=5 and 5 samples, confidence builds from data
-        assert!(confidence2 > 0.0, "Should have non-zero confidence after training");
+        assert!(
+            confidence2 > 0.0,
+            "Should have non-zero confidence after training"
+        );
     }
 
     #[test]
@@ -718,7 +777,7 @@ mod tests {
         let mut router = IntelligentRouter::new()
             .with_nca_available(true)
             .with_exploration_rate(0.5); // 50% exploration
-        
+
         // Seed with NCA successes
         for _ in 0..10 {
             router.record_outcome(
@@ -742,10 +801,13 @@ mod tests {
                 Backend::Llm => llm_count += 1,
             }
         }
-        
+
         // With 50% exploration, we should see both backends
         assert!(nca_count > 0, "Should exploit known-good NCA");
-        assert!(llm_count > 0, "Should explore LLM with exploration_rate=0.5");
+        assert!(
+            llm_count > 0,
+            "Should explore LLM with exploration_rate=0.5"
+        );
     }
 
     #[test]
@@ -765,7 +827,10 @@ mod tests {
         router.save(&temp_path).unwrap();
 
         let loaded = IntelligentRouter::load(&temp_path).unwrap();
-        let stats = loaded.pattern_stats.get(&QueryPattern::FactualLookup).unwrap();
+        let stats = loaded
+            .pattern_stats
+            .get(&QueryPattern::FactualLookup)
+            .unwrap();
         assert_eq!(stats.total_queries, 1);
         assert_eq!(stats.nca_attempts, 1);
         assert_eq!(stats.nca_successes, 1);

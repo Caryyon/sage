@@ -21,13 +21,34 @@ pub fn classify_query(query: &str) -> QueryComplexity {
     let word_count = words.len();
 
     // Question words
-    let is_factual = words.first().map(|w| {
-        matches!(*w, "who" | "what" | "when" | "where" | "how many" | "how much" | "is" | "are" | "did" | "does")
-    }).unwrap_or(false);
+    let is_factual = words
+        .first()
+        .map(|w| {
+            matches!(
+                *w,
+                "who"
+                    | "what"
+                    | "when"
+                    | "where"
+                    | "how many"
+                    | "how much"
+                    | "is"
+                    | "are"
+                    | "did"
+                    | "does"
+            )
+        })
+        .unwrap_or(false);
 
-    let is_analytical = words.first().map(|w| {
-        matches!(*w, "why" | "how" | "explain" | "analyze" | "compare" | "what if")
-    }).unwrap_or(false);
+    let is_analytical = words
+        .first()
+        .map(|w| {
+            matches!(
+                *w,
+                "why" | "how" | "explain" | "analyze" | "compare" | "what if"
+            )
+        })
+        .unwrap_or(false);
 
     if word_count <= 8 && is_factual {
         QueryComplexity::Simple
@@ -46,12 +67,21 @@ mod tests {
     fn test_classify_simple() {
         assert_eq!(classify_query("What is SAGE?"), QueryComplexity::Simple);
         assert_eq!(classify_query("Who created this?"), QueryComplexity::Simple);
-        assert_eq!(classify_query("When was it released?"), QueryComplexity::Simple);
+        assert_eq!(
+            classify_query("When was it released?"),
+            QueryComplexity::Simple
+        );
     }
 
     #[test]
     fn test_classify_complex() {
-        assert_eq!(classify_query("Why does the NCA grid converge to stable patterns?"), QueryComplexity::Complex);
-        assert_eq!(classify_query("Explain how gossip protocol prevents poisoning attacks in detail"), QueryComplexity::Complex);
+        assert_eq!(
+            classify_query("Why does the NCA grid converge to stable patterns?"),
+            QueryComplexity::Complex
+        );
+        assert_eq!(
+            classify_query("Explain how gossip protocol prevents poisoning attacks in detail"),
+            QueryComplexity::Complex
+        );
     }
 }

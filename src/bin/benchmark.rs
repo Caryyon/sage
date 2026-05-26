@@ -10,10 +10,12 @@
 //! Usage: cargo run --bin benchmark
 //! Results saved to ~/clawd/sage-team/sage-daily-dev/<date>-benchmark-results.md
 
-use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
-use sage::distributed_knowledge::decoder::{KnowledgeActivation, query_knowledge_with_text};
-use sage::distributed_knowledge::encoder::{detect_embedding_status, EmbeddingStatus, EncoderConfig};
 use sage::distributed_knowledge::attention_decoder::AttentionDecoder;
+use sage::distributed_knowledge::decoder::{query_knowledge_with_text, KnowledgeActivation};
+use sage::distributed_knowledge::encoder::{
+    detect_embedding_status, EmbeddingStatus, EncoderConfig,
+};
+use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use std::time::Instant;
 
 /// Get a description of the current embedding method
@@ -27,9 +29,7 @@ fn embedding_method_description() -> String {
         EmbeddingStatus::Ollama { model } => {
             format!("Ollama ({})", model)
         }
-        EmbeddingStatus::HashFallback => {
-            "hash fallback (reduced quality)".to_string()
-        }
+        EmbeddingStatus::HashFallback => "hash fallback (reduced quality)".to_string(),
     }
 }
 
@@ -80,7 +80,10 @@ const FACTS: &[(&str, &str)] = &[
     ("What is the chemical formula of water?", "H2O"),
     ("What is the chemical formula of salt?", "NaCl"),
     ("What is the hardest natural material?", "diamond"),
-    ("What is the most abundant gas in Earth atmosphere?", "nitrogen"),
+    (
+        "What is the most abundant gas in Earth atmosphere?",
+        "nitrogen",
+    ),
     ("How many continents are on Earth?", "seven"),
     ("How many bones are in the adult human body?", "206"),
     ("What is the SI unit of force?", "Newton"),
@@ -146,13 +149,8 @@ fn run_semantic_benchmark(store: &NCAKnowledge, use_semantic: bool) -> MethodRes
     }
 
     for &(query, answer) in FACTS {
-        let results = query_knowledge_with_text(
-            &store.grid,
-            query,
-            &config,
-            5,
-            Some(&store.text_store),
-        );
+        let results =
+            query_knowledge_with_text(&store.grid, query, &config, 5, Some(&store.text_store));
         if check_hit(&results, answer) {
             hits += 1;
         }
@@ -163,7 +161,11 @@ fn run_semantic_benchmark(store: &NCAKnowledge, use_semantic: bool) -> MethodRes
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_semantic { "Semantic (auto)" } else { "Semantic (hash)" },
+        name: if use_semantic {
+            "Semantic (auto)"
+        } else {
+            "Semantic (hash)"
+        },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -188,12 +190,8 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> MethodRe
         // Encode query to get features for query-conditioned contrast retrieval
         let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
         // Use contrast retrieval (Option B: query-conditioned, no freerun, O(active_cells))
-        let results = decoder.attend_with_contrast(
-            &query_features,
-            &store.grid,
-            5,
-            Some(&store.text_store),
-        );
+        let results =
+            decoder.attend_with_contrast(&query_features, &store.grid, 5, Some(&store.text_store));
         if check_hit(&results, answer) {
             hits += 1;
         }
@@ -204,7 +202,11 @@ fn run_delta_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> MethodRe
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_semantic { "Contrast (auto)" } else { "Contrast (local)" },
+        name: if use_semantic {
+            "Contrast (auto)"
+        } else {
+            "Contrast (local)"
+        },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -227,28 +229,17 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> Metho
     let decoder = AttentionDecoder::new(store.grid.width, store.grid.height);
 
     for &(query, answer) in FACTS {
-        let mut semantic = query_knowledge_with_text(
-            &store.grid,
-            query,
-            &config,
-            5,
-            Some(&store.text_store),
-        );
+        let mut semantic =
+            query_knowledge_with_text(&store.grid, query, &config, 5, Some(&store.text_store));
 
         // Encode query for query-conditioned contrast retrieval
         let query_features = sage::distributed_knowledge::encoder::encode_text(query, &config);
-        let contrast = decoder.attend_with_contrast(
-            &query_features,
-            &store.grid,
-            5,
-            Some(&store.text_store),
-        );
+        let contrast =
+            decoder.attend_with_contrast(&query_features, &store.grid, 5, Some(&store.text_store));
 
         // Combine: merge contrast results not already in semantic results
-        let mut seen_texts: std::collections::HashSet<String> = semantic
-            .iter()
-            .filter_map(|r| r.text.clone())
-            .collect();
+        let mut seen_texts: std::collections::HashSet<String> =
+            semantic.iter().filter_map(|r| r.text.clone()).collect();
 
         for c_result in contrast {
             if let Some(ref t) = c_result.text {
@@ -260,7 +251,11 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> Metho
         }
 
         // Sort by relevance, take top 5
-        semantic.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        semantic.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         semantic.truncate(5);
 
         if check_hit(&semantic, answer) {
@@ -273,7 +268,11 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> Metho
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
     MethodResult {
-        name: if use_semantic { "Combined (auto)" } else { "Combined (hash)" },
+        name: if use_semantic {
+            "Combined (auto)"
+        } else {
+            "Combined (hash)"
+        },
         hits,
         total: FACTS.len(),
         mean_relevance: total_relevance / FACTS.len() as f64,
@@ -284,8 +283,12 @@ fn run_combined_benchmark(store: &mut NCAKnowledge, use_semantic: bool) -> Metho
 
 fn print_table(results: &[MethodResult]) {
     println!("\n## SAGE Retrieval Quality Benchmark\n");
-    println!("| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |");
-    println!("|------------------------------|----------|----------------|--------------|-----------|");
+    println!(
+        "| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |"
+    );
+    println!(
+        "|------------------------------|----------|----------------|--------------|-----------|"
+    );
     for r in results {
         println!(
             "| {:<28} | {:>7.1}% | {:>13.4} | {:>12.1} | {:>9.1} |",
@@ -313,12 +316,19 @@ fn save_results(results: &[MethodResult], store_stats: &str, embed_method: &str)
     let path = dir.join(format!("{}-fastembed-results.md", date));
 
     let mut md = String::new();
-    md.push_str(&format!("# SAGE Retrieval Quality Benchmark — {}\n\n", date));
+    md.push_str(&format!(
+        "# SAGE Retrieval Quality Benchmark — {}\n\n",
+        date
+    ));
     md.push_str("## Setup\n\n");
     md.push_str(&format!("{}\n\n", store_stats));
     md.push_str("## Results\n\n");
-    md.push_str("| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |\n");
-    md.push_str("|------------------------------|----------|----------------|--------------|----------|\n");
+    md.push_str(
+        "| Method                      | Hit Rate | Mean Relevance | Mean Results | Time (ms) |\n",
+    );
+    md.push_str(
+        "|------------------------------|----------|----------------|--------------|----------|\n",
+    );
     for r in results {
         md.push_str(&format!(
             "| {:<28} | {:>7.1}% | {:>13.4} | {:>12.1} | {:>9.1} |\n",
@@ -342,7 +352,9 @@ fn save_results(results: &[MethodResult], store_stats: &str, embed_method: &str)
     md.push_str("## Notes\n\n");
     md.push_str("- 50 fact-pairs encoded as full Q→A sentences\n");
     md.push_str("- Hit = answer keyword found in top-5 retrieved results\n");
-    md.push_str("- Contrast retrieval uses local contrast scoring (query-conditioned, no freerun)\n");
+    md.push_str(
+        "- Contrast retrieval uses local contrast scoring (query-conditioned, no freerun)\n",
+    );
     md.push_str("- Combined = union of semantic + contrast, deduped, top-5 by relevance\n");
     md.push_str(&format!("- Embedding method: {}\n", embed_method));
     md.push_str("- fastembed bundles AllMiniLML6V2 (384-dim) for offline semantic embeddings\n");
@@ -365,10 +377,18 @@ fn main() {
     let embed_status = detect_embedding_status(&config);
     let is_semantic = !matches!(embed_status, EmbeddingStatus::HashFallback);
 
-    println!("   Embeddings: {}{}", embed_method, if is_semantic { " ✓" } else { "" });
+    println!(
+        "   Embeddings: {}{}",
+        embed_method,
+        if is_semantic { " ✓" } else { "" }
+    );
     println!();
 
-    println!("📝 Encoding {} fact-pairs ({})...", FACTS.len(), embed_method);
+    println!(
+        "📝 Encoding {} fact-pairs ({})...",
+        FACTS.len(),
+        embed_method
+    );
     let encode_start = Instant::now();
 
     let mut store = NCAKnowledge::new();
@@ -379,7 +399,11 @@ fn main() {
     }
 
     let encode_ms = encode_start.elapsed().as_secs_f64() * 1000.0;
-    println!("   Encoded in {:.1}ms ({:.1}ms/fact)", encode_ms, encode_ms / FACTS.len() as f64);
+    println!(
+        "   Encoded in {:.1}ms ({:.1}ms/fact)",
+        encode_ms,
+        encode_ms / FACTS.len() as f64
+    );
 
     let store_stats = format!(
         "- Facts encoded: {}\n- Grid size: {}×{}\n- Encoding time: {:.1}ms\n- Embedding method: {}",
@@ -420,7 +444,10 @@ fn main() {
 
     // Detailed breakdown using best available method
     let method_label = if is_semantic { &embed_method } else { "hash" };
-    println!("## Per-fact hit report (Combined method with {})\n", method_label);
+    println!(
+        "## Per-fact hit report (Combined method with {})\n",
+        method_label
+    );
     {
         let mut combined_store = NCAKnowledge::new();
         for &(query, answer) in FACTS {
@@ -443,7 +470,8 @@ fn main() {
                 Some(&combined_store.text_store),
             );
             // Encode query for query-conditioned contrast retrieval
-            let query_features = sage::distributed_knowledge::encoder::encode_text(query, &enc_config);
+            let query_features =
+                sage::distributed_knowledge::encoder::encode_text(query, &enc_config);
             let contrast = decoder.attend_with_contrast(
                 &query_features,
                 &combined_store.grid,
@@ -455,8 +483,12 @@ fn main() {
             let contrast_hit = check_hit(&contrast, answer);
             let combined_hit = sem_hit || contrast_hit;
 
-            if sem_hit { semantic_hits += 1; }
-            if combined_hit { combined_hits += 1; }
+            if sem_hit {
+                semantic_hits += 1;
+            }
+            if combined_hit {
+                combined_hits += 1;
+            }
 
             let flag = match (sem_hit, contrast_hit) {
                 (true, true) => "✅✅",
@@ -464,12 +496,28 @@ fn main() {
                 (false, true) => "❌✅",
                 (false, false) => "❌❌",
             };
-            println!("  {} sem={} contrast={} | {:40} → {}", flag, sem_hit as u8, contrast_hit as u8, query, answer);
+            println!(
+                "  {} sem={} contrast={} | {:40} → {}",
+                flag, sem_hit as u8, contrast_hit as u8, query, answer
+            );
         }
         println!();
-        println!("  Semantic hits ({}):\t{}/{}", method_label, semantic_hits, FACTS.len());
-        println!("  Combined hits ({}):\t{}/{}", method_label, combined_hits, FACTS.len());
-        println!("  Contrast-unique:\t{} (found by contrast only)", combined_hits - semantic_hits);
+        println!(
+            "  Semantic hits ({}):\t{}/{}",
+            method_label,
+            semantic_hits,
+            FACTS.len()
+        );
+        println!(
+            "  Combined hits ({}):\t{}/{}",
+            method_label,
+            combined_hits,
+            FACTS.len()
+        );
+        println!(
+            "  Contrast-unique:\t{} (found by contrast only)",
+            combined_hits - semantic_hits
+        );
     }
 
     save_results(&results, &store_stats, &embed_method);

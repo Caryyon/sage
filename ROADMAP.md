@@ -6,8 +6,8 @@ SAGE is **The People's AI** — a decentralized intelligence that learns and gro
 
 ## Current Status
 
-**Version:** 0.3.4
-**Phase:** 3 (Reduce LLM Dependency) — In Progress
+**Version:** 0.5.2
+**Phase:** 3 (Reduce LLM Dependency) — Active Development
 
 ---
 
@@ -39,19 +39,24 @@ SAGE is **The People's AI** — a decentralized intelligence that learns and gro
 - [x] Direct peer messaging via request-response (PR #13)
 
 ### Phase 3: Reduce LLM Dependency
-**Status:** 🔄 In Progress (v0.3.x)
+**Status:** 🔄 In Progress (v0.3.x - v0.5.x)
 
 The goal: make the NCA grid handle more retrieval natively, reducing or eliminating the Ollama requirement for basic use cases.
 
 - [x] Fix delta attention query-conditioning (make retrieval query-aware) — **Shipped** (query-conditioned local contrast retrieval)
 - [x] Improve retrieval hit rate beyond 50% — **Achieved ~96%** with LinearProjection (PRs #10-12)
 - [x] NCA-native embedding (reduce reliance on external embedding models) — **LinearProjection shipped** (learned hash→semantic embedding)
+- [x] **Intelligent query router** — Shipped (v0.3.7): detects 12 query patterns, tracks NCA vs LLM accuracy, adapts over time
+- [x] **NCA-style knowledge consolidation** — Shipped (v0.5.0): Hebbian reinforcement, decay, spreading activation, embedding diffusion on knowledge channels
+- [x] **Recency-weighted attention** — Shipped (v0.4.x): conversational recall with time-decay weighting
+- [x] **Knowledge lifecycle management** — Shipped (v0.4.x): `sage prune` command, aggregation threshold enforcement
+- [x] **Reservoir benchmark** — Shipped (v0.5.2): structured NCA viability testing via `sage reservoir bench`
 - [ ] Lightweight local inference for simple queries
 - [ ] Graceful degradation when Ollama unavailable
 - [ ] Retrieval feedback loop — train relevance readout from user signals (BinaryRelevanceReadout)
 
 ### Phase 4: Pure NCA Intelligence
-**Status:** 🔮 Future (v0.4.x+)
+**Status:** 🔮 Future (v0.6.x+)
 
 The endgame: a fully self-contained AI that runs entirely on NCA dynamics — no LLM backend at all.
 
@@ -62,27 +67,34 @@ The endgame: a fully self-contained AI that runs entirely on NCA dynamics — no
 
 ---
 
-## What's New in v0.3.4
+## What's New in v0.5.2
 
-- **Signed diffs** — Ed25519 cryptographic signatures on all knowledge diffs
+- **Reservoir benchmark** — `sage reservoir bench` for structured NCA viability testing
+- **Aggregation threshold enforcement** — Prevents low-quality knowledge from spreading in sync loop
+- **NCA-style consolidation** (v0.5.0) — Real cellular automata dynamics on knowledge channels: Hebbian reinforcement, decay, spreading activation
+- **Recency-weighted attention** — Conversational recall with time-decay (PR #39)
+- **Knowledge pruning** — `sage prune` for lifecycle management (PR #40)
+- **Signed diffs** — Ed25519 cryptographic signatures on all knowledge diffs (v0.3.4)
 - **Network dashboard** — Live node stats at whatssage.ai/network
 - **Retrieval metrics** — Hit rate, relevance buckets, TUI display (PR #18)
 - **LinearProjection** — Learned hash→semantic embedding, 96% retrieval hit rate
 - **Brain API endpoint** — `GET /v1/sage/brain` for network dashboard visualization
-- **Dream cycle disabled** — Architecturally incoherent, replaced with query-conditioned retrieval
+- **Dream cycle disabled** — Replaced with query-conditioned retrieval and real NCA consolidation
 
 ## Active Work (Next 2-4 Weeks)
 
-1. **Retrieval feedback loop** — BinaryRelevanceReadout with Adam fine-tuning from user signals
-2. **Local inference pipeline** — Candle-based lightweight inference for simple queries
-3. **Miniworld + OpenClaw bridge** — Complete the TODO for sub-agent spawning
-4. **Documentation catch-up** — README, API docs, architecture overview all stale
+1. **Local inference pipeline** — Candle-based lightweight inference for simple queries (Phase 3 completion)
+2. **Documentation overhaul** — Examples, tutorials, API docs (this is actively being worked on)
+3. **Contributor onboarding** — Better `cargo run --example` experience, Docker compose, dev environment
+4. **Test speed** — Profile and optimize slow grid tests for faster dev feedback
+5. **Miniworld + OpenClaw bridge** — Complete sub-agent spawning via web API
 
 ## Known Issues
 
-- [ ] Test `test_nca_predict_deterministic` uses large grid (fixed in main)
-- [ ] ~70 clippy warnings (cosmetic: loop variable indexing patterns)
-- [ ] ROADMAP drift — this file was stale since v0.2.8 (fixed now)
+- [ ] Integration tests can be slow (large grid operations in `test_nca_predict_deterministic`)
+- [ ] ~20 clippy warnings remaining (cosmetic)
+- [ ] WASM build needs CI integration
+- [ ] Examples are minimal (only 2) — expanding
 
 ---
 
@@ -91,19 +103,41 @@ The endgame: a fully self-contained AI that runs entirely on NCA dynamics — no
 1. **Code** — Pick up an issue, submit a PR
 2. **Testing** — Run a node, stress-test retrieval, report bugs
 3. **Documentation** — Improve docs, write tutorials
-4. **Ideas** — Open discussions, propose features
+4. **Examples** — Build something cool, show others how
+5. **Ideas** — Open discussions, propose features
+
+### Quick Start for Contributors
+
+```bash
+# 1. Fork and clone
+git clone https://github.com/YOURNAME/sage.git && cd sage
+
+# 2. Build
+cargo build --release
+
+# 3. Run tests (lib tests are fast; integration tests take ~2 min)
+cargo test --lib
+cargo test --test knowledge_roundtrip  # one integration test
+
+# 4. Try an example
+cargo run --example simple-chat
+
+# 5. Chat with your build
+sage chat
+```
 
 Before contributing:
 - Read `ARCHITECTURE.md` and `CONTRIBUTING.md`
 - Check existing issues and PRs
 - For large changes, open an issue first
+- Run `cargo fmt` and `cargo clippy` before submitting
 
 ## Community
 
-- **Discord:** [https://discord.gg/U999zZUuUV](https://discord.gg/U999zUuUV)
+- **Discord:** [https://discord.gg/U999zZUuUV](https://discord.gg/U999zZUuUV)
 - **GitHub Issues:** Bug reports, feature requests, discussions
 - **Network Dashboard:** https://whatssage.ai/network
 
 ---
 
-*Last updated: 2026-04-24*
+*Last updated: 2026-05-26*

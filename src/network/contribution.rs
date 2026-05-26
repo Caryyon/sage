@@ -142,8 +142,7 @@ impl ContributionStats {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)
-            .map_err(std::io::Error::other)?;
+        let content = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         fs::write(&path, content)
     }
 
@@ -224,14 +223,38 @@ mod tests {
 
     #[test]
     fn test_tier_from_patterns() {
-        assert_eq!(ContributionTier::from_patterns(0), ContributionTier::Seedling);
-        assert_eq!(ContributionTier::from_patterns(99), ContributionTier::Seedling);
-        assert_eq!(ContributionTier::from_patterns(100), ContributionTier::Sprout);
-        assert_eq!(ContributionTier::from_patterns(999), ContributionTier::Sprout);
-        assert_eq!(ContributionTier::from_patterns(1000), ContributionTier::Grove);
-        assert_eq!(ContributionTier::from_patterns(9999), ContributionTier::Grove);
-        assert_eq!(ContributionTier::from_patterns(10000), ContributionTier::Forest);
-        assert_eq!(ContributionTier::from_patterns(100000), ContributionTier::Forest);
+        assert_eq!(
+            ContributionTier::from_patterns(0),
+            ContributionTier::Seedling
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(99),
+            ContributionTier::Seedling
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(100),
+            ContributionTier::Sprout
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(999),
+            ContributionTier::Sprout
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(1000),
+            ContributionTier::Grove
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(9999),
+            ContributionTier::Grove
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(10000),
+            ContributionTier::Forest
+        );
+        assert_eq!(
+            ContributionTier::from_patterns(100000),
+            ContributionTier::Forest
+        );
     }
 
     #[test]

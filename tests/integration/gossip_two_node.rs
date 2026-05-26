@@ -7,12 +7,14 @@
 //!   NCAKnowledge::encode → KnowledgeDiff → NetworkManager::handle_message
 //!   → apply_weighted (merge) → verified via active_knowledge()
 
+use async_trait::async_trait;
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::network::diff::KnowledgeDiff;
-use sage::network::gossip::{GossipError, GossipMessage, GossipTransport, GridStateRequest, GridStateResponse};
+use sage::network::gossip::{
+    GossipError, GossipMessage, GossipTransport, GridStateRequest, GridStateResponse,
+};
 use sage::network::identity::NodeIdentity;
 use sage::network::{NetworkConfig, NetworkManager};
-use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -34,7 +36,10 @@ impl MockTransport {
 #[async_trait]
 impl GossipTransport for MockTransport {
     async fn broadcast(&self, msg: GossipMessage) -> Result<(), GossipError> {
-        self.sent.lock().await.push(("*broadcast*".to_string(), msg));
+        self.sent
+            .lock()
+            .await
+            .push(("*broadcast*".to_string(), msg));
         Ok(())
     }
     async fn send_to(&self, peer_id: &str, msg: GossipMessage) -> Result<(), GossipError> {
@@ -44,9 +49,15 @@ impl GossipTransport for MockTransport {
     async fn recv(&self) -> Result<(String, GossipMessage), GossipError> {
         Err(GossipError::NotStarted)
     }
-    async fn connected_peers(&self) -> Vec<String> { Vec::new() }
-    async fn start(&self) -> Result<(), GossipError> { Ok(()) }
-    async fn stop(&self) -> Result<(), GossipError> { Ok(()) }
+    async fn connected_peers(&self) -> Vec<String> {
+        Vec::new()
+    }
+    async fn start(&self) -> Result<(), GossipError> {
+        Ok(())
+    }
+    async fn stop(&self) -> Result<(), GossipError> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +110,10 @@ fn two_node_diff_sync() {
 
     // Verify A can query
     let a_count = node_a.active_knowledge(0.01).len();
-    assert!(a_count > 0, "Node A should have active knowledge after encoding");
+    assert!(
+        a_count > 0,
+        "Node A should have active knowledge after encoding"
+    );
 
     // Node B starts empty
     let mut node_b = NCAKnowledge::new().with_node_id(2.0);
@@ -107,7 +121,10 @@ fn two_node_diff_sync() {
 
     // Compute diff: what A has that empty doesn't
     let a_grid = nca_grid_to_vec(&node_a);
-    let empty = vec![vec![vec![0.0f64; node_a.grid.cells[0][0].len()]; node_a.grid.width]; node_a.grid.height];
+    let empty = vec![
+        vec![vec![0.0f64; node_a.grid.cells[0][0].len()]; node_a.grid.width];
+        node_a.grid.height
+    ];
     let diff = KnowledgeDiff::compute(
         &empty,
         &a_grid,
@@ -151,8 +168,14 @@ fn network_manager_full_state_request() {
     // Build node A grid (sync, outside tokio)
     let mut node_a = NCAKnowledge::new().with_node_id(1.0);
     node_a.encode("deep learning transformer attention mechanism", 0.9);
-    node_a.encode("evolutionary algorithms genetic programming optimization", 0.85);
-    node_a.encode("cryptography elliptic curves public key infrastructure", 0.9);
+    node_a.encode(
+        "evolutionary algorithms genetic programming optimization",
+        0.85,
+    );
+    node_a.encode(
+        "cryptography elliptic curves public key infrastructure",
+        0.9,
+    );
     node_a.encode("quantum computing superposition entanglement qubits", 0.8);
     node_a.encode("blockchain distributed ledger consensus proof of work", 0.9);
 
@@ -161,11 +184,8 @@ fn network_manager_full_state_request() {
     // Create NetworkManager for A wired with mock transport
     let identity_a = NodeIdentity::generate();
     let (transport_a, sent_a) = MockTransport::new();
-    let mgr_a = NetworkManager::with_transport(
-        identity_a,
-        NetworkConfig::default(),
-        Arc::new(transport_a),
-    );
+    let mgr_a =
+        NetworkManager::with_transport(identity_a, NetworkConfig::default(), Arc::new(transport_a));
 
     // Build request: B wants full state
     let req = GridStateRequest {
@@ -194,7 +214,8 @@ fn network_manager_full_state_request() {
             assert!(grid[0].len() > 0, "Grid columns should be non-empty");
             println!(
                 "✅ NetworkManager FullState: sent {}×{} grid to node-b",
-                grid.len(), grid[0].len()
+                grid.len(),
+                grid[0].len()
             );
         }
         other => panic!("Expected FullState response, got {:?}", other),
@@ -213,7 +234,8 @@ fn knowledge_diff_gossip_roundtrip() {
     store.encode("another fact about networking and protocols", 0.8);
 
     let grid = nca_grid_to_vec(&store);
-    let empty = vec![vec![vec![0.0f64; store.grid.cells[0][0].len()]; store.grid.width]; store.grid.height];
+    let empty =
+        vec![vec![vec![0.0f64; store.grid.cells[0][0].len()]; store.grid.width]; store.grid.height];
 
     let diff = KnowledgeDiff::compute(&empty, &grid, "test-node".to_string(), 42, 0.9, 0.01);
     let original_changes = diff.changes.len();
@@ -228,26 +250,38 @@ fn knowledge_diff_gossip_roundtrip() {
     let decoded = GossipMessage::from_bytes(&bytes).expect("Should deserialize cleanly");
     match decoded {
         GossipMessage::KnowledgeDiff(d) => {
-            assert_eq!(d.changes.len(), original_changes,
-                "Changes should be preserved through serialization");
+            assert_eq!(
+                d.changes.len(),
+                original_changes,
+                "Changes should be preserved through serialization"
+            );
             assert_eq!(d.source_node, "test-node");
             assert_eq!(d.sequence, 42);
 
             // Apply the deserialized diff to an empty grid
-            let mut target = vec![vec![vec![0.0f64; store.grid.cells[0][0].len()]; store.grid.width]; store.grid.height];
+            let mut target = vec![
+                vec![vec![0.0f64; store.grid.cells[0][0].len()]; store.grid.width];
+                store.grid.height
+            ];
             d.apply_weighted(&mut target, 0.8);
 
             // Verify some cells were modified
-            let modified: usize = target.iter()
+            let modified: usize = target
+                .iter()
                 .flat_map(|row| row.iter())
                 .flat_map(|cell| cell.iter())
                 .filter(|&&v| v.abs() > 1e-10)
                 .count();
-            assert!(modified > 0, "Applying deserialized diff should modify cells");
+            assert!(
+                modified > 0,
+                "Applying deserialized diff should modify cells"
+            );
 
             println!(
                 "✅ Gossip roundtrip: {} changes → {} bytes → {} cells modified",
-                original_changes, bytes.len(), modified
+                original_changes,
+                bytes.len(),
+                modified
             );
         }
         other => panic!("Expected KnowledgeDiff, got {}", other.type_name()),
@@ -269,11 +303,8 @@ fn network_manager_insync_when_hashes_match() {
 
     let identity = NodeIdentity::generate();
     let (transport, sent) = MockTransport::new();
-    let mgr = NetworkManager::with_transport(
-        identity,
-        NetworkConfig::default(),
-        Arc::new(transport),
-    );
+    let mgr =
+        NetworkManager::with_transport(identity, NetworkConfig::default(), Arc::new(transport));
 
     let req = GridStateRequest {
         requesting_node: "peer-xyz".to_string(),

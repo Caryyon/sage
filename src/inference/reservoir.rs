@@ -633,10 +633,14 @@ impl RetrievalFeedback {
                 let label = if event.was_relevant { 1 } else { 0 };
 
                 // Forward: logit for "relevant" class
-                let logit: f64 = readout.weights.iter().zip(feat.iter())
+                let logit: f64 = readout
+                    .weights
+                    .iter()
+                    .zip(feat.iter())
                     .map(|(w, f)| w * f)
                     .sum::<f64>()
-                    + readout.bias[1] - readout.bias[0];
+                    + readout.bias[1]
+                    - readout.bias[0];
 
                 // Sigmoid
                 let prob = 1.0 / (1.0 + (-logit).exp());
@@ -679,13 +683,18 @@ impl RetrievalFeedback {
         let mut correct = 0;
         let mut total_loss = 0.0;
         for event in &self.events {
-            let logit: f64 = readout.weights.iter().zip(event.query_features.iter())
+            let logit: f64 = readout
+                .weights
+                .iter()
+                .zip(event.query_features.iter())
                 .map(|(w, f)| w * f)
                 .sum::<f64>()
-                + readout.bias[1] - readout.bias[0];
+                + readout.bias[1]
+                - readout.bias[0];
             let prob = 1.0 / (1.0 + (-logit).exp());
             let label = if event.was_relevant { 1.0 } else { 0.0 };
-            total_loss -= label * prob.ln().max(-100.0) + (1.0 - label) * (1.0 - prob).ln().max(-100.0);
+            total_loss -=
+                label * prob.ln().max(-100.0) + (1.0 - label) * (1.0 - prob).ln().max(-100.0);
             if (prob > 0.5) == event.was_relevant {
                 correct += 1;
             }
@@ -744,10 +753,14 @@ impl BinaryRelevanceReadout {
 
     /// Score a feature vector — higher = more likely relevant.
     pub fn score(&self, features: &[f64]) -> f64 {
-        let logit: f64 = self.weights.iter().zip(features.iter())
+        let logit: f64 = self
+            .weights
+            .iter()
+            .zip(features.iter())
             .map(|(w, f)| w * f)
             .sum::<f64>()
-            + self.bias[1] - self.bias[0];
+            + self.bias[1]
+            - self.bias[0];
         1.0 / (1.0 + (-logit).exp()) // sigmoid probability
     }
 
@@ -769,7 +782,8 @@ impl BinaryRelevanceReadout {
     /// Load from binary file.
     pub fn load(path: &std::path::Path, feature_dim: usize) -> std::io::Result<Self> {
         let bytes = fs::read(path)?;
-        let values: Vec<f64> = bytes.chunks_exact(8)
+        let values: Vec<f64> = bytes
+            .chunks_exact(8)
             .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
             .collect();
         if values.len() < feature_dim + 2 {
@@ -877,7 +891,10 @@ mod tests {
         // Set a weight and verify it shifts score
         readout.weights[0] = 1.0;
         let score_pos = readout.score(&[2.0, 0.0, 0.0, 0.0]);
-        assert!(score_pos > 0.5, "Positive feature with positive weight should score > 0.5");
+        assert!(
+            score_pos > 0.5,
+            "Positive feature with positive weight should score > 0.5"
+        );
     }
 
     #[test]
@@ -886,9 +903,16 @@ mod tests {
         assert!(!feedback.should_train(), "Should not train with 0 events");
 
         for i in 0..99 {
-            feedback.record(vec![i as f64, 0.0, 0.0, 0.0], format!("result {}", i), i % 3 == 0);
+            feedback.record(
+                vec![i as f64, 0.0, 0.0, 0.0],
+                format!("result {}", i),
+                i % 3 == 0,
+            );
         }
-        assert!(!feedback.should_train(), "Should not train with 99 events (needs 100)");
+        assert!(
+            !feedback.should_train(),
+            "Should not train with 99 events (needs 100)"
+        );
 
         feedback.record(vec![1.0, 0.0, 0.0, 0.0], "final".to_string(), true);
         assert!(feedback.should_train(), "Should train with 100 events");
@@ -903,7 +927,7 @@ mod tests {
         // Add 10 events: relevant when first feature is positive, irrelevant when negative
         for i in 0..10 {
             let feat = if i < 5 {
-                vec![1.0_f64, 0.5, 0.1, 0.2, 0.3, -0.1, 0.0, 0.4]  // relevant
+                vec![1.0_f64, 0.5, 0.1, 0.2, 0.3, -0.1, 0.0, 0.4] // relevant
             } else {
                 vec![-1.0_f64, -0.5, -0.1, -0.2, -0.3, 0.1, 0.0, -0.4] // irrelevant
             };
@@ -918,9 +942,17 @@ mod tests {
         assert!(loss.is_finite(), "Loss should be finite, got {}", loss);
         assert!(loss >= 0.0, "Loss should be non-negative, got {}", loss);
         // Accuracy should be in [0, 1]
-        assert!(accuracy >= 0.0 && accuracy <= 1.0, "Accuracy out of range: {}", accuracy);
+        assert!(
+            accuracy >= 0.0 && accuracy <= 1.0,
+            "Accuracy out of range: {}",
+            accuracy
+        );
 
-        eprintln!("Retrieval feedback test: loss={:.4} accuracy={:.1}%", loss, accuracy * 100.0);
+        eprintln!(
+            "Retrieval feedback test: loss={:.4} accuracy={:.1}%",
+            loss,
+            accuracy * 100.0
+        );
 
         // After training, relevant examples should score higher than irrelevant
         let relevant_feat = vec![1.0_f64, 0.5, 0.1, 0.2, 0.3, -0.1, 0.0, 0.4];
@@ -933,7 +965,8 @@ mod tests {
         assert!(
             relevant_score > irrelevant_score,
             "Relevant score ({:.4}) should exceed irrelevant score ({:.4}) after training",
-            relevant_score, irrelevant_score
+            relevant_score,
+            irrelevant_score
         );
     }
 

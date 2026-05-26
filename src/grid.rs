@@ -52,14 +52,14 @@ pub const MEMORY_RECENCY: usize = MEMORY_CHANNELS_START + 3; // Recency/novelty 
 // Knowledge channel indices (channels 26-33)
 // Layout: 6 embedding slots + activation + confidence
 pub const KNOWLEDGE_CHANNELS_START: usize = MEMORY_CHANNELS_START + NUM_MEMORY_CHANNELS; // Channel 26
-pub const KNOWLEDGE_EMBEDDING_0: usize = KNOWLEDGE_CHANNELS_START;     // Embedding slot 0
+pub const KNOWLEDGE_EMBEDDING_0: usize = KNOWLEDGE_CHANNELS_START; // Embedding slot 0
 pub const KNOWLEDGE_EMBEDDING_1: usize = KNOWLEDGE_CHANNELS_START + 1; // Embedding slot 1
 pub const KNOWLEDGE_EMBEDDING_2: usize = KNOWLEDGE_CHANNELS_START + 2; // Embedding slot 2
 pub const KNOWLEDGE_EMBEDDING_3: usize = KNOWLEDGE_CHANNELS_START + 3; // Embedding slot 3
 pub const KNOWLEDGE_EMBEDDING_4: usize = KNOWLEDGE_CHANNELS_START + 4; // Embedding slot 4
 pub const KNOWLEDGE_EMBEDDING_5: usize = KNOWLEDGE_CHANNELS_START + 5; // Embedding slot 5
-pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 6;  // Knowledge activation strength
-pub const KNOWLEDGE_CONFIDENCE: usize = KNOWLEDGE_CHANNELS_START + 7;  // Confidence score (0-1)
+pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 6; // Knowledge activation strength
+pub const KNOWLEDGE_CONFIDENCE: usize = KNOWLEDGE_CHANNELS_START + 7; // Confidence score (0-1)
 
 // Backward-compat aliases (KNOWLEDGE_EMBEDDING points to slot 0; META_* point into knowledge)
 pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_EMBEDDING_0;
@@ -73,7 +73,7 @@ pub const COMM_NODE_ID: usize = COMM_CHANNELS_START + 1; // Source node identifi
 
 // Metadata channel indices (channels 36-37) — legacy/compat, kept for serialization stability
 pub const META_CHANNELS_START: usize = COMM_CHANNELS_START + NUM_COMM_CHANNELS; // Channel 36
-pub const META_TIMESTAMP_LEGACY: usize = META_CHANNELS_START;     // Legacy timestamp slot
+pub const META_TIMESTAMP_LEGACY: usize = META_CHANNELS_START; // Legacy timestamp slot
 pub const META_CONFIDENCE_LEGACY: usize = META_CHANNELS_START + 1; // Legacy confidence slot
 
 // Grid represents the cellular automata world
@@ -141,7 +141,9 @@ impl Grid {
                     self.cells[y][x][MEMORY_RECENCY] = 0.0; // No recency
 
                     // Initialize knowledge channels (26-33) - empty
-                    for ke in KNOWLEDGE_CHANNELS_START..KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS {
+                    for ke in
+                        KNOWLEDGE_CHANNELS_START..KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS
+                    {
                         self.cells[y][x][ke] = 0.0;
                     }
 
@@ -527,12 +529,15 @@ impl Grid {
                             if ndy == 0 && ndx == 0 {
                                 continue; // Skip self
                             }
-                            let nnx =
-                                ((nx as i32 + ndx).rem_euclid(self.width as i32)) as usize;
-                            let nny =
-                                ((ny as i32 + ndy).rem_euclid(self.height as i32)) as usize;
+                            let nnx = ((nx as i32 + ndx).rem_euclid(self.width as i32)) as usize;
+                            let nny = ((ny as i32 + ndy).rem_euclid(self.height as i32)) as usize;
 
-                            for (ch, avg) in neighbor_avg.iter_mut().enumerate().skip(4).take(NUM_BASE_CHANNELS - 4) {
+                            for (ch, avg) in neighbor_avg
+                                .iter_mut()
+                                .enumerate()
+                                .skip(4)
+                                .take(NUM_BASE_CHANNELS - 4)
+                            {
                                 *avg += self.cells[nny][nnx][ch];
                             }
                             neighbor_count += 1;
@@ -551,7 +556,12 @@ impl Grid {
 
             // Apply smoothing: new_val = 0.7 * current + 0.3 * neighbor_avg
             for (nx, ny, neighbor_avg) in updates {
-                for (ch, avg) in neighbor_avg.iter().enumerate().skip(4).take(NUM_BASE_CHANNELS - 4) {
+                for (ch, avg) in neighbor_avg
+                    .iter()
+                    .enumerate()
+                    .skip(4)
+                    .take(NUM_BASE_CHANNELS - 4)
+                {
                     self.cells[ny][nx][ch] = self.cells[ny][nx][ch] * 0.7 + avg * 0.3;
                 }
             }
@@ -598,9 +608,9 @@ impl Grid {
     /// - Embedding slots (ch 26-31): Light diffusion to spread associations
     pub fn consolidate_knowledge(&mut self, steps: usize) {
         // Update parameters (tunable)
-        const DECAY_RATE: f64 = 0.02;      // Per-step decay for inactive cells
+        const DECAY_RATE: f64 = 0.02; // Per-step decay for inactive cells
         const STRENGTHEN_RATE: f64 = 0.05; // Boost for high-activation cells
-        const SPREAD_RATE: f64 = 0.03;     // How much activation spreads to neighbors
+        const SPREAD_RATE: f64 = 0.03; // How much activation spreads to neighbors
         const CONFIDENCE_BOOST: f64 = 0.02; // Confidence increase for stable cells
         const ACTIVATION_THRESHOLD: f64 = 0.3; // Minimum activation to count as "active"
 
@@ -987,7 +997,7 @@ mod tests {
     /// knowledge that was recently accessed.
     #[test]
     fn test_consolidation_preserves_recently_accessed_knowledge() {
-        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+        use crate::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
         let mut knowledge = NCAKnowledge::new();
         knowledge.config.ollama_url = None; // Use hash-based embeddings
@@ -1022,7 +1032,7 @@ mod tests {
     /// Knowledge should remain retrievable after consolidation + serialization.
     #[test]
     fn test_consolidation_survives_persistence() {
-        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+        use crate::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
         let path = "/tmp/sage_test_consolidation_persistence.bin";
         let _ = std::fs::remove_file(path);
@@ -1110,7 +1120,7 @@ mod tests {
     /// Repeated consolidation should converge, not collapse to zero.
     #[test]
     fn test_repeated_consolidation_converges() {
-        use crate::distributed_knowledge::{NCAKnowledge, KnowledgeStore};
+        use crate::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
         let mut knowledge = NCAKnowledge::new();
         knowledge.config.ollama_url = None;

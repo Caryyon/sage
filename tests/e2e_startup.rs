@@ -19,11 +19,7 @@ impl InferenceEngine for MockEngine {
         Ok(format!("Echo: {}", prompt))
     }
 
-    fn chat(
-        &self,
-        messages: &[ChatMessage],
-        _max_tokens: usize,
-    ) -> Result<String, Box<dyn Error>> {
+    fn chat(&self, messages: &[ChatMessage], _max_tokens: usize) -> Result<String, Box<dyn Error>> {
         let last = messages
             .iter()
             .rev()
@@ -133,10 +129,7 @@ fn test_stale_brain_file_is_handled_gracefully() {
 
     let err_msg = result.err().unwrap();
     // The error should be some kind of deserialization or format error
-    assert!(
-        !err_msg.is_empty(),
-        "Error message should not be empty"
-    );
+    assert!(!err_msg.is_empty(), "Error message should not be empty");
     eprintln!("Got expected error for corrupted brain: {}", err_msg);
 
     // Application should be able to continue with fresh grid
@@ -177,10 +170,7 @@ fn test_brain_serialization_roundtrip_preserves_knowledge() {
 
         // Verify encoding worked
         active_before = store.active_knowledge(0.01).len();
-        assert!(
-            active_before > 0,
-            "Should have active cells after encoding"
-        );
+        assert!(active_before > 0, "Should have active cells after encoding");
 
         // Save to disk
         store.save(&temp_path).expect("Save should succeed");
@@ -192,10 +182,7 @@ fn test_brain_serialization_roundtrip_preserves_knowledge() {
 
     // Verify active cells survived (grid state preserved)
     let active_after = loaded_store.active_knowledge(0.01).len();
-    assert!(
-        active_after > 0,
-        "Loaded brain should have active cells"
-    );
+    assert!(active_after > 0, "Loaded brain should have active cells");
     assert_eq!(
         active_before, active_after,
         "Active cell count should match: before={} after={}",
@@ -205,7 +192,11 @@ fn test_brain_serialization_roundtrip_preserves_knowledge() {
     // Query each fact and verify retrieval produces results (grid state works)
     let mut queries_with_results = 0;
     for fact in &facts {
-        let query = fact.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+        let query = fact
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
         let results = loaded_store.query(&query, 10);
         if !results.is_empty() {
             queries_with_results += 1;
@@ -252,7 +243,10 @@ fn test_brain_header_validity() {
         header.version, BRAIN_VERSION,
         "Version should match BRAIN_VERSION"
     );
-    assert_eq!(header.channels as usize, NUM_CHANNELS, "Channels should be 38");
+    assert_eq!(
+        header.channels as usize, NUM_CHANNELS,
+        "Channels should be 38"
+    );
 
     // Cleanup
     let _ = std::fs::remove_file(&temp_path);

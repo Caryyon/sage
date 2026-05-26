@@ -665,11 +665,7 @@ const SYNONYM_PAIRS: &[(&str, &str)] = &[
 ///
 /// Loss = Σ_{pos} ||W·h(a) - W·h(b)||² - λ · Σ_{neg} ||W·h(a) - W·h(c)||²
 /// Gradient computed analytically; weights updated via SGD.
-fn train_embedding_projection(
-    epochs: usize,
-    lr: f64,
-    verbose: bool,
-) -> LinearProjection {
+fn train_embedding_projection(epochs: usize, lr: f64, verbose: bool) -> LinearProjection {
     let config = EncoderConfig::default();
     let dim = config.num_features; // 64
 
@@ -677,10 +673,7 @@ fn train_embedding_projection(
     let mut proj = LinearProjection::identity(dim);
 
     // Precompute hash vectors for all unique words
-    let mut all_words: Vec<&str> = SYNONYM_PAIRS
-        .iter()
-        .flat_map(|(a, b)| [*a, *b])
-        .collect();
+    let mut all_words: Vec<&str> = SYNONYM_PAIRS.iter().flat_map(|(a, b)| [*a, *b]).collect();
     all_words.sort_unstable();
     all_words.dedup();
 
@@ -718,8 +711,7 @@ fn train_embedding_projection(
             // Add positive gradient: grad += 2 * diff * ha^T - 2 * diff * hb^T
             for row in 0..dim {
                 for col in 0..dim {
-                    total_grad[row * dim + col] +=
-                        2.0 * diff_pos[row] * (ha[col] - hb[col]);
+                    total_grad[row * dim + col] += 2.0 * diff_pos[row] * (ha[col] - hb[col]);
                 }
             }
 
@@ -756,7 +748,11 @@ fn train_embedding_projection(
         // Clip gradient norm to avoid explosion
         let grad_norm: f64 = total_grad.iter().map(|g| g * g).sum::<f64>().sqrt();
         let clip = 10.0_f64;
-        let scale = if grad_norm > clip { clip / grad_norm } else { 1.0 };
+        let scale = if grad_norm > clip {
+            clip / grad_norm
+        } else {
+            1.0
+        };
         for g in &mut total_grad {
             *g *= scale;
         }
@@ -787,7 +783,11 @@ fn train_embedding_projection(
         "\n📊 Verification: sim(cat,mammal)={:.4}  sim(cat,pine)={:.4}  {}",
         sim_cat_mammal,
         sim_cat_pine,
-        if sim_cat_mammal > sim_cat_pine { "✅ pulled similar closer" } else { "⚠ not improving yet" }
+        if sim_cat_mammal > sim_cat_pine {
+            "✅ pulled similar closer"
+        } else {
+            "⚠ not improving yet"
+        }
     );
 
     proj
@@ -837,8 +837,12 @@ fn main() {
                 eprintln!("  --epochs <n>         Number of NCA training epochs (default: 50)");
                 eprintln!("  --population <n>     CMA-ES population size (default: 12)");
                 eprintln!("  --verbose/-v         Show per-epoch progress");
-                eprintln!("  --quick/-q           Quick mode: tiny grid, 8 word-pairs, ~30 seconds");
-                eprintln!("  --train-embeddings   Also train linear projection W for hash→semantic");
+                eprintln!(
+                    "  --quick/-q           Quick mode: tiny grid, 8 word-pairs, ~30 seconds"
+                );
+                eprintln!(
+                    "  --train-embeddings   Also train linear projection W for hash→semantic"
+                );
                 eprintln!("  --embed-epochs <n>   Projection training epochs (default: 500)");
                 eprintln!("  --embed-lr <f>       Projection learning rate (default: 0.001)");
                 return;
@@ -851,7 +855,10 @@ fn main() {
     // ── Embedding projection training (fast, runs standalone or combined) ───
     if train_embeddings {
         eprintln!("🔢 Training linear embedding projection W ∈ ℝ^{{64×64}}");
-        eprintln!("   Contrastive pairs: {} synonym pairs", SYNONYM_PAIRS.len());
+        eprintln!(
+            "   Contrastive pairs: {} synonym pairs",
+            SYNONYM_PAIRS.len()
+        );
         eprintln!("   Epochs: {}   LR: {}", embed_epochs, embed_lr);
         eprintln!();
 
@@ -868,7 +875,10 @@ fn main() {
             }
         }
 
-        if !args.iter().any(|a| a.starts_with("--epochs") || a == "--quick") {
+        if !args
+            .iter()
+            .any(|a| a.starts_with("--epochs") || a == "--quick")
+        {
             // Only ran embedding training — done.
             return;
         }
@@ -887,13 +897,7 @@ fn main() {
             quick_weights_path(),
         )
     } else {
-        (
-            WORD_ASSOC_CORPUS,
-            epochs,
-            8,
-            50,
-            default_weights_path(),
-        )
+        (WORD_ASSOC_CORPUS, epochs, 8, 50, default_weights_path())
     };
 
     eprintln!("🧠 SAGE NCA Word-Association Trainer");
@@ -905,7 +909,12 @@ fn main() {
     }
     eprintln!("   Optimizer: CMA-ES (separable diagonal)");
     eprintln!("   Epochs: {}", epochs);
-    eprintln!("   Grid size: {}×{} ({} cells)", grid_size, grid_size, grid_size * grid_size);
+    eprintln!(
+        "   Grid size: {}×{} ({} cells)",
+        grid_size,
+        grid_size,
+        grid_size * grid_size
+    );
     eprintln!();
 
     let config = TrainingConfig {

@@ -54,10 +54,7 @@ mod implementation {
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "local".to_string());
 
-            eprintln!(
-                "Loading local model from {}...",
-                path.display()
-            );
+            eprintln!("Loading local model from {}...", path.display());
 
             let params = LlamaParams::default();
             let model = LlamaModel::load_from_file(&path, params)
@@ -115,22 +112,13 @@ mod implementation {
             for msg in messages {
                 match msg.role {
                     ChatRole::System => {
-                        prompt.push_str(&format!(
-                            "<|system|>\n{}<|end|>\n",
-                            msg.content
-                        ));
+                        prompt.push_str(&format!("<|system|>\n{}<|end|>\n", msg.content));
                     }
                     ChatRole::User => {
-                        prompt.push_str(&format!(
-                            "<|user|>\n{}<|end|>\n",
-                            msg.content
-                        ));
+                        prompt.push_str(&format!("<|user|>\n{}<|end|>\n", msg.content));
                     }
                     ChatRole::Assistant => {
-                        prompt.push_str(&format!(
-                            "<|assistant|>\n{}<|end|>\n",
-                            msg.content
-                        ));
+                        prompt.push_str(&format!("<|assistant|>\n{}<|end|>\n", msg.content));
                     }
                 }
             }
@@ -145,7 +133,10 @@ mod implementation {
             max_tokens: usize,
             mut callback: Option<Box<dyn FnMut(&str) + Send>>,
         ) -> Result<String, Box<dyn Error>> {
-            let model = self.model.lock().map_err(|e| format!("Model lock error: {}", e))?;
+            let model = self
+                .model
+                .lock()
+                .map_err(|e| format!("Model lock error: {}", e))?;
 
             let mut session_params = SessionParams::default();
             session_params.n_ctx = self.context_size;
@@ -159,10 +150,12 @@ mod implementation {
                 .map_err(|e| format!("Failed to process prompt: {}", e))?;
 
             let mut generated = String::new();
-            let mut completions = session.start_completing_with(
-                llama_cpp::standard_sampler::StandardSampler::default(),
-                max_tokens,
-            ).map_err(|e| format!("Failed to start completion: {}", e))?;
+            let mut completions = session
+                .start_completing_with(
+                    llama_cpp::standard_sampler::StandardSampler::default(),
+                    max_tokens,
+                )
+                .map_err(|e| format!("Failed to start completion: {}", e))?;
 
             for token in completions.into_iter().take(max_tokens) {
                 let text = token.text;
@@ -242,7 +235,10 @@ mod stub {
 
     impl LocalLLM {
         pub fn new(_model_path: Option<PathBuf>) -> Result<Self, Box<dyn Error>> {
-            Err("Local LLM support not compiled. Rebuild with: cargo build --features local-llm".into())
+            Err(
+                "Local LLM support not compiled. Rebuild with: cargo build --features local-llm"
+                    .into(),
+            )
         }
 
         pub fn model_exists() -> bool {
