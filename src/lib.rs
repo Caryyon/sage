@@ -13,3 +13,6 @@ pub mod miniworld; // Pixel art town simulation for SAGE instances
 pub mod network;
 pub mod query_router; // Query complexity router — decides inference backend
 pub mod query_router_intelligent; // Self-improving intelligent router // Gossip networking and peer synchronization // Ratatui TUI for interactive chat with brain visualization
+
+// Re-export key types for convenience
+pub use grid::ConsolidationParams;
