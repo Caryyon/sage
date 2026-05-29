@@ -121,6 +121,11 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Train consolidation parameters via evolution strategy
+    Consolidation {
+        #[command(subcommand)]
+        command: ConsolidationCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -150,6 +155,31 @@ enum FeedbackCommands {
         /// Output file path
         #[arg(short, long)]
         output: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConsolidationCommands {
+    /// Train consolidation parameters via evolution strategy
+    Train {
+        /// Number of ES epochs
+        #[arg(short, long, default_value_t = 30)]
+        epochs: usize,
+        /// Population size per epoch
+        #[arg(short, long, default_value_t = 20)]
+        population: usize,
+        /// Number of facts to encode for retrieval test
+        #[arg(short, long, default_value_t = 50)]
+        facts: usize,
+        /// Number of retrieval queries per evaluation
+        #[arg(short, long, default_value_t = 20)]
+        queries: usize,
+        /// Number of consolidation steps per evaluation
+        #[arg(short, long, default_value_t = 2)]
+        steps: usize,
+        /// Save trained parameters to file
+        #[arg(short, long)]
+        save: Option<String>,
     },
 }
 
@@ -328,6 +358,18 @@ fn main() {
         Some(Commands::Prune { threshold, dry_run }) => {
             run_prune(threshold, dry_run);
         }
+        Some(Commands::Consolidation { command }) => match command {
+            ConsolidationCommands::Train {
+                epochs,
+                population,
+                facts,
+                queries,
+                steps,
+                save,
+            } => {
+                run_consolidation_train(epochs, population, facts, queries, steps, save.as_deref());
+            }
+        },
         Some(Commands::Node { command }) => match command {
             NodeCommands::Start {
                 port,
@@ -3386,4 +3428,72 @@ fn run_prune(threshold: f64, dry_run: bool) {
     println!("   Active cells before: {}", before);
     println!("   Active cells after: {}", before - pruned_count);
     println!("   Brain saved to {}", brain_path);
+}
+
+/// Train consolidation parameters via evolution strategy.
+///
+/// This benchmarks whether learned NCA dynamics improve retrieval quality
+/// compared to the default hand-tuned heuristics.
+fn run_consolidation_train(
+    epochs: usize,
+    population: usize,
+    num_facts: usize,
+    num_queries: usize,
+    consolidation_steps: usize,
+    save_path: Option<&str>,
+) {
+    use sage::grid::ConsolidationParams;
+    use sage::inference::consolidation_trainer::{train_consolidation, ConsolidationTrainingConfig};
+
+    println!("🔬 Training consolidation parameters via ES");
+    println!("   Epochs: {}", epochs);
+    println!("   Population: {}", population);
+    println!("   Facts: {}", num_facts);
+    println!("   Queries: {}", num_queries);
+    println!("   Consolidation steps: {}", consolidation_steps);
+    println!();
+
+    let config = ConsolidationTrainingConfig {
+        epochs,
+        population_size: population,
+        num_facts,
+        num_queries,
+        consolidation_steps,
+        ..Default::default()
+    };
+
+    match train_consolidation(&config, true) {
+        Ok((params, accuracy)) => {
+            println!();
+            println!("✅ Training complete!");
+            println!("   Retrieval accuracy: {:.1}%", accuracy * 100.0);
+            println!();
+            println!("Learned parameters:");
+            println!("   decay_rate: {:.4}", params.decay_rate);
+            println!("   strengthen_rate: {:.4}", params.strengthen_rate);
+            println!("   spread_rate: {:.4}", params.spread_rate);
+            println!("   confidence_boost: {:.4}", params.confidence_boost);
+            println!("   activation_threshold: {:.4}", params.activation_threshold);
+            println!();
+            println!("Default parameters (for comparison):");
+            let default_params = ConsolidationParams::default();
+            println!("   decay_rate: {:.4}", default_params.decay_rate);
+            println!("   strengthen_rate: {:.4}", default_params.strengthen_rate);
+            println!("   spread_rate: {:.4}", default_params.spread_rate);
+            println!("   confidence_boost: {:.4}", default_params.confidence_boost);
+            println!("   activation_threshold: {:.4}", default_params.activation_threshold);
+
+            if let Some(path) = save_path {
+                let json = serde_json::to_string_pretty(&params).unwrap_or_else(|_| "{}".to_string());
+                match std::fs::write(path, json) {
+                    Ok(()) => println!("\n💾 Parameters saved to {}", path),
+                    Err(e) => eprintln!("\n❌ Failed to save parameters: {}", e),
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Training failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 }

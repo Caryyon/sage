@@ -2,6 +2,77 @@
 
 use serde::{Deserialize, Serialize};
 
+// ── Learnable Consolidation Parameters ─────────────────────────────────────
+/// Parameters for knowledge consolidation dynamics.
+/// These can be trained via evolution strategy on retrieval quality.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConsolidationParams {
+    /// Per-step decay for inactive cells (default: 0.02)
+    pub decay_rate: f64,
+    /// Boost for high-activation cells with active neighbors (default: 0.05)
+    pub strengthen_rate: f64,
+    /// How much activation spreads to neighbors (default: 0.03)
+    pub spread_rate: f64,
+    /// Confidence increase for stable cells (default: 0.02)
+    pub confidence_boost: f64,
+    /// Minimum activation to count as "active" (default: 0.3)
+    pub activation_threshold: f64,
+}
+
+impl Default for ConsolidationParams {
+    fn default() -> Self {
+        Self {
+            decay_rate: 0.02,
+            strengthen_rate: 0.05,
+            spread_rate: 0.03,
+            confidence_boost: 0.02,
+            activation_threshold: 0.3,
+        }
+    }
+}
+
+impl ConsolidationParams {
+    /// Create random parameters for ES training
+    pub fn random<R: rand::Rng>(rng: &mut R) -> Self {
+        Self {
+            decay_rate: rng.gen::<f64>() * 0.1,        // 0-0.1
+            strengthen_rate: rng.gen::<f64>() * 0.1,    // 0-0.1
+            spread_rate: rng.gen::<f64>() * 0.1,        // 0-0.1
+            confidence_boost: rng.gen::<f64>() * 0.05,  // 0-0.05
+            activation_threshold: 0.1 + rng.gen::<f64>() * 0.4, // 0.1-0.5
+        }
+    }
+
+    /// Serialize to vector for ES optimization
+    pub fn to_vec(&self) -> Vec<f64> {
+        vec![
+            self.decay_rate,
+            self.strengthen_rate,
+            self.spread_rate,
+            self.confidence_boost,
+            self.activation_threshold,
+        ]
+    }
+
+    /// Deserialize from vector (5 params)
+    pub fn from_vec(v: &[f64]) -> Self {
+        Self {
+            decay_rate: v[0].clamp(0.0, 0.2),
+            strengthen_rate: v[1].clamp(0.0, 0.2),
+            spread_rate: v[2].clamp(0.0, 0.2),
+            confidence_boost: v[3].clamp(0.0, 0.1),
+            activation_threshold: v[4].clamp(0.05, 0.8),
+        }
+    }
+
+    /// Perturb parameters for ES exploration
+    pub fn perturb(&self, noise: &[f64], sigma: f64) -> Self {
+        let v = self.to_vec();
+        let perturbed: Vec<f64> = v.iter().zip(noise).map(|(&p, &n)| p + sigma * n).collect();
+        Self::from_vec(&perturbed)
+    }
+}
+
 pub const GRID_SIZE: usize = 256;
 pub const NUM_BASE_CHANNELS: usize = 16; // 4 RGBA + 12 hidden
 pub const NUM_PATTERN_CHANNELS: usize = 4; // One-hot encoding for 4 patterns
@@ -607,12 +678,25 @@ impl Grid {
     /// - KNOWLEDGE_CONFIDENCE (ch 33): Increased when activation is stable
     /// - Embedding slots (ch 26-31): Light diffusion to spread associations
     pub fn consolidate_knowledge(&mut self, steps: usize) {
-        // Update parameters (tunable)
-        const DECAY_RATE: f64 = 0.02; // Per-step decay for inactive cells
-        const STRENGTHEN_RATE: f64 = 0.05; // Boost for high-activation cells
-        const SPREAD_RATE: f64 = 0.03; // How much activation spreads to neighbors
-        const CONFIDENCE_BOOST: f64 = 0.02; // Confidence increase for stable cells
-        const ACTIVATION_THRESHOLD: f64 = 0.3; // Minimum activation to count as "active"
+        self.consolidate_knowledge_with_params(steps, &ConsolidationParams::default());
+    }
+
+    /// Consolidate knowledge with custom parameters (for ES training).
+    ///
+    /// Same as `consolidate_knowledge` but with configurable parameters.
+    /// This allows training consolidation dynamics via evolution strategy.
+    pub fn consolidate_knowledge_with_params(
+        &mut self,
+        steps: usize,
+        params: &ConsolidationParams,
+    ) {
+        let (decay_rate, strengthen_rate, spread_rate, confidence_boost, activation_threshold) = (
+            params.decay_rate,
+            params.strengthen_rate,
+            params.spread_rate,
+            params.confidence_boost,
+            params.activation_threshold,
+        );
 
         for _step in 0..steps {
             // Collect updates in a separate buffer to avoid in-place mutation artifacts
@@ -644,7 +728,7 @@ impl Grid {
                             let nx = (x as i32 + dx) as usize;
                             if ny < self.height && nx < self.width {
                                 let n_act = self.cells[ny][nx][KNOWLEDGE_ACTIVATION];
-                                if n_act > ACTIVATION_THRESHOLD {
+                                if n_act > activation_threshold {
                                     active_neighbors += 1;
                                 }
                                 neighbor_count += 1;
@@ -659,24 +743,24 @@ impl Grid {
 
                     // Rule 1: Decay for inactive cells (not recently accessed)
                     // High activation resists decay
-                    if activation < ACTIVATION_THRESHOLD {
-                        let decay = DECAY_RATE * (1.0 - activation);
+                    if activation < activation_threshold {
+                        let decay = decay_rate * (1.0 - activation);
                         activation_updates.push((x, y, -decay));
                     } else {
                         // Rule 2: Strengthen active cells with active neighbors (Hebbian)
                         if active_neighbors >= 2 {
-                            let strengthen = STRENGTHEN_RATE * activation;
+                            let strengthen = strengthen_rate * activation;
                             activation_updates.push((x, y, strengthen));
 
                             // Boost confidence for stable, well-connected knowledge
-                            let conf_boost = CONFIDENCE_BOOST * confidence.min(1.0);
+                            let conf_boost = confidence_boost * confidence.min(1.0);
                             confidence_updates.push((x, y, conf_boost));
                         }
                     }
 
                     // Rule 3: Spread activation to neighbors (Hebbian association)
-                    if activation > ACTIVATION_THRESHOLD && neighbor_count > 0 {
-                        let spread = SPREAD_RATE * activation / neighbor_count as f64;
+                    if activation > activation_threshold && neighbor_count > 0 {
+                        let spread = spread_rate * activation / neighbor_count as f64;
                         for dy in -1i32..=1 {
                             for dx in -1i32..=1 {
                                 if dx == 0 && dy == 0 {

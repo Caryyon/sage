@@ -7,6 +7,7 @@
 //! - `OfflineEngine`: Graceful degradation when no LLM is available (Phase 3 groundwork)
 
 pub mod backprop_trainer;
+pub mod consolidation_trainer;
 pub mod criticality;
 pub mod distributed;
 pub mod embedded;
