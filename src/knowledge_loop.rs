@@ -9,7 +9,7 @@ use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
 use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 use crate::feedback::FeedbackCollector;
-use crate::grid::{GRID_SIZE, MEMORY_RECENCY};
+use crate::grid::{ConsolidationParams, GRID_SIZE, MEMORY_RECENCY};
 use crate::inference::nca_predictor::{
     default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
 };
@@ -86,11 +86,16 @@ pub struct KnowledgeLoop {
     nca_available: bool,
     /// Feedback collector for learning from user interactions.
     feedback_collector: FeedbackCollector,
+    /// Consolidation parameters — loaded from ~/.sage/consolidation_params.json or defaults.
+    consolidation_params: ConsolidationParams,
 }
 
 impl KnowledgeLoop {
     /// Create a new KnowledgeLoop with the given inference engine.
     pub fn new(engine: Arc<dyn InferenceEngine>) -> Self {
+        // Load trained consolidation params if available
+        let consolidation_params = ConsolidationParams::load_or_default();
+        
         Self {
             knowledge: NCAKnowledge::new(),
             engine,
@@ -112,6 +117,7 @@ impl KnowledgeLoop {
             intelligent_router: IntelligentRouter::new().with_nca_available(true),
             nca_available: true,
             feedback_collector: FeedbackCollector::new(),
+            consolidation_params,
         }
     }
 
@@ -517,7 +523,8 @@ impl KnowledgeLoop {
     pub fn step_knowledge(&mut self, _center: (usize, usize)) {
         // Run 1-2 consolidation steps on knowledge channels
         // This strengthens recently-accessed knowledge and forms associations
-        self.knowledge.grid.consolidate_knowledge(2);
+        // Uses trained params from ~/.sage/consolidation_params.json if available
+        self.knowledge.grid.consolidate_knowledge_with_params(2, &self.consolidation_params);
     }
 
     /// Run one turn of the knowledge loop:
