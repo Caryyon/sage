@@ -4,7 +4,7 @@
 //! merge quality, grid capacity, and network simulation.
 
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
-use sage::grid::Grid;
+use sage::grid::{ConsolidationParams, Grid};
 use serde::Serialize;
 use std::time::Instant;
 
@@ -16,6 +16,7 @@ struct BenchmarkResults {
     merge_quality: MergeQualityResult,
     grid_capacity: GridCapacityResult,
     network_simulation: Vec<NetworkSimResult>,
+    consolidation_params_comparison: ConsolidationParamsComparisonResult,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -74,6 +75,41 @@ struct NetworkSimResult {
     avg_retrieval_quality: f64,
     total_storage_bytes: usize,
     gossip_rounds: usize,
+}
+
+#[derive(Serialize, Clone, Debug)]
+struct ConsolidationParamsComparisonResult {
+    /// Retrieval accuracy with default params
+    default_params: RetrievalAccuracyResult,
+    /// Retrieval accuracy with trained params
+    trained_params: RetrievalAccuracyResult,
+    /// Improvement percentage (positive = trained better)
+    improvement_pct: f64,
+    /// Whether trained params file was found
+    trained_params_loaded: bool,
+    /// The trained params used (if loaded)
+    trained_params_values: Option<ConsolidationParamsJson>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+struct ConsolidationParamsJson {
+    decay_rate: f64,
+    strengthen_rate: f64,
+    spread_rate: f64,
+    confidence_boost: f64,
+    activation_threshold: f64,
+}
+
+impl From<ConsolidationParams> for ConsolidationParamsJson {
+    fn from(p: ConsolidationParams) -> Self {
+        Self {
+            decay_rate: p.decay_rate,
+            strengthen_rate: p.strengthen_rate,
+            spread_rate: p.spread_rate,
+            confidence_boost: p.confidence_boost,
+            activation_threshold: p.activation_threshold,
+        }
+    }
 }
 
 // --- Facts and queries for retrieval accuracy ---
@@ -759,6 +795,109 @@ fn bench_network_simulation() -> Vec<NetworkSimResult> {
     results
 }
 
+/// Compare retrieval accuracy with default vs trained consolidation params.
+/// This validates the ml-engineer hypothesis that ES-trained params improve retrieval.
+fn bench_consolidation_params_comparison() -> ConsolidationParamsComparisonResult {
+    let facts = get_facts();
+    let queries = get_queries();
+
+    // Build topic map once
+    let mut topic_facts: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (i, &(_fact, topic)) in facts.iter().enumerate() {
+        topic_facts.entry(topic).or_default().push(i);
+    }
+
+    // --- Test with default params ---
+    let mut store_default = NCAKnowledge::new();
+    store_default.config.ollama_url = None;
+    
+    for &(fact, _topic) in &facts {
+        store_default.encode(fact, 0.9);
+    }
+    
+    // Apply default consolidation (2 steps)
+    store_default.grid.consolidate_knowledge(2);
+    
+    let default_result = evaluate_retrieval(&store_default, &queries, &topic_facts, &facts);
+
+    // --- Test with trained params ---
+    let trained_params = ConsolidationParams::load_or_default();
+    let trained_params_loaded = dirs::home_dir()
+        .map(|h| h.join(".sage").join("consolidation_params.json").exists())
+        .unwrap_or(false);
+    
+    let mut store_trained = NCAKnowledge::new();
+    store_trained.config.ollama_url = None;
+    
+    for &(fact, _topic) in &facts {
+        store_trained.encode(fact, 0.9);
+    }
+    
+    // Apply consolidation with trained params
+    store_trained.grid.consolidate_knowledge_with_params(2, &trained_params);
+    
+    let trained_result = evaluate_retrieval(&store_trained, &queries, &topic_facts, &facts);
+    
+    // Calculate improvement
+    let improvement = if default_result.precision > 0.0 {
+        ((trained_result.precision - default_result.precision) / default_result.precision) * 100.0
+    } else {
+        0.0
+    };
+
+    ConsolidationParamsComparisonResult {
+        default_params: default_result,
+        trained_params: trained_result,
+        improvement_pct: improvement,
+        trained_params_loaded,
+        trained_params_values: if trained_params_loaded {
+            Some(ConsolidationParamsJson::from(trained_params))
+        } else {
+            None
+        },
+    }
+}
+
+fn evaluate_retrieval(
+    store: &NCAKnowledge,
+    queries: &[(&'static str, &'static str)],
+    topic_facts: &std::collections::HashMap<&str, Vec<usize>>,
+    facts: &[(&'static str, &'static str)],
+) -> RetrievalAccuracyResult {
+    let mut hits = 0;
+    let total_queries = queries.len();
+
+    for &(query, expected_topic) in queries {
+        let results = store.query(query, 5);
+        let expected_facts: Vec<&str> = topic_facts
+            .get(expected_topic)
+            .map(|indices| indices.iter().map(|&i| facts[i].0).collect())
+            .unwrap_or_default();
+
+        let got_hit = results.iter().any(|r| {
+            if let Some(ref text) = r.text {
+                expected_facts.iter().any(|f| text == f)
+            } else {
+                false
+            }
+        });
+
+        if got_hit {
+            hits += 1;
+        }
+    }
+
+    let precision = hits as f64 / total_queries as f64;
+    RetrievalAccuracyResult {
+        total_facts: facts.len(),
+        total_queries,
+        hits,
+        precision,
+        recall: precision,
+    }
+}
+
 fn print_table(results: &BenchmarkResults) {
     println!("\n╔══════════════════════════════════════════════════════════════════╗");
     println!("║              SAGE Distributed Knowledge Benchmarks             ║");
@@ -855,6 +994,69 @@ fn print_table(results: &BenchmarkResults) {
         );
     }
 
+    // Consolidation params comparison
+    println!("╟──────────────────────────────────────────────────────────────────╢");
+    println!("║  🎯 Consolidation Params Comparison                             ║");
+    println!("║  Tests whether ES-trained params improve retrieval accuracy     ║");
+    println!("╟──────────────────────────────────────────────────────────────────╢");
+    println!(
+        "║  Trained params loaded: {}                                     ║",
+        if results.consolidation_params_comparison.trained_params_loaded {
+            "YES"
+        } else {
+            "NO (using defaults)"
+        }
+    );
+    
+    if let Some(ref params) = results.consolidation_params_comparison.trained_params_values {
+        println!(
+            "║  decay={:.4} strengthen={:.4} spread={:.4}       ║",
+            params.decay_rate, params.strengthen_rate, params.spread_rate
+        );
+        println!(
+            "║  conf_boost={:.4} activation_thresh={:.4}                  ║",
+            params.confidence_boost, params.activation_threshold
+        );
+    }
+    
+    println!("╟──────────────────────────────────────────────────────────────────╢");
+    println!("║  Default params:                                                ║");
+    println!(
+        "║    Hits: {:>3}/{:>3}  Precision: {:.1}%                              ║",
+        results.consolidation_params_comparison.default_params.hits,
+        results.consolidation_params_comparison.default_params.total_queries,
+        results.consolidation_params_comparison.default_params.precision * 100.0
+    );
+    println!("║  Trained params:                                                ║");
+    println!(
+        "║    Hits: {:>3}/{:>3}  Precision: {:.1}%                              ║",
+        results.consolidation_params_comparison.trained_params.hits,
+        results.consolidation_params_comparison.trained_params.total_queries,
+        results.consolidation_params_comparison.trained_params.precision * 100.0
+    );
+    println!("╟──────────────────────────────────────────────────────────────────╢");
+    
+    let improvement_sign = if results.consolidation_params_comparison.improvement_pct >= 0.0 {
+        "+"
+    } else {
+        ""
+    };
+    println!(
+        "║  Improvement: {}{:.2}%                                            ║",
+        improvement_sign,
+        results.consolidation_params_comparison.improvement_pct
+    );
+    
+    if results.consolidation_params_comparison.improvement_pct > 5.0 {
+        println!("║  ✅ Trained params significantly better!                        ║");
+    } else if results.consolidation_params_comparison.improvement_pct > 0.0 {
+        println!("║  ✓ Trained params slightly better                               ║");
+    } else if results.consolidation_params_comparison.improvement_pct > -5.0 {
+        println!("║  ≈ No significant difference                                     ║");
+    } else {
+        println!("║  ⚠️  Default params performed better                             ║");
+    }
+
     println!("╚══════════════════════════════════════════════════════════════════╝");
 }
 
@@ -886,6 +1088,10 @@ fn main() {
     let network_simulation = bench_network_simulation();
     println!("  ✓ Done");
 
+    println!("Running consolidation params comparison benchmark...");
+    let consolidation_params_comparison = bench_consolidation_params_comparison();
+    println!("  ✓ Done");
+
     let results = BenchmarkResults {
         encoding_speed,
         retrieval_accuracy,
@@ -893,6 +1099,7 @@ fn main() {
         merge_quality,
         grid_capacity,
         network_simulation,
+        consolidation_params_comparison,
     };
 
     // Print pretty table
