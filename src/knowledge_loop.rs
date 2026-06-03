@@ -10,9 +10,9 @@ use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
 use crate::feedback::FeedbackCollector;
 use crate::grid::{ConsolidationParams, GRID_SIZE, MEMORY_RECENCY};
-use crate::inference::nca_predictor::{
-    default_weights_path, NcaPredictor, NcaWeights, SimpleTokenizer,
-};
+// NcaPredictor removed from KnowledgeLoop (see 2026-06-03 diagnosis)
+// The token-prediction grid is disconnected from knowledge retrieval.
+// Use crate::inference::nca_predictor directly in research binaries if needed.
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
 use crate::query_router_intelligent::IntelligentRouter;
@@ -28,10 +28,7 @@ static TOTAL_RETRIEVALS: AtomicUsize = AtomicUsize::new(0);
 /// not already found by semantic/hash retrieval.
 static DELTA_UNIQUE_HITS: AtomicUsize = AtomicUsize::new(0);
 
-/// Number of NCA dream steps to run after encoding a response.
-const N_DREAM_STEPS: usize = 3;
-/// Window half-size for the region fed into the dream predictor.
-const DREAM_WINDOW: usize = 8; // 16×16 region
+
 /// Number of freerun repair steps after dream cycle.
 const N_FREERUN_STEPS: usize = 3;
 /// Number of NCA update steps to run BEFORE retrieval (post-encode, pre-query).
@@ -59,13 +56,7 @@ pub struct KnowledgeLoop {
     pub user_encode_confidence: f64,
     /// Confidence level for encoding assistant responses (0.0-1.0)
     pub response_encode_confidence: f64,
-    /// Lazily-initialized NcaPredictor for the dream cycle.
-    /// None if weights not found on disk (graceful skip).
-    #[allow(dead_code)]
-    nca_predictor: Option<NcaPredictor>,
-    /// Whether we've already attempted to load the predictor.
-    #[allow(dead_code)]
-    nca_load_attempted: bool,
+
     /// Cross-attention decoder for semantic knowledge retrieval.
     /// Based on arXiv:2603.10055 (Lee et al.): attention layers are the
     /// most transferable component when extracting knowledge from NCA states.
@@ -83,7 +74,7 @@ pub struct KnowledgeLoop {
     /// Intelligent self-improving query router — replaces static word-count heuristic.
     intelligent_router: IntelligentRouter,
     /// Whether NCA predictor is available for routing decisions.
-    nca_available: bool,
+    nca_available: bool, // Reserved: currently always true, used for routing decisions
     /// Feedback collector for learning from user interactions.
     feedback_collector: FeedbackCollector,
     /// Consolidation parameters — loaded from ~/.sage/consolidation_params.json or defaults.
@@ -106,8 +97,6 @@ impl KnowledgeLoop {
             max_results: 5,
             user_encode_confidence: 0.7,
             response_encode_confidence: 0.8,
-            nca_predictor: None,
-            nca_load_attempted: false,
             attention_decoder: AttentionDecoder::new(GRID_SIZE, GRID_SIZE).with_recency_weight(0.3),
             encoder_config: EncoderConfig::default(),
             retrieval_feedback: RetrievalFeedback::new(RETRIEVAL_FEATURE_DIM),
@@ -472,40 +461,6 @@ impl KnowledgeLoop {
         self.knowledge.encode(text, confidence)
     }
 
-    /// Lazily load the NcaPredictor from disk. Silently skips if weights absent.
-    #[allow(dead_code)]
-    fn ensure_nca_predictor(&mut self) {
-        if self.nca_load_attempted {
-            return;
-        }
-        self.nca_load_attempted = true;
-
-        let path = default_weights_path();
-        if !path.exists() {
-            return; // No trained weights — skip dream cycle gracefully
-        }
-
-        match NcaWeights::load(&path) {
-            Ok(weights) => {
-                // Build a minimal tokenizer (empty corpus is fine — we only use run_and_get_state)
-                let tokenizer = SimpleTokenizer::from_corpus("", 100);
-                let predictor = NcaPredictor::with_grid_size(
-                    tokenizer,
-                    weights,
-                    N_DREAM_STEPS,
-                    DREAM_WINDOW * 2, // 16-cell grid for the dream window
-                );
-                self.nca_predictor = Some(predictor);
-            }
-            Err(e) => {
-                eprintln!("[SAGE dream] Could not load NCA weights: {e} — dream cycle disabled");
-            }
-        }
-    }
-
-    /// Run NCA dream steps on the recently-written knowledge region.
-    ///
-    /// After encoding a response, this finds the most-activated cells and runs
     /// Run knowledge consolidation on the NCA grid.
     ///
     /// This implements a principled "dream cycle" that operates directly on
@@ -611,6 +566,8 @@ impl KnowledgeLoop {
         self.intelligent_router.sync_with_feedback();
 
         // 5. Generate response using intelligent query router
+        // Note: NCA predictor is disconnected from knowledge retrieval (see 2026-06-02 diagnosis)
+        // The router still tracks patterns/complexity but we always use LLM for now.
         let (backend, pattern, confidence) = self
             .intelligent_router
             .route(user_input, self.nca_available);
@@ -620,7 +577,7 @@ impl KnowledgeLoop {
         self.feedback_collector.start_query(
             user_input.to_string(),
             pattern,
-            true, // NCA was attempted (we always try it first conceptually)
+            false, // NCA was not used (disconnected)
         );
 
         tracing::debug!(
@@ -630,69 +587,20 @@ impl KnowledgeLoop {
             confidence
         );
 
-        let response: String = match backend {
-            crate::query_router_intelligent::Backend::Nca => {
-                // Try NCA predictor for queries that router thinks NCA can handle
-                self.ensure_nca_predictor();
-                if let Some(ref mut predictor) = self.nca_predictor {
-                    let context_text = knowledge_context.as_deref().unwrap_or("");
-                    match predictor.answer(user_input, Some(context_text), 20) {
-                        Ok(answer) if !answer.is_empty() => {
-                            // Record success for learning
-                            self.intelligent_router.record_outcome(
-                                pattern,
-                                crate::query_router_intelligent::RoutingOutcome {
-                                    backend: crate::query_router_intelligent::Backend::Nca,
-                                    success: true,
-                                    response_time_ms: 0,
-                                    user_satisfaction: None,
-                                },
-                            );
-                            answer
-                        }
-                        _ => {
-                            // NCA failed, record and fall back to LLM
-                            self.intelligent_router.record_outcome(
-                                pattern,
-                                crate::query_router_intelligent::RoutingOutcome {
-                                    backend: crate::query_router_intelligent::Backend::Nca,
-                                    success: false,
-                                    response_time_ms: 0,
-                                    user_satisfaction: None,
-                                },
-                            );
-                            self.engine.chat(&messages, 1000)?
-                        }
-                    }
-                } else {
-                    // No predictor available, record and use LLM
-                    self.intelligent_router.record_outcome(
-                        pattern,
-                        crate::query_router_intelligent::RoutingOutcome {
-                            backend: crate::query_router_intelligent::Backend::Llm,
-                            success: true,
-                            response_time_ms: 0,
-                            user_satisfaction: None,
-                        },
-                    );
-                    self.engine.chat(&messages, 1000)?
-                }
-            }
-            crate::query_router_intelligent::Backend::Llm => {
-                // Use LLM for complex queries
-                let response = self.engine.chat(&messages, 1000)?;
-                // Record success
-                self.intelligent_router.record_outcome(
-                    pattern,
-                    crate::query_router_intelligent::RoutingOutcome {
-                        backend: crate::query_router_intelligent::Backend::Llm,
-                        success: true,
-                        response_time_ms: 0,
-                        user_satisfaction: None,
-                    },
-                );
-                response
-            }
+        // Always use LLM since NCA predictor is disconnected from knowledge retrieval
+        let response: String = {
+            // Record the routing decision (always LLM)
+            self.intelligent_router.record_outcome(
+                pattern,
+                crate::query_router_intelligent::RoutingOutcome {
+                    backend: crate::query_router_intelligent::Backend::Llm,
+                    success: true,
+                    response_time_ms: 0,
+                    user_satisfaction: None,
+                },
+            );
+            self.feedback_collector.mark_llm_fallback();
+            self.engine.chat(&messages, 1000)?
         };
 
         // Track timing and complete feedback
