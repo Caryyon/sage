@@ -18,6 +18,7 @@ pub mod validation;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+use tokio::task::JoinHandle;
 
 use diff::{merkle_hash, KnowledgeDiff};
 use gossip::{
@@ -89,7 +90,9 @@ pub struct NetworkManager {
     /// Monotonic sequence counter for outgoing diffs.
     sequence: Mutex<u64>,
     /// Whether the manager is currently running.
-    running: RwLock<bool>,
+    running: Arc<RwLock<bool>>,
+    /// Background task handle (for recv polling).
+    background_handle: RwLock<Option<JoinHandle<()>>>,
     /// Stats.
     stats: RwLock<NetworkStats>,
     /// Diff validator (trust scoring + validation rules).
@@ -132,7 +135,8 @@ impl NetworkManager {
             peers: RwLock::new(HashMap::new()),
             last_broadcast_state: Mutex::new(None),
             sequence: Mutex::new(0),
-            running: RwLock::new(false),
+            running: Arc::new(RwLock::new(false)),
+            background_handle: RwLock::new(None),
             stats: RwLock::new(NetworkStats::default()),
             validator: Mutex::new(DiffValidator::new(trust_store)),
             quarantine: Mutex::new(Quarantine::new()),
@@ -162,21 +166,76 @@ impl NetworkManager {
         Ok(Self::new(identity, NetworkConfig::default()))
     }
 
-    /// Start networking (placeholder — would start libp2p swarm).
+    /// Start networking (spawns background gossip listener).
     pub async fn start(&self) -> Result<(), GossipError> {
-        let mut running = self.running.write().await;
-        if *running {
-            return Ok(());
+        // Check that transport is wired.
+        let Some(transport) = self.transport.clone() else {
+            return Err(GossipError::NotStarted);
+        };
+
+        // Check if already running.
+        {
+            let mut running = self.running.write().await;
+            if *running {
+                return Ok(());
+            }
+            *running = true;
         }
-        *running = true;
-        println!("[network] Node {} started", self.identity.node_id);
+
+        // Clone state for the background task.
+        let running = Arc::clone(&self.running);
+        let node_id = self.identity.node_id.clone();
+
+        // Spawn background task to poll transport.recv().
+        let handle = tokio::spawn(async move {
+            loop {
+                // Check if we should stop.
+                if !*running.read().await {
+                    break;
+                }
+
+                // Wait for incoming messages.
+                match transport.recv().await {
+                    Ok((peer_id, msg)) => {
+                        // Log message type; full dispatch requires &mut grid.
+                        // The caller should poll handle_message() separately.
+                        println!(
+                            "[network] Node {} received {:?} from {}",
+                            node_id,
+                            msg.type_name(),
+                            peer_id
+                        );
+                    }
+                    Err(GossipError::NotStarted) => {
+                        // Transport not ready; wait and retry.
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    }
+                    Err(e) => {
+                        println!("[network] Node {} transport error: {}", node_id, e);
+                        // Break on non-recoverable errors.
+                        break;
+                    }
+                }
+            }
+            println!("[network] Node {} background task stopped", node_id);
+        });
+
+        // Store handle so stop() can abort it.
+        *self.background_handle.write().await = Some(handle);
+        println!("[network] Node {} started (background task spawned)", self.identity.node_id);
         Ok(())
     }
 
     /// Stop networking.
     pub async fn stop(&self) -> Result<(), GossipError> {
-        let mut running = self.running.write().await;
-        *running = false;
+        // Signal the background task to stop.
+        *self.running.write().await = false;
+
+        // Abort the background task if it exists.
+        if let Some(handle) = self.background_handle.write().await.take() {
+            handle.abort();
+        }
+
         println!("[network] Node {} stopped", self.identity.node_id);
         Ok(())
     }
