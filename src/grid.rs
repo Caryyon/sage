@@ -71,6 +71,44 @@ impl ConsolidationParams {
         let perturbed: Vec<f64> = v.iter().zip(noise).map(|(&p, &n)| p + sigma * n).collect();
         Self::from_vec(&perturbed)
     }
+
+    /// Load consolidation parameters from ~/.sage/consolidation_params.json
+    /// Returns default params if file doesn't exist or is invalid.
+    pub fn load_or_default() -> Self {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => {
+                tracing::debug!("No home directory, using default consolidation params");
+                return Self::default();
+            }
+        };
+        let path = home.join(".sage").join("consolidation_params.json");
+        
+        if !path.exists() {
+            tracing::debug!("No consolidation params file, using defaults");
+            return Self::default();
+        }
+        
+        match std::fs::read_to_string(&path) {
+            Ok(json) => match serde_json::from_str::<Self>(&json) {
+                Ok(params) => {
+                    tracing::info!(
+                        "Loaded trained consolidation params: decay={:.3}, strengthen={:.3}, spread={:.3}",
+                        params.decay_rate, params.strengthen_rate, params.spread_rate
+                    );
+                    params
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse consolidation params: {}, using defaults", e);
+                    Self::default()
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Failed to read consolidation params: {}, using defaults", e);
+                Self::default()
+            }
+        }
+    }
 }
 
 pub const GRID_SIZE: usize = 256;
