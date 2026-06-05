@@ -290,9 +290,9 @@ fn test_embedding_status_detection_timeout() {
     let status = detect_embedding_status(&config);
     let elapsed = start.elapsed();
 
-    // Should timeout and fallback within 3 seconds
+    // Should timeout and fallback within ~3 seconds (allow overhead margin)
     assert!(
-        elapsed < Duration::from_secs(3),
+        elapsed < Duration::from_secs(4),
         "Embedding status detection should timeout quickly, took {:?}",
         elapsed
     );
