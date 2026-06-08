@@ -732,11 +732,11 @@ fn bench_network_simulation() -> Vec<NetworkSimResult> {
 
         // Each node encodes unique knowledge
         let mut all_facts: Vec<Vec<String>> = Vec::new();
-        for i in 0..node_count {
+        for (i, node) in nodes.iter_mut().enumerate() {
             let mut node_facts = Vec::new();
             for j in 0..items_per_node {
                 let fact = format!("node {} knowledge item {}", i, j);
-                nodes[i].encode(&fact, 0.8);
+                node.encode(&fact, 0.8);
                 node_facts.push(fact);
             }
             all_facts.push(node_facts);
@@ -749,10 +749,10 @@ fn bench_network_simulation() -> Vec<NetworkSimResult> {
         for _ in 0..rounds {
             gossip_rounds += 1;
             let grids: Vec<Grid> = nodes.iter().map(|n| n.grid.clone()).collect();
-            for i in 0..node_count {
-                for j in 0..node_count {
+            for (i, node) in nodes.iter_mut().enumerate() {
+                for (j, grid) in grids.iter().enumerate() {
                     if i != j {
-                        nodes[i].merge(&grids[j], 0.8);
+                        node.merge(grid, 0.8);
                     }
                 }
             }
