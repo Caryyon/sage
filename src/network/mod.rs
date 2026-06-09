@@ -82,16 +82,16 @@ pub struct NetworkManager {
     /// Configuration.
     pub config: NetworkConfig,
     /// Known peers.
-    peers: RwLock<HashMap<String, PeerInfo>>,
+    peers: Arc<RwLock<HashMap<String, PeerInfo>>>,
     /// The local grid state snapshot (for diff computation).
     /// Stored as the last-broadcast state so we can compute incremental diffs.
     last_broadcast_state: Mutex<Option<Vec<Vec<Vec<f64>>>>>,
     /// Monotonic sequence counter for outgoing diffs.
     sequence: Mutex<u64>,
     /// Whether the manager is currently running.
-    running: RwLock<bool>,
+    running: Arc<RwLock<bool>>,
     /// Stats.
-    stats: RwLock<NetworkStats>,
+    stats: Arc<RwLock<NetworkStats>>,
     /// Diff validator (trust scoring + validation rules).
     validator: Mutex<DiffValidator>,
     /// Knowledge quarantine for suspicious diffs.
@@ -108,6 +108,8 @@ pub struct NetworkManager {
     rate_limiter: Mutex<RateLimiter>,
     /// Optional transport — used to respond to GridStateRequest.
     transport: Option<Arc<dyn GossipTransport>>,
+    /// Background task handle for the recv loop.
+    background_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// Network statistics.
@@ -129,11 +131,11 @@ impl NetworkManager {
         Self {
             identity,
             config,
-            peers: RwLock::new(HashMap::new()),
+            peers: Arc::new(RwLock::new(HashMap::new())),
             last_broadcast_state: Mutex::new(None),
             sequence: Mutex::new(0),
-            running: RwLock::new(false),
-            stats: RwLock::new(NetworkStats::default()),
+            running: Arc::new(RwLock::new(false)),
+            stats: Arc::new(RwLock::new(NetworkStats::default())),
             validator: Mutex::new(DiffValidator::new(trust_store)),
             quarantine: Mutex::new(Quarantine::new()),
             privacy_config,
@@ -142,6 +144,7 @@ impl NetworkManager {
             ban_list: Mutex::new(BanList::load()),
             rate_limiter: Mutex::new(RateLimiter::new(RateLimitConfig::default())),
             transport: None,
+            background_handle: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -162,21 +165,104 @@ impl NetworkManager {
         Ok(Self::new(identity, NetworkConfig::default()))
     }
 
-    /// Start networking (placeholder — would start libp2p swarm).
+    /// Start networking.
+    ///
+    /// Initializes the wired transport and spawns a background task that:
+    /// - Loops while `running` is true
+    /// - Calls `transport.recv()` to receive incoming messages
+    /// - Handles PeerAnnounce messages (registering peers)
+    /// - Logs other message types for visibility
+    ///
+    /// Returns `Err(GossipError::NotStarted)` if no transport is wired.
     pub async fn start(&self) -> Result<(), GossipError> {
         let mut running = self.running.write().await;
         if *running {
             return Ok(());
         }
+
+        // Check transport is wired
+        let transport = self.transport.as_ref().ok_or(GossipError::NotStarted)?;
+
+        // Start the underlying transport (libp2p swarm, etc.)
+        transport.start().await?;
+
         *running = true;
-        println!("[network] Node {} started", self.identity.node_id);
+        drop(running); // Release lock before spawning task
+
+        // Clone Arc fields for the background task
+        let transport = Arc::clone(transport);
+        let running_flag = Arc::clone(&self.running);
+        let peers = Arc::clone(&self.peers);
+        let node_id = self.identity.node_id.clone();
+        let node_id_log = node_id.clone();
+
+        let handle = tokio::spawn(async move {
+            println!("[network] Background recv loop started for node {}", node_id_log);
+            loop {
+                // Check if still running
+                if !*running_flag.read().await {
+                    println!("[network] Background task exiting (stopped)");
+                    break;
+                }
+
+                match transport.recv().await {
+                    Ok((peer_id, msg)) => {
+                        let msg_type = msg.type_name();
+                        println!("[network] Received {} from {}", msg_type, peer_id);
+
+                        // Handle PeerAnnounce to populate peer map
+                        if let GossipMessage::PeerAnnounce(announce) = msg {
+                            let info = PeerInfo {
+                                node_id: announce.node_id.clone(),
+                                human_name: announce.human_name.clone(),
+                                public_key: announce.public_key,
+                                state_hash: announce.state_hash,
+                                last_seen_ms: announce.timestamp_ms,
+                                diff_count: announce.diff_count,
+                                protocol_version: announce.protocol_version,
+                            };
+                            peers.write().await.insert(announce.node_id, info);
+                            println!("[network] Registered peer: {}", peer_id);
+                        }
+                    }
+                    Err(GossipError::NotStarted) => {
+                        // Transport stopped
+                        println!("[network] Background task exiting (transport not started)");
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!("[network] recv error: {}", e);
+                        // Continue looping on transient errors
+                    }
+                }
+            }
+        });
+
+        *self.background_handle.write().await = Some(handle);
+        println!("[network] Node {} started", node_id);
         Ok(())
     }
 
     /// Stop networking.
     pub async fn stop(&self) -> Result<(), GossipError> {
-        let mut running = self.running.write().await;
-        *running = false;
+        {
+            let mut running = self.running.write().await;
+            if !*running {
+                return Ok(());
+            }
+            *running = false;
+        }
+
+        // Abort background task if present
+        if let Some(handle) = self.background_handle.write().await.take() {
+            handle.abort();
+        }
+
+        // Stop the transport
+        if let Some(ref transport) = self.transport {
+            transport.stop().await?;
+        }
+
         println!("[network] Node {} stopped", self.identity.node_id);
         Ok(())
     }
