@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
@@ -43,7 +43,7 @@ jobs:
             target/${{ matrix.target }}/release/sage-cli
             target/${{ matrix.target }}/release/sage-node
             target/${{ matrix.target }}/release/sage-api
-            target/${{ matrix.target }}/release/sage-chat
+            target/${{ matrix.target }}/release/sage_chat
             target/${{ matrix.target }}/release/sage-template
             target/${{ matrix.target }}/release/sage-curriculum
             target/${{ matrix.target }}/release/sage-network-server
@@ -68,7 +68,7 @@ jobs:
           cp target/${{ matrix.target }}/release/sage-cli sage-${{ github.ref_name }}-${{ matrix.target }}/sage
           cp target/${{ matrix.target }}/release/sage-node sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-api sage-${{ github.ref_name }}-${{ matrix.target }}/
-          cp target/${{ matrix.target }}/release/sage-chat sage-${{ github.ref_name }}-${{ matrix.target }}/
+          cp target/${{ matrix.target }}/release/sage_chat sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-template sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-curriculum sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-network-server sage-${{ github.ref_name }}-${{ matrix.target }}/
