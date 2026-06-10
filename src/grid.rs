@@ -127,6 +127,40 @@ pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS
     + NUM_COMM_CHANNELS
     + NUM_META_CHANNELS; // 38 total
 
+/// Get a human-readable label for a channel index.
+pub fn channel_label(ch: usize) -> &'static str {
+    match ch {
+        0 => "R (red)",
+        1 => "G (green)",
+        2 => "B (blue)",
+        3 => "A (life)",
+        4..=15 => "hidden",
+        16 => "pattern-0",
+        17 => "pattern-1",
+        18 => "pattern-2",
+        19 => "pattern-3",
+        20 => "food",
+        21 => "toxin",
+        22 => "mem:attention",
+        23 => "mem:gate",
+        24 => "mem:value",
+        25 => "mem:recency",
+        26 => "know:emb-0",
+        27 => "know:emb-1",
+        28 => "know:emb-2",
+        29 => "know:emb-3",
+        30 => "know:emb-4",
+        31 => "know:emb-5",
+        32 => "know:active",
+        33 => "know:conf",
+        34 => "comm:sync",
+        35 => "comm:node-id",
+        36 => "meta:time",
+        37 => "meta:legacy-conf",
+        _ => "???",
+    }
+}
+
 // ── Channel Partitioning (shared vs private) ───────────────────────────────
 // For p2p knowledge sharing: shared channels sync via gossip, private stay local.
 // Layout: channels 0..35 are shared (synced across nodes), channels 36..37 are private.

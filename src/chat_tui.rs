@@ -48,7 +48,8 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::io;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 extern crate reqwest;
@@ -135,6 +136,11 @@ struct AppState {
     // Auto-save
     last_save: Instant,
     autosave_interval_secs: u64,
+    // Continuous brain activity
+    brain_stats: Arc<Mutex<crate::brain_activity::BrainActivityStats>>,
+    brain_stop: Option<Arc<AtomicBool>>,
+    // Channel viewer
+    selected_channel: Option<usize>, // None = composite view, Some(ch) = single channel view
 }
 
 fn format_peer_count(n: usize) -> String {
@@ -588,6 +594,19 @@ fn ui(f: &mut Frame, state: &AppState) {
         Span::styled("  │  ", Style::default().fg(DIM)),
         Span::styled("brain:", Style::default().fg(DIM)),
         Span::styled(&state.brain_path, Style::default().fg(DIM_GREEN)),
+        {
+            // Brain activity stats
+            let stats = state.brain_stats.lock().unwrap();
+            if stats.consolidation_cycles > 0 {
+                Span::styled(
+                    format!("  🧠 consolidate:#{} smooth:#{} wave:#{}",
+                        stats.consolidation_cycles, stats.smooth_cycles, stats.spontaneous_waves),
+                    Style::default().fg(Color::Rgb(0x66, 0x99, 0xcc)),
+                )
+            } else {
+                Span::styled("  🧠 starting…", Style::default().fg(Color::Rgb(0x66, 0x66, 0x88)))
+            }
+        },
         if state.generating {
             Span::styled(
                 "  ◌ generating…",
@@ -832,7 +851,18 @@ pub fn run(
         retrieval_stats,
         last_save: Instant::now(),
         autosave_interval_secs,
+        selected_channel: None,
+        brain_stats: Arc::new(Mutex::new(crate::brain_activity::BrainActivityStats::default())),
+        brain_stop: None,
     };
+
+    // Start continuous brain activity loop
+    let (stop_flag, stats_handle) = crate::brain_activity::start_brain_activity(
+        Arc::clone(&knowledge),
+        crate::brain_activity::BrainActivityConfig::default(),
+    );
+    state.brain_stop = Some(stop_flag);
+    state.brain_stats = stats_handle;
 
     // Check for updates (non-blocking, 3s timeout)
     let current_version = env!("CARGO_PKG_VERSION").to_string();
@@ -1193,7 +1223,33 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                         }
                     }
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        // Stop brain activity loop
+                        if let Some(ref stop) = state.brain_stop {
+                            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
                         state.quit = true;
+                    }
+                    KeyCode::Char(']') => {
+                        // Next channel
+                        let max = crate::grid::NUM_CHANNELS;
+                        state.selected_channel = Some(match state.selected_channel {
+                            None => 0,
+                            Some(ch) if ch + 1 >= max => 0,
+                            Some(ch) => ch + 1,
+                        });
+                    }
+                    KeyCode::Char('[') => {
+                        // Previous channel
+                        let max = crate::grid::NUM_CHANNELS;
+                        state.selected_channel = Some(match state.selected_channel {
+                            None => max - 1,
+                            Some(0) => max - 1,
+                            Some(ch) => ch - 1,
+                        });
+                    }
+                    KeyCode::Char('0') => {
+                        // Reset to composite view (channel 0)
+                        state.selected_channel = None;
                     }
                     KeyCode::Char(c) => {
                         let pos = state.cursor_pos;
