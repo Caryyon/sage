@@ -188,11 +188,16 @@ fn decay_flashes(flashes: &mut [Vec<CellFlash>]) {
 }
 
 fn render_brain(f: &mut Frame, area: Rect, state: &AppState) {
+    let brain_label = if let Some(ch) = state.selected_channel {
+        format!(" CH:{} {} ", ch, crate::grid::channel_label(ch))
+    } else {
+        " BRAIN ".to_string()
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(DIM_GREEN))
         .title(Span::styled(
-            " BRAIN ",
+            brain_label,
             Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().bg(BG));
@@ -1063,19 +1068,62 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
         // Refresh brain grid visualization periodically (every 60 frames ≈ 3s)
         if state.frame_counter.is_multiple_of(60) {
             if let Ok(k) = knowledge.try_lock() {
-                let active = k.knowledge().active_knowledge(0.01);
-                // Reset grid
-                for row in state.brain_grid.iter_mut() {
-                    for cell in row.iter_mut() {
-                        *cell = 0.0;
+                let w = k.knowledge().grid.width;
+                let downsample = w / BRAIN_VIZ_SIZE;
+                if let Some(ch) = state.selected_channel {
+                    // Single-channel view: read raw cell data
+                    let grid = &k.knowledge().grid;
+                    for vy in 0..BRAIN_VIZ_SIZE {
+                        for vx in 0..BRAIN_VIZ_SIZE {
+                            let mut max_val = 0.0f64;
+                            for dy in 0..downsample {
+                                for dx in 0..downsample {
+                                    let gx = (vx * downsample + dx).min(w - 1);
+                                    let gy = (vy * downsample + dy).min(w - 1);
+                                    max_val = max_val.max(grid.cells[gy][gx][ch]);
+                                }
+                            }
+                            state.brain_grid[vy][vx] = max_val;
+                        }
+                    }
+                } else {
+                    // Composite view: knowledge activations + hidden channel background
+                    let active = k.knowledge().active_knowledge(0.01);
+                    let grid = &k.knowledge().grid;
+                    // Reset
+                    for row in state.brain_grid.iter_mut() {
+                        for cell in row.iter_mut() {
+                            *cell = 0.0;
+                        }
+                    }
+                    // Knowledge activations
+                    for entry in &active {
+                        let (x, y) = entry.position;
+                        let vx = (x / downsample).min(BRAIN_VIZ_SIZE - 1);
+                        let vy = (y / downsample).min(BRAIN_VIZ_SIZE - 1);
+                        state.brain_grid[vy][vx] = state.brain_grid[vy][vx].max(entry.relevance);
+                    }
+                    // Background glow from hidden channels (spontaneous activity visible!)
+                    for vy in 0..BRAIN_VIZ_SIZE {
+                        for vx in 0..BRAIN_VIZ_SIZE {
+                            let mut bg_sum = 0.0f64;
+                            let mut bg_count = 0.0f64;
+                            for dy in 0..downsample {
+                                for dx in 0..downsample {
+                                    let gx = (vx * downsample + dx).min(w - 1);
+                                    let gy = (vy * downsample + dy).min(w - 1);
+                                    for ch in 4..16 {
+                                        bg_sum += grid.cells[gy][gx][ch];
+                                        bg_count += 1.0;
+                                    }
+                                }
+                            }
+                            let bg = (bg_sum / bg_count.max(1.0)) * 0.6;
+                            state.brain_grid[vy][vx] = (state.brain_grid[vy][vx] + bg).min(1.0);
+                        }
                     }
                 }
-                for entry in &active {
-                    let (x, y) = entry.position;
-                    if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
-                        state.brain_grid[y][x] = entry.relevance;
-                    }
-                }
+                state.active_cells = k.active_cells();
             }
         }
 
