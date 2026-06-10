@@ -36,20 +36,6 @@ jobs:
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Upload individual binaries (for sage update)
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            target/${{ matrix.target }}/release/sage-cli
-            target/${{ matrix.target }}/release/sage-node
-            target/${{ matrix.target }}/release/sage-api
-            target/${{ matrix.target }}/release/sage_chat
-            target/${{ matrix.target }}/release/sage-template
-            target/${{ matrix.target }}/release/sage-curriculum
-            target/${{ matrix.target }}/release/sage-network-server
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload updater binary
         run: |
           cp target/${{ matrix.target }}/release/sage-cli ${{ matrix.updater_name }}
