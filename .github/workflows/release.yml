@@ -15,37 +15,69 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            updater_name: sage-linux-x86_64
           - os: macos-latest
             target: x86_64-apple-darwin
+            updater_name: sage-darwin-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-    
+            updater_name: sage-darwin-arm64
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: dtolnay/rust-action@stable
         with:
           targets: ${{ matrix.target }}
-      
+
       - name: Build release
         run: cargo build --release --target ${{ matrix.target }}
-      
-      - name: Package
+
+      - name: Upload individual binaries (for sage update)
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/${{ matrix.target }}/release/sage-cli
+            target/${{ matrix.target }}/release/sage-node
+            target/${{ matrix.target }}/release/sage-api
+            target/${{ matrix.target }}/release/sage-chat
+            target/${{ matrix.target }}/release/sage-template
+            target/${{ matrix.target }}/release/sage-curriculum
+            target/${{ matrix.target }}/release/sage-network-server
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload updater binary
+        run: |
+          cp target/${{ matrix.target }}/release/sage-cli sage-${{ matrix.updater_name }}
+        shell: bash
+
+      - name: Upload installer binary
+        uses: softprops/action-gh-release@v1
+        with:
+          files: sage-${{ matrix.updater_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package tarball
         run: |
           mkdir -p sage-${{ github.ref_name }}-${{ matrix.target }}
           cp target/${{ matrix.target }}/release/sage-cli sage-${{ github.ref_name }}-${{ matrix.target }}/sage
           cp target/${{ matrix.target }}/release/sage-node sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-api sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp target/${{ matrix.target }}/release/sage-chat sage-${{ github.ref_name }}-${{ matrix.target }}/
+          cp target/${{ matrix.target }}/release/sage-template sage-${{ github.ref_name }}-${{ matrix.target }}/
+          cp target/${{ matrix.target }}/release/sage-curriculum sage-${{ github.ref_name }}-${{ matrix.target }}/
+          cp target/${{ matrix.target }}/release/sage-network-server sage-${{ github.ref_name }}-${{ matrix.target }}/
           cp install.sh sage-${{ github.ref_name }}-${{ matrix.target }}/
           tar -czf sage-${{ github.ref_name }}-${{ matrix.target }}.tar.gz sage-${{ github.ref_name }}-${{ matrix.target }}
-      
-      - name: Upload release
+
+      - name: Upload tarball
         uses: softprops/action-gh-release@v1
         with:
-          files: sage-*.tar.gz
+          files: sage-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

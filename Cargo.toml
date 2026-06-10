@@ -98,6 +98,14 @@ name = "sage-criticality"
 path = "src/bin/sage_criticality.rs"
 
 [[bin]]
+name = "sage-template"
+path = "src/bin/sage_template.rs"
+
+[[bin]]
+name = "sage-curriculum"
+path = "src/bin/sage_curriculum.rs"
+
+[[bin]]
 name = "sage-network-server"
 path = "src/bin/sage_network_server.rs"
 

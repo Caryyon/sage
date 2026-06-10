@@ -10,6 +10,8 @@
 //!     PEERS\n              — list connected peers
 //!     KNOWLEDGE <query>\n  — query knowledge grid
 //!     BRAIN\n              — get brain grid snapshot (activation values)
+//!     EXPORT_TEMPLATE <n>\n — export current brain to named template
+//!     LIST_TEMPLATES\n     — list available brain templates
 //!     QUIT\n               — disconnect
 //!
 //!   Server → Client:
@@ -55,6 +57,10 @@ struct Cli {
     /// Disable mDNS peer discovery
     #[arg(long)]
     no_mdns: bool,
+
+    /// Bootstrap brain from named template (e.g. "junior-dev")
+    #[arg(short, long)]
+    template: Option<String>,
 }
 
 const SAGE_SYSTEM_PROMPT: &str = r#"You are SAGE (Self-Adaptive General Explorer), a decentralized AI running locally on the user's machine. You are part of a growing grid of interconnected SAGE nodes that share knowledge through Neural Cellular Automata (NCA) channels.
@@ -432,10 +438,61 @@ async fn handle_client(
             });
             let _ = writer.write_all(format!("{}\n", status).as_bytes()).await;
             let _ = writer.write_all(b"DONE\n").await;
+        } else if let Some(name) = line.strip_prefix("EXPORT_TEMPLATE ") {
+            // Export current brain to named template
+            let s = state.lock().await;
+            let bundle = sage::brain_templates::BrainTemplateBundle::from_knowledge(
+                &s.knowledge,
+                name,
+                &format!("Live-exported from node {}", s.node_id),
+                vec![],
+                None,
+            );
+            let templates_dir = sage::brain_templates::default_templates_dir();
+            drop(s);
+            match bundle.save(&templates_dir) {
+                Ok(path) => {
+                    let _ = writer
+                        .write_all(format!("OK Exported template '{}' -> {}\n", name, path).as_bytes())
+                        .await;
+                }
+                Err(e) => {
+                    let _ = writer.write_all(format!("ERROR Export failed: {}\n", e).as_bytes()).await;
+                }
+            }
+            let _ = writer.write_all(b"DONE\n").await;
+        } else if line == "LIST_TEMPLATES" {
+            let templates_dir = sage::brain_templates::default_templates_dir();
+            let templates = sage::brain_templates::list_templates(&templates_dir);
+            if templates.is_empty() {
+                let _ = writer.write_all(b"No templates available\n").await;
+            } else {
+                for t in &templates {
+                    let tags = if t.meta.tags.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", t.meta.tags.join(","))
+                    };
+                    let _ = writer
+                        .write_all(
+                            format!(
+                                "TEMPLATE {} {}{} | {} active | {}\n",
+                                t.meta.name,
+                                t.meta.domain.as_deref().unwrap_or("general"),
+                                tags,
+                                t.meta.active_cells,
+                                t.meta.description,
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                }
+            }
+            let _ = writer.write_all(b"DONE\n").await;
         } else {
             let _ = writer
                 .write_all(
-                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
+                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, EXPORT_TEMPLATE, LIST_TEMPLATES, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
                 )
                 .await;
             let _ = writer.write_all(b"DONE\n").await;
@@ -469,7 +526,32 @@ async fn main() {
         identity.public_key[..8].try_into().unwrap(),
     ));
     let mut knowledge = NCAKnowledge::new().with_node_id(node_id_f64);
-    if Path::new(&bp).exists() {
+
+    // If --template specified, bootstrap from template (override brain.bin)
+    if let Some(ref template_name) = cli.template {
+        let templates_dir = sage::brain_templates::default_templates_dir();
+        match sage::brain_templates::find_template(template_name, &templates_dir) {
+            Ok(bundle) => {
+                println!("📦 Bootstrapping from template: {}", bundle.meta.name);
+                println!("   Description: {}", bundle.meta.description);
+                println!(
+                    "   Source: {} active cells from {}",
+                    bundle.meta.active_cells, bundle.meta.source_node_id
+                );
+                knowledge = bundle.to_knowledge();
+                // Save as brain.bin so future restarts pick it up
+                if let Err(e) = knowledge.save(&bp) {
+                    eprintln!("Warning: could not save brain after template import: {e}");
+                } else {
+                    println!("   → Saved to {}", bp);
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to load template '{}': {}", template_name, e);
+                std::process::exit(1);
+            }
+        }
+    } else if Path::new(&bp).exists() {
         if let Err(e) = knowledge.load(&bp) {
             eprintln!("Warning: could not load brain: {e}");
         }

@@ -8,6 +8,8 @@ pub mod feedback; // User feedback tracking and learning
 pub mod grid;
 pub mod inference; // Unified inference engine (embedded candle + Ollama fallback)
 pub mod knowledge_loop; // Core intelligence cycle: Text → NCA → Knowledge → LLM
+pub mod brain_templates;       // Named brain snapshots: export/import/clone expert brains
+pub mod curriculum;             // Bulk curriculum ingestion for domain-expert training
 pub mod knowledge_loop_integration_tests; // Query routing integration tests
 pub mod miniworld; // Pixel art town simulation for SAGE instances
 pub mod network;
