@@ -1645,6 +1645,13 @@ fn run_update(quiet: bool) {
 
     println!("📦 Latest version: {version}");
 
+    // Check if already up to date
+    let current_version = env!("CARGO_PKG_VERSION");
+    if version == current_version {
+        println!("✅ Already at the latest version ({version})");
+        return;
+    }
+
     let binary_name = format!("sage-{os}-{arch}");
     let binary_url = format!("https://github.com/{repo}/releases/download/{version}/{binary_name}");
     let changelog_url = format!("https://api.github.com/repos/{repo}/releases/tags/{version}");
