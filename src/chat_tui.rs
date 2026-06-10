@@ -782,14 +782,17 @@ pub fn run(
     let active_cells = knowledge.lock().unwrap().active_cells();
     let retrieval_stats = knowledge.lock().unwrap().knowledge().stats_handle();
 
-    // Build brain grid from NCA knowledge
+    // Downsample 256x256 grid → 32x32 display for brain panel
+    let full_grid_size = crate::grid::GRID_SIZE; // 256
+    let downsample = full_grid_size / BRAIN_VIZ_SIZE; // 8
     let mut brain_grid = vec![vec![0.0f64; BRAIN_VIZ_SIZE]; BRAIN_VIZ_SIZE];
     let active = knowledge.lock().unwrap().knowledge().active_knowledge(0.01);
     for entry in &active {
         let (x, y) = entry.position;
-        if x < BRAIN_VIZ_SIZE && y < BRAIN_VIZ_SIZE {
-            brain_grid[y][x] = entry.relevance;
-        }
+        let vx = (x / downsample).min(BRAIN_VIZ_SIZE - 1);
+        let vy = (y / downsample).min(BRAIN_VIZ_SIZE - 1);
+        // Take max relevance in each display cell
+        brain_grid[vy][vx] = brain_grid[vy][vx].max(entry.relevance);
     }
 
     let now = Instant::now();
@@ -1000,14 +1003,12 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
                         {
                             let mut k = knowledge.lock().unwrap();
                             let (cx, cy) = k.encode(&response, 0.8);
-                            if cx < BRAIN_VIZ_SIZE && cy < BRAIN_VIZ_SIZE {
-                                flash_nearby_cells(
-                                    &mut state.brain_flashes,
-                                    cx,
-                                    cy,
-                                    BrainMode::Encoding,
-                                );
-                            }
+                            flash_nearby_cells(
+                                &mut state.brain_flashes,
+                                cx / 8, // downsample 256→32
+                                cy / 8,
+                                BrainMode::Encoding,
+                            );
                             // Update active cell count
                             state.active_cells = k.active_cells();
                         }
