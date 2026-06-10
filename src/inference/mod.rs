@@ -140,6 +140,13 @@ pub fn detect_generation_backend() -> GenerationBackend {
         }
     }
 
+    // Check embedded first — fully self-contained
+    if let Ok(engine) = embedded::EmbeddedLLM::new(None) {
+        return GenerationBackend::Embedded {
+            model_name: engine.name().to_string(),
+        };
+    }
+
     // Check Ollama
     let ollama = ollama::OllamaEngine::new(None, None);
     if ollama.is_available() {
@@ -148,20 +155,26 @@ pub fn detect_generation_backend() -> GenerationBackend {
         };
     }
 
-    // Check embedded
-    if let Ok(engine) = embedded::EmbeddedLLM::new(None) {
-        return GenerationBackend::Embedded {
-            model_name: engine.name().to_string(),
-        };
-    }
-
     GenerationBackend::Offline
 }
 
 /// Create the default inference engine.
-/// Priority: LocalLLM > Embedded > Ollama > Offline
+/// Priority: Embedded (candle/SmolLM2) > Offline
+/// Ollama is opt-in only — use engine_with_preference() to enable it.
 pub fn default_engine() -> Box<dyn InferenceEngine> {
-    // Try local llama.cpp first (if feature enabled and model exists)
+    // Try embedded first — runs SmolLM2-1.7B in-process, no external deps
+    match embedded::EmbeddedLLM::new(None) {
+        Ok(engine) => {
+            eprintln!("🧠 Using embedded {} (candle) — fully self-contained", engine.name());
+            return Box::new(engine);
+        }
+        Err(e) => {
+            eprintln!("⚠️  Embedded LLM unavailable: {}", e);
+            eprintln!("   Trying local model at ~/.sage/model.gguf...");
+        }
+    }
+
+    // Try local llama.cpp if model exists
     #[cfg(feature = "local-llm")]
     {
         if local_llm::LocalLLM::model_exists() {
@@ -181,27 +194,11 @@ pub fn default_engine() -> Box<dyn InferenceEngine> {
         }
     }
 
-    // Try embedded next
-    match embedded::EmbeddedLLM::new(None) {
-        Ok(engine) => {
-            eprintln!("🧠 Using embedded {} (candle)", engine.name());
-            return Box::new(engine);
-        }
-        Err(e) => {
-            eprintln!("⚠️  Embedded LLM unavailable: {}", e);
-        }
-    }
-
-    // Fall back to Ollama
-    let ollama = ollama::OllamaEngine::new(None, None);
-    if ollama.is_available() {
-        eprintln!("🔗 Using {}", ollama.name());
-        return Box::new(ollama);
-    }
-
-    // Final fallback: offline mode (knowledge retrieval only)
-    eprintln!("⚠️  No LLM available — using offline mode (knowledge retrieval only)");
-    eprintln!("   Start Ollama or install an embedded model for full responses.");
+    // Fallback: offline mode (knowledge retrieval + NCA — still useful!)
+    eprintln!("💭 No local model found — using offline mode (knowledge retrieval only)");
+    eprintln!("   Download a model: ollama pull qwen2.5:7b && sage --ollama");
+    eprintln!("   Or SAGE will auto-download SmolLM2-1.7B on first run if candle supports your platform.");
+    eprintln!("   Knowledge grid + retrieval still work — you can ingest curriculums and query.");
     Box::new(offline::OfflineEngine::new())
 }
 

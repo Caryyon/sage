@@ -745,26 +745,9 @@ pub fn run(
             inference::default_engine()
         }
         EngineMode::Auto => {
-            // Auto-detect: prefer Ollama if running, fall back to embedded
-            let ollama = OllamaEngine::new(
-                if model.is_empty() {
-                    None
-                } else {
-                    Some(model.to_string())
-                },
-                if ollama_url.is_empty() {
-                    None
-                } else {
-                    Some(ollama_url.to_string())
-                },
-            );
-            if ollama.is_available() {
-                eprintln!("🔗 Auto-detected Ollama: {}", ollama.name());
-                Box::new(ollama) as Box<dyn InferenceEngine>
-            } else {
-                eprintln!("🧠 Ollama not running, using embedded SmolLM2");
-                inference::default_engine()
-            }
+            // Use default engine (embedded > local > offline). Ollama is opt-in.
+            eprintln!("🔍 Auto-detecting best backend...");
+            inference::default_engine()
         }
     });
 
