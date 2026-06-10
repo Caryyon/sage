@@ -35,12 +35,12 @@ pub struct BrainActivityConfig {
 impl Default for BrainActivityConfig {
     fn default() -> Self {
         Self {
-            consolidation_interval_secs: 10,
+            consolidation_interval_secs: 6,
             consolidation_steps: 3,
-            smooth_interval_secs: 6,
+            smooth_interval_secs: 4,
             smooth_steps: 2,
             spontaneous_activation: true,
-            spontaneous_interval_secs: 15,
+            spontaneous_interval_secs: 5,
         }
     }
 }
@@ -105,7 +105,7 @@ pub fn start_brain_activity(
                     let h = kl.knowledge().grid.height;
                     kl.knowledge_mut()
                         .grid
-                        .smooth_hidden_channels(w / 2, h / 2, 12, config.smooth_steps);
+                        .smooth_hidden_channels(w / 2, h / 2, 64, config.smooth_steps);
 
                     let mut s = stats_c.lock().unwrap();
                     s.smooth_cycles += 1;
@@ -123,19 +123,19 @@ pub fn start_brain_activity(
                     let w = grid.width;
                     let h = grid.height;
 
-                    // 2-5 random knowledge-channel activations per wave
-                    let n: usize = rand::thread_rng().gen_range(2..6);
+                    // 5-15 random activations per wave — bump activation directly so composite view sees it
+                    let n: usize = rand::thread_rng().gen_range(5..16);
                     for _ in 0..n {
                         let x = rand::thread_rng().gen_range(0..w);
                         let y = rand::thread_rng().gen_range(0..h);
-                        // Target hidden channels (4-15) or knowledge slots (26-33)
-                        let ch: usize = if rand::thread_rng().gen_bool(0.7) {
-                            rand::thread_rng().gen_range(4..16)
-                        } else {
-                            rand::thread_rng().gen_range(26..34)
-                        };
-                        let bump = rand::thread_rng().gen_range(0.02..0.08);
-                        grid.cells[y][x][ch] = (grid.cells[y][x][ch] + bump).min(1.0);
+                        let bump = rand::thread_rng().gen_range(0.15..0.50);
+                        // Spread through hidden channels (background glow)
+                        for ch in 4..16 {
+                            grid.cells[y][x][ch] = (grid.cells[y][x][ch] + bump * 0.5).min(1.0);
+                        }
+                        // Directly bump knowledge activation (channel 32) — THIS is what composite view shows
+                        grid.cells[y][x][crate::grid::KNOWLEDGE_ACTIVATION] =
+                            (grid.cells[y][x][crate::grid::KNOWLEDGE_ACTIVATION] + bump).min(1.0);
                     }
 
                     let mut s = stats_c.lock().unwrap();

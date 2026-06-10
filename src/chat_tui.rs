@@ -1066,7 +1066,7 @@ IMPORTANT: Never include internal metadata, relevance scores, debug information,
         state.frame_counter += 1;
 
         // Refresh brain grid visualization periodically (every 60 frames ≈ 3s)
-        if state.frame_counter.is_multiple_of(60) {
+        if state.frame_counter.is_multiple_of(10) {
             if let Ok(k) = knowledge.try_lock() {
                 let w = k.knowledge().grid.width;
                 let downsample = w / BRAIN_VIZ_SIZE;
