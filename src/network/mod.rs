@@ -735,23 +735,22 @@ impl NetworkManager {
 
         use crate::grid::is_shared_channel;
 
-        for local_row in 0..local_h {
-            for local_col in 0..local_w {
+        for (local_row, row) in local_grid.iter_mut().enumerate().take(local_h) {
+            for (local_col, cell) in row.iter_mut().enumerate().take(local_w) {
                 // Map local coords to remote coords (handles cross-grid-size sync).
                 let remote_row = (local_row * remote_h / local_h).min(remote_h - 1);
                 let remote_col = (local_col * remote_w / local_w).min(remote_w - 1);
 
-                let num_channels = local_grid[local_row][local_col]
+                let num_channels = cell
                     .len()
                     .min(remote_grid[remote_row][remote_col].len());
                 for ch in 0..num_channels {
                     if !is_shared_channel(ch) {
                         continue;
                     }
-                    let lv = local_grid[local_row][local_col][ch];
+                    let lv = cell[ch];
                     let rv = remote_grid[remote_row][remote_col][ch];
-                    local_grid[local_row][local_col][ch] =
-                        (lv * local_weight + rv * remote_weight).clamp(-5.0, 5.0);
+                    cell[ch] = (lv * local_weight + rv * remote_weight).clamp(-5.0, 5.0);
                 }
             }
         }
