@@ -771,8 +771,8 @@ impl Grid {
                                 }
                                 neighbor_count += 1;
                                 // Collect embedding values for diffusion
-                                for slot in 0..6 {
-                                    neighbor_embedding_sum[slot] +=
+                                for (slot, sum) in neighbor_embedding_sum.iter_mut().enumerate() {
+                                    *sum +=
                                         self.cells[ny][nx][KNOWLEDGE_CHANNELS_START + slot];
                                 }
                             }
@@ -818,8 +818,8 @@ impl Grid {
 
                     // Rule 4: Light embedding diffusion for semantic spreading
                     if activation > 0.1 && neighbor_count > 0 {
-                        for slot in 0..6 {
-                            let avg_neighbor = neighbor_embedding_sum[slot] / neighbor_count as f64;
+                        for (slot, &sum) in neighbor_embedding_sum.iter().enumerate() {
+                            let avg_neighbor = sum / neighbor_count as f64;
                             let current = self.cells[y][x][KNOWLEDGE_CHANNELS_START + slot];
                             // 95% current + 5% neighbor average (very light diffusion)
                             let new_val = current * 0.95 + avg_neighbor * 0.05;
