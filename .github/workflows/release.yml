@@ -52,13 +52,13 @@ jobs:
 
       - name: Upload updater binary
         run: |
-          cp target/${{ matrix.target }}/release/sage-cli sage-${{ matrix.updater_name }}
+          cp target/${{ matrix.target }}/release/sage-cli ${{ matrix.updater_name }}
         shell: bash
 
       - name: Upload installer binary
         uses: softprops/action-gh-release@v1
         with:
-          files: sage-${{ matrix.updater_name }}
+          files: ${{ matrix.updater_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
