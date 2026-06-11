@@ -11,6 +11,7 @@
 //!     KNOWLEDGE <query>\n  — query knowledge grid
 //!     BRAIN\n              — get brain grid snapshot (activation values)
 //!     EXPORT_TEMPLATE <n>\n — export current brain to named template
+//!     IMPORT_TEMPLATE <n>\n — load and activate a brain template
 //!     LIST_TEMPLATES\n     — list available brain templates
 //!     QUIT\n               — disconnect
 //!
@@ -489,10 +490,36 @@ async fn handle_client(
                 }
             }
             let _ = writer.write_all(b"DONE\n").await;
+        } else if let Some(name) = line.strip_prefix("IMPORT_TEMPLATE ") {
+            // Import and activate a brain template at runtime (hot-swap)
+            let templates_dir = sage::brain_templates::default_templates_dir();
+            match sage::brain_templates::find_template(name, &templates_dir) {
+                Ok(bundle) => {
+                    let mut s = state.lock().await;
+                    let active_cells = bundle.meta.active_cells;
+                    s.knowledge = bundle.to_knowledge();
+                    if let Err(e) = s.knowledge.save(&s.brain_path) {
+                        let _ = writer.write_all(format!("ERROR Import failed: {}\n", e).as_bytes()).await;
+                    } else {
+                        let _ = writer.write_all(
+                            format!(
+                                "OK Imported template '{}' ({} active cells) -> {}\n",
+                                name, active_cells, s.brain_path
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => {
+                    let _ = writer.write_all(format!("ERROR Import failed: {}\n", e).as_bytes()).await;
+                }
+            }
+            let _ = writer.write_all(b"DONE\n").await;
         } else {
             let _ = writer
                 .write_all(
-                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, EXPORT_TEMPLATE, LIST_TEMPLATES, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
+                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, EXPORT_TEMPLATE, IMPORT_TEMPLATE, LIST_TEMPLATES, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
                 )
                 .await;
             let _ = writer.write_all(b"DONE\n").await;
