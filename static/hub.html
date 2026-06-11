@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAGE Hub — Hire Autonomous AI Specialists</title>
+<style>
+:root {
+  --bg: #0a0a0f;
+  --surface: #11111a;
+  --border: #1a1a2e;
+  --text: #ccd;
+  --dim: #556;
+  --green: #00ff99;
+  --cyan: #00ffd5;
+  --purple: #a855f7;
+  --orange: #ffa500;
+  --red: #cc4444;
+  --blue: #6699cc;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; line-height: 1.5; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 1.5rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+header h1 { color: var(--green); font-size: 1.5rem; }
+header h1 span { color: var(--purple); font-weight: normal; font-size: 0.9rem; }
+nav { display: flex; gap: 1.5rem; }
+nav a { color: var(--dim); font-size: 0.9rem; }
+nav a.active { color: var(--cyan); }
+
+.stats-bar {
+  display: flex;
+  gap: 2rem;
+  padding: 1rem 2rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+.stat { display: flex; align-items: center; gap: 0.5rem; }
+.stat .value { color: var(--cyan); font-weight: bold; }
+.stat .label { color: var(--dim); }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+.search-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+.search-bar input {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.search-bar input:focus { outline: none; border-color: var(--cyan); }
+.search-bar select {
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.section-title {
+  color: var(--green);
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.section-title .count { color: var(--dim); font-size: 0.85rem; }
+
+.specialist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--cyan); }
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+.card-header h3 { color: var(--text); font-size: 1rem; }
+.card-header .level {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.level.junior { color: var(--green); }
+.level.mid { color: var(--cyan); }
+.level.senior { color: var(--purple); }
+.level.lead { color: var(--orange); }
+.level.principal { color: var(--red); }
+
+.card-tagline { color: var(--dim); font-size: 0.85rem; margin-bottom: 0.75rem; }
+
+.card-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.card-meta span { display: flex; align-items: center; gap: 0.3rem; }
+.card-meta .val { color: var(--text); }
+
+.card-tags {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.tag {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--blue);
+}
+
+.card-capabilities {
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-bottom: 1rem;
+}
+.card-capabilities li { list-style: none; padding: 0.15rem 0; }
+.card-capabilities li::before { content: '• '; color: var(--green); }
+
+.card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--green); color: var(--bg); font-weight: bold; }
+.btn-secondary { background: var(--border); color: var(--text); }
+.btn-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--dim);
+}
+.empty-state h3 { color: var(--text); margin-bottom: 0.5rem; }
+
+.template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+
+.template-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+.template-card h4 { color: var(--text); font-size: 0.95rem; margin-bottom: 0.5rem; }
+.template-card .meta { font-size: 0.8rem; color: var(--dim); }
+
+footer {
+  text-align: center;
+  padding: 2rem;
+  color: var(--dim);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.install-box {
+  background: var(--surface);
+  border: 1px solid var(--cyan);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+.install-box h3 { color: var(--cyan); margin-bottom: 0.5rem; }
+.install-box code {
+  display: block;
+  background: var(--bg);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  color: var(--green);
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: var(--green);
+  color: var(--bg);
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SAGE Hub <span>— The People's AI</span></h1>
+  <nav>
+    <a href="#" class="active" onclick="showTab('specialists')">Specialists</a>
+    <a href="#" onclick="showTab('templates')">Templates</a>
+    <a href="#" onclick="showTab('network')">Network</a>
+  </nav>
+</header>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><span class="value" id="statSpecialists">—</span><span class="label">specialists</span></div>
+  <div class="stat"><span class="value" id="statTemplates">—</span><span class="label">templates</span></div>
+  <div class="stat"><span class="value" id="statNodes">—</span><span class="label">nodes online</span></div>
+  <div class="stat"><span class="value" id="statPatterns">—</span><span class="label">patterns shared</span></div>
+</div>
+
+<div class="container">
+
+  <div class="install-box">
+    <h3>Get Started</h3>
+    <p style="color:var(--dim);font-size:0.9rem;">Install SAGE and hire your first specialist in 3 commands:</p>
+    <code>curl -fsSL https://whatssage.ai/install.sh | bash</code>
+    <code>sage-specialist pull junior-react-dev --hub http://localhost:3001</code>
+    <code>sage-specialist hire junior-react-dev --foreground --task "Build a login form"</code>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Search specialists by name, role, domain, or tag..." oninput="filterSpecialists()">
+    <select id="levelFilter" onchange="filterSpecialists()">
+      <option value="">All Levels</option>
+      <option value="junior">Junior</option>
+      <option value="mid">Mid-Level</option>
+      <option value="senior">Senior</option>
+      <option value="lead">Lead</option>
+      <option value="principal">Principal</option>
+    </select>
+    <select id="categoryFilter" onchange="filterSpecialists()">
+      <option value="">All Categories</option>
+      <option value="software-engineer">Software Engineer</option>
+      <option value="data">Data</option>
+      <option value="content">Content</option>
+      <option value="infrastructure">Infrastructure</option>
+      <option value="support">Support</option>
+    </select>
+  </div>
+
+  <div id="specialistsTab">
+    <div class="section-title">Available Specialists <span class="count" id="specialistCount"></span></div>
+    <div class="specialist-grid" id="specialistGrid"></div>
+    <div class="empty-state" id="noSpecialists" style="display:none">
+      <h3>No specialists published yet</h3>
+      <p>Publish one: <code style="color:var(--green)">sage-specialist publish &lt;name&gt;</code></p>
+    </div>
+  </div>
+
+  <div id="templatesTab" style="display:none">
+    <div class="section-title">Available Templates <span class="count" id="templateCount"></span></div>
+    <div class="template-list" id="templateGrid"></div>
+    <div class="empty-state" id="noTemplates" style="display:none">
+      <h3>No templates published yet</h3>
+      <p>Publish one: <code style="color:var(--green)">sage-template export &lt;name&gt; && curl -X POST .../api/v1/templates --data-binary @file</code></p>
+    </div>
+  </div>
+
+  <div id="networkTab" style="display:none">
+    <div class="section-title">Network Status</div>
+    <div id="networkContent" style="color:var(--dim);">Loading...</div>
+  </div>
+
+</div>
+
+<footer>
+  SAGE is free, local, and decentralized. No API keys. No cloud. No gatekeepers.
+  <br><a href="https://github.com/Caryyon/sage">github.com/Caryyon/sage</a> · <a href="https://discord.gg/U999zZUuUV">Discord</a>
+</footer>
+
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+const API = window.location.origin;
+
+let allSpecialists = [];
+let allTemplates = [];
+
+async function loadData() {
+  try {
+    const [specResp, tmplResp, netResp] = await Promise.all([
+      fetch(API + '/api/v1/specialists'),
+      fetch(API + '/api/v1/templates'),
+      fetch(API + '/api/v1/network/stats')
+    ]);
+
+    if (specResp.ok) {
+      const data = await specResp.json();
+      allSpecialists = data.specialists || [];
+      document.getElementById('statSpecialists').textContent = data.count || 0;
+    }
+
+    if (tmplResp.ok) {
+      const data = await tmplResp.json();
+      allTemplates = data.templates || [];
+      document.getElementById('statTemplates').textContent = data.count || 0;
+    }
+
+    if (netResp.ok) {
+      const data = await netResp.json();
+      document.getElementById('statNodes').textContent = data.online_nodes || 0;
+      document.getElementById('statPatterns').textContent = data.total_patterns || 0;
+    }
+  } catch (e) {
+    console.log('Hub API not available — showing empty state');
+  }
+
+  renderSpecialists();
+  renderTemplates();
+}
+
+function filterSpecialists() {
+  renderSpecialists();
+}
+
+function renderSpecialists() {
+  const search = (document.getElementById('searchInput').value || '').toLowerCase();
+  const level = document.getElementById('levelFilter').value;
+  const category = document.getElementById('categoryFilter').value;
+
+  let filtered = allSpecialists;
+  if (search) {
+    filtered = filtered.filter(s => {
+      const haystack = [
+        s.display_name, s.name, s.tagline, s.description,
+        s.role?.title, s.role?.category,
+        ...(s.role?.domains || []), ...(s.tags || [])
+      ].join(' ').toLowerCase();
+      return haystack.includes(search);
+    });
+  }
+  if (level) {
+    filtered = filtered.filter(s => s.role?.level?.label?.toLowerCase() === level);
+  }
+  if (category) {
+    filtered = filtered.filter(s => s.role?.category === category);
+  }
+
+  document.getElementById('specialistCount').textContent = `(${filtered.length})`;
+
+  const grid = document.getElementById('specialistGrid');
+  const empty = document.getElementById('noSpecialists');
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = filtered.map(s => {
+    const level = (s.role?.level?.label || 'junior').toLowerCase();
+    const hitRate = Math.round((s.quality?.hit_rate || 0) * 100);
+    const rate = s.hiring?.suggested_rate_usd || 25;
+    const caps = (s.capabilities || []).slice(0, 4);
+    const tags = s.tags || [];
+    const domains = s.role?.domains || [];
+    const tools = s.role?.tools || [];
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h3>${esc(s.display_name || s.name)}</h3>
+          <span class="level ${level}">${esc(s.role?.level?.label || 'junior')}</span>
+        </div>
+        <div class="card-tagline">${esc(s.tagline || '')}</div>
+        <div class="card-meta">
+          <span>🎯 <span class="val">${hitRate}%</span> hit rate</span>
+          <span>🧠 <span class="val">${s.quality?.active_cells || 0}</span> cells</span>
+          <span>💵 <span class="val">$${rate}/hr</span></span>
+          <span>📋 <span class="val">${s.hiring?.max_concurrent_tasks || 1}</span> concurrent</span>
+        </div>
+        <div class="card-tags">
+          ${domains.map(d => `<span class="tag">${esc(d)}</span>`).join('')}
+          ${tools.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+          ${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+        </div>
+        <div class="card-capabilities">
+          ${caps.map(c => `<li>${esc(c.name)} — ${esc(c.description)}</li>`).join('')}
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-primary" onclick="hireSpecialist('${esc(s.name)}')">Hire</button>
+          <button class="btn btn-secondary" onclick="viewSpecialist('${esc(s.name)}')">Details</button>
+          <button class="btn btn-copy" onclick="copyCommand('${esc(s.name)}')">📋 Copy pull command</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTemplates() {
+  const grid = document.getElementById('templateGrid');
+  const empty = document.getElementById('noTemplates');
+  document.getElementById('templateCount').textContent = `(${allTemplates.length})`;
+
+  if (allTemplates.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  grid.innerHTML = allTemplates.map(t => `
+    <div class="template-card">
+      <h4>${esc(t.name)}</h4>
+      <div class="meta">
+        ${t.size_bytes ? Math.round(t.size_bytes / 1024) + ' KB' : ''}
+        ${t.active_cells ? ' · ' + t.active_cells + ' cells' : ''}
+      </div>
+      <div style="margin-top:0.75rem;">
+        <button class="btn btn-copy" onclick="copyCommand('sage-template pull ${esc(t.name)} --hub ' + API)">📋 Copy pull command</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function hireSpecialist(name) {
+  const cmd = `sage-specialist pull ${name} --hub ${API} && sage-specialist hire ${name} --foreground`;
+  copyToClipboard(cmd);
+  showToast('Command copied! Paste in terminal to hire ' + name);
+}
+
+function viewSpecialist(name) {
+  window.open(API + '/api/v1/specialists/' + name, '_blank');
+}
+
+function copyCommand(cmd) {
+  copyToClipboard(cmd);
+  showToast('Copied!');
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function showTab(tab) {
+  document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('specialistsTab').style.display = tab === 'specialists' ? 'block' : 'none';
+  document.getElementById('templatesTab').style.display = tab === 'templates' ? 'block' : 'none';
+  document.getElementById('networkTab').style.display = tab === 'network' ? 'block' : 'none';
+  if (tab === 'network') loadNetworkTab();
+}
+
+async function loadNetworkTab() {
+  try {
+    const resp = await fetch(API + '/api/v1/network/nodes');
+    if (resp.ok) {
+      const data = await resp.json();
+      const nodes = data.nodes || [];
+      document.getElementById('networkContent').innerHTML = nodes.length === 0
+        ? '<p>No nodes connected. Start one: <code style="color:var(--green)">sage node start</code></p>'
+        : nodes.map(n => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:0.5rem;">
+            <strong>${esc(n.name || n.id)}</strong>
+            <span style="color:var(--dim);font-size:0.8rem;margin-left:0.5rem;">${esc(n.version || '')}</span>
+            <div style="font-size:0.8rem;color:var(--dim);margin-top:0.25rem;">
+              ${n.peers || 0} peers · ${n.patterns || 0} patterns · ${n.grid_utilization ? Math.round(n.grid_utilization * 100) + '% util' : ''} · ${n.contribution_tier || ''}
+            </div>
+          </div>
+        `).join('');
+    }
+  } catch (e) {
+    document.getElementById('networkContent').innerHTML = '<p style="color:var(--dim)">Network API unavailable</p>';
+  }
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+loadData();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>

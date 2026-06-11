@@ -1,0 +1,110 @@
+{
+  "name": "devops-engineer",
+  "domain": "infrastructure",
+  "topics": [
+    {
+      "name": "docker",
+      "region": [0, 0, 64, 64],
+      "facts": [
+        "Docker packages applications into lightweight, portable containers",
+        "A Dockerfile is a text document containing commands to assemble a container image",
+        "FROM specifies the base image to build upon",
+        "RUN executes commands during image build",
+        "COPY and ADD transfer files from host to image",
+        "WORKDIR sets the working directory for subsequent instructions",
+        "EXPOSE documents which ports the container listens on",
+        "CMD specifies the default command to run when the container starts",
+        "ENTRYPOINT configures the container to run as an executable",
+        "ENV sets environment variables in the container",
+        "docker build creates an image from a Dockerfile",
+        "docker run creates and starts a container from an image",
+        "docker compose orchestrates multi-container applications with a YAML file",
+        "Volumes persist data outside the container lifecycle",
+        "Bind mounts map host directories directly into containers",
+        "Networks connect containers together and isolate them from others",
+        "Multi-stage builds use multiple FROM statements to optimize image size",
+        "Layer caching reuses unchanged layers to speed up builds",
+        "docker logs shows container stdout/stderr output",
+        "docker exec runs commands inside a running container"
+      ]
+    },
+    {
+      "name": "kubernetes",
+      "region": [64, 0, 128, 64],
+      "facts": [
+        "Kubernetes (K8s) orchestrates containerized applications across clusters",
+        "A Pod is the smallest deployable unit — one or more containers sharing network and storage",
+        "Deployments manage replicated Pods with rolling updates and rollbacks",
+        "Services provide stable network endpoints for Pods with load balancing",
+        "ConfigMaps store non-sensitive configuration data as key-value pairs",
+        "Secrets store sensitive data like passwords and tokens (base64 encoded)",
+        "Ingress routes external HTTP/HTTPS traffic to Services",
+        "Namespaces partition cluster resources for multi-tenant isolation",
+        "PersistentVolumes provide storage that exists beyond Pod lifecycle",
+        "StatefulSets manage stateful applications with stable identities and persistent storage",
+        "DaemonSets ensure a copy of a Pod runs on all or some nodes",
+        "Jobs run Pods to completion — for batch processing",
+        "CronJobs schedule Jobs to run periodically",
+        "Horizontal Pod Autoscaler scales Pods based on CPU/memory or custom metrics",
+        "Helm is the package manager for Kubernetes — charts define, install, and upgrade apps",
+        "kubectl is the CLI for controlling Kubernetes clusters",
+        "kubectl apply creates or updates resources from YAML manifests",
+        "kubectl logs fetches container logs from Pods",
+        "kubectl exec runs commands inside Pod containers",
+        "RBAC controls access to cluster resources based on roles and bindings"
+      ]
+    },
+    {
+      "name": "ci-cd",
+      "region": [128, 0, 192, 64],
+      "facts": [
+        "CI (Continuous Integration) automatically builds and tests code on every push",
+        "CD (Continuous Delivery/Deployment) automatically releases validated code to production",
+        "GitHub Actions runs workflows triggered by GitHub events like push, PR, or schedule",
+        "Workflows are defined in .github/workflows/*.yml files",
+        "Jobs run in parallel by default — use 'needs' to create dependencies",
+        "Runners execute jobs — GitHub-hosted or self-hosted",
+        "Actions are reusable units of code for common tasks",
+        "Secrets store sensitive values encrypted and only exposed to selected actions",
+        "Matrix strategies run a job across multiple configurations (OS, version, etc.)",
+        "Artifacts persist data between jobs in a workflow",
+        "Environments group deployment targets with protection rules and secrets",
+        "GitLab CI uses .gitlab-ci.yml with stages, jobs, and runners",
+        "Jenkins is a self-hosted automation server with a plugin ecosystem",
+        "Pipeline as Code defines CI/CD in version-controlled files alongside application code",
+        "Blue-green deployment runs two identical environments, switching traffic to the new one",
+        "Canary deployment gradually shifts traffic to the new version",
+        "Rolling updates replace instances one at a time with zero downtime",
+        "Feature flags toggle functionality without deploying new code",
+        "Smoke tests verify critical functionality after deployment",
+        "Rollback strategies define how to revert to a previous version on failure"
+      ]
+    },
+    {
+      "name": "infrastructure-as-code",
+      "region": [192, 0, 256, 64],
+      "facts": [
+        "Terraform by HashiCorp manages infrastructure declaratively with HCL configuration files",
+        "Providers are plugins that interact with cloud APIs (AWS, GCP, Azure, etc.)",
+        "Resources are infrastructure components defined in Terraform configuration",
+        "terraform init downloads providers and initializes the working directory",
+        "terraform plan shows what changes will be made before applying",
+        "terraform apply creates or updates infrastructure to match configuration",
+        "terraform destroy removes all resources managed by the configuration",
+        "State files track the current state of managed infrastructure",
+        "Remote state stores state in a shared backend (S3, Terraform Cloud) for team collaboration",
+        "State locking prevents concurrent modifications that could corrupt state",
+        "Variables parameterize configurations for reuse across environments",
+        "Outputs expose resource attributes for use by other configurations",
+        "Modules encapsulate reusable groups of resources",
+        "Data sources fetch information from existing resources or external systems",
+        "Provisioners run scripts on resources after creation (use sparingly)",
+        "Workspaces manage multiple distinct state files for the same configuration",
+        "Pulumi uses general-purpose programming languages instead of HCL",
+        "Ansible automates configuration management with YAML playbooks",
+        "Idempotency ensures running the same configuration multiple times produces the same result",
+        "Drift detection identifies when actual infrastructure differs from configuration"
+      ]
+    }
+  ]
+}

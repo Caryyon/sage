@@ -1,0 +1,84 @@
+{
+  "name": "content-writer",
+  "domain": "technical-writing",
+  "topics": [
+    {
+      "name": "technical-writing",
+      "region": [0, 0, 64, 64],
+      "facts": [
+        "Technical writing communicates complex information clearly and accurately",
+        "Know your audience — adjust depth and terminology based on reader expertise",
+        "Use active voice: 'Click the button' not 'The button should be clicked'",
+        "Keep sentences short — aim for 15-25 words per sentence",
+        "One idea per paragraph — start with the main point, then elaborate",
+        "Headings create scannable structure — use descriptive, action-oriented titles",
+        "Lists break down sequences, options, or requirements into digestible chunks",
+        "Code examples must be correct, runnable, and minimal — remove unnecessary details",
+        "Screenshots supplement text but need alt text and annotations",
+        "API documentation describes endpoints, parameters, request/response formats, and errors",
+        "README files answer: what is this, why use it, how to install, how to use, how to contribute",
+        "Release notes communicate what changed, what's new, what's fixed, and migration steps",
+        "Tutorials guide users through a complete task from start to finish",
+        "How-to guides solve specific problems with step-by-step instructions",
+        "Reference documentation provides comprehensive technical detail",
+        "Explanation/discussion provides background, context, and reasoning",
+        "Style guides ensure consistency — pick one (Google, Microsoft, Apple) and stick to it",
+        "Accessibility: use semantic HTML, alt text, sufficient contrast, and keyboard-navigable content",
+        "Version control documentation alongside code — docs are part of the product",
+        "Review docs like code — have someone else read and test your instructions"
+      ]
+    },
+    {
+      "name": "developer-relations",
+      "region": [64, 0, 128, 64],
+      "facts": [
+        "Developer relations (DevRel) bridges the gap between a company and its developer users",
+        "Blog posts share technical insights, tutorials, and product updates",
+        "Tutorials should have a clear goal, prerequisites, step-by-step instructions, and a working result",
+        "Social media (Twitter/X, LinkedIn, Mastodon) amplifies content and builds community",
+        "Conference talks establish authority and reach new audiences",
+        "Webinars and live streams provide interactive learning experiences",
+        "Newsletters maintain ongoing engagement with curated content",
+        "Community forums (Discord, Discourse, GitHub Discussions) provide peer support",
+        "Open source contributions build credibility and improve the ecosystem",
+        "SDK and library documentation helps developers integrate with your product",
+        "Sample apps and starter templates reduce time-to-first-success",
+        "Changelog and release communication keeps users informed of improvements",
+        "Feedback loops: collect developer pain points and channel them to product teams",
+        "Metrics: track page views, time on page, bounce rate, and task completion rate",
+        "SEO for developer content: use descriptive titles, headings, meta descriptions, and internal links",
+        "Developer personas help tailor content to different experience levels and use cases",
+        "Hackathons engage the community in creative problem-solving",
+        "Swag and recognition programs reward community contributions",
+        "Code of conduct establishes behavioral expectations for community spaces",
+        "Dogfooding: use your own product to write authentic, credible content"
+      ]
+    },
+    {
+      "name": "markdown-and-tools",
+      "region": [128, 0, 192, 64],
+      "facts": [
+        "Markdown is a lightweight markup language for formatting plain text",
+        "Headers use # for h1, ## for h2, ### for h3, etc.",
+        "Bold uses **double asterisks**, italic uses *single asterisks*",
+        "Links: [text](url) — reference-style links define URLs separately",
+        "Images: ![alt text](url) — always include descriptive alt text",
+        "Code inline uses `backticks`, code blocks use triple backticks with optional language",
+        "Lists: unordered with - or *, ordered with 1. 2. 3.",
+        "Blockquotes use > for quoted content",
+        "Tables use pipes | and dashes — keep them simple, complex tables are hard to read",
+        "Horizontal rules with --- separate sections",
+        "Task lists use - [ ] for unchecked and - [x] for checked",
+        "Footnotes provide supplementary information without interrupting flow",
+        "Frontmatter (YAML between --- markers) adds metadata like title, date, tags",
+        "MDX combines Markdown with JSX for interactive documentation components",
+        "Docusaurus builds documentation websites from Markdown with versioning and search",
+        "GitBook provides a hosted documentation platform with collaboration features",
+        "Notion combines docs, databases, and project management",
+        "Obsidian creates a local knowledge base with bidirectional linking",
+        "Grammarly and Hemingway help catch grammar issues and improve readability",
+        "Prettier formats Markdown consistently — use it in CI to enforce style"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "name": "customer-support",
+  "domain": "customer-support",
+  "topics": [
+    {
+      "name": "support-fundamentals",
+      "region": [0, 0, 64, 64],
+      "facts": [
+        "Customer support helps users resolve issues and achieve their goals with a product",
+        "First response time (FRT) measures how quickly a customer gets an initial reply",
+        "Mean time to resolution (MTTR) measures how long it takes to fully resolve an issue",
+        "Customer satisfaction (CSAT) surveys measure happiness after each interaction",
+        "Net Promoter Score (NPS) measures how likely customers are to recommend the product",
+        "Tickets are individual support requests tracked from creation to resolution",
+        "Triage categorizes and prioritizes incoming tickets by urgency and impact",
+        "SLAs (Service Level Agreements) define response and resolution time commitments",
+        "Escalation routes complex issues to specialized teams when frontline can't resolve",
+        "Knowledge bases provide self-service answers to common questions",
+        "Canned responses save time on frequent questions but must be personalized",
+        "Active listening means understanding the customer's actual problem, not just their words",
+        "Empathy statements acknowledge the customer's frustration before jumping to solutions",
+        "Root cause analysis finds the underlying issue, not just the symptom",
+        "Reproducing the issue is the fastest path to understanding and fixing it",
+        "Clear communication: explain what you're doing, why, and what to expect next",
+        "Follow-up after resolution confirms the fix worked and the customer is satisfied",
+        "Bug reports from support must include steps to reproduce, expected vs actual behavior, and environment",
+        "Feature requests should capture the use case, not just the requested feature",
+        "Support metrics inform product improvements — track common issues and pain points"
+      ]
+    },
+    {
+      "name": "tools-and-workflows",
+      "region": [64, 0, 128, 64],
+      "facts": [
+        "Zendesk is a leading customer service platform with ticketing, chat, and knowledge base",
+        "Intercom provides in-app messaging, bots, and customer data platform",
+        "Freshdesk offers ticketing, automation, and multi-channel support",
+        "Help Scout provides email-based support with a focus on personal conversation",
+        "Slack Connect enables shared channels with customers for real-time support",
+        "Discord communities provide peer support and direct company interaction",
+        "Jira Service Management integrates support with development workflows",
+        "Automation rules trigger actions based on ticket conditions (routing, tagging, responses)",
+        "Macros apply pre-defined sets of actions to tickets with one click",
+        "Triggers fire automatically when tickets are created or updated",
+        "Views organize tickets into work queues by status, assignee, or condition",
+        "Tags label tickets for reporting, routing, and automation",
+        "Custom fields capture product-specific information on tickets",
+        "Satisfaction surveys automatically send after ticket resolution",
+        "Reporting dashboards track volume, response time, resolution time, and satisfaction",
+        "Chatbots handle common questions and route complex issues to humans",
+        "Screen sharing tools (Loom, CloudApp) help demonstrate solutions visually",
+        "Internal notes communicate between agents without the customer seeing",
+        "Side conversations loop in other teams without creating new tickets",
+        "API integrations connect support tools with CRM, analytics, and engineering systems"
+      ]
+    },
+    {
+      "name": "communication-skills",
+      "region": [128, 0, 192, 64],
+      "facts": [
+        "Greet the customer warmly and thank them for reaching out",
+        "Restate the problem in your own words to confirm understanding",
+        "Set expectations: tell them what you'll do and how long it might take",
+        "Use plain language — avoid jargon unless you know the customer is technical",
+        "Be specific: 'I've updated your account settings' not 'The issue has been resolved'",
+        "Provide step-by-step instructions with screenshots when possible",
+        "Offer alternatives: if the ideal solution isn't available, suggest workarounds",
+        "Admit when you don't know — 'Let me check with the engineering team and get back to you'",
+        "Never blame the customer — even if they made an error, focus on the solution",
+        "De-escalation: stay calm, acknowledge feelings, focus on what you can do",
+        "Positive language: 'The feature will be available next month' not 'We don't have that yet'",
+        "Close with a summary of what was done and an invitation to reach out again",
+        "Tone matching: mirror the customer's formality level while staying professional",
+        "Cultural awareness: communication norms vary across regions and languages",
+        "Written communication lacks tone of voice — use emoji and formatting carefully to convey warmth",
+        "Handle multiple customers simultaneously without making any feel neglected",
+        "Document solutions as you discover them — your future self and teammates will thank you",
+        "Ask clarifying questions: open-ended to explore, closed-ended to confirm",
+        "The 'five whys' technique traces a problem to its root cause",
+        "Celebrate wins: share positive feedback with the team to maintain morale"
+      ]
+    }
+  ]
+}

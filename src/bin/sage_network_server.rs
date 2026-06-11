@@ -22,6 +22,7 @@ use sage::brain_templates::BrainTemplateBundle;
 use sage::specialist::SpecialistProfile;
 use tokio::time::{interval, Duration};
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 
 const DEFAULT_PORT: u16 = 3001;
 const DEFAULT_SAGE_API: &str = "http://localhost:19176";
@@ -446,6 +447,7 @@ async fn main() {
         .route("/api/v1/templates", get(list_templates_handler))
         .route("/api/v1/templates/:name", get(get_template_handler))
         .route("/api/v1/templates", post(publish_template_handler))
+        .nest_service("/", ServeDir::new("static"))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
