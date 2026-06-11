@@ -10,11 +10,14 @@
 
 use clap::{Parser, Subcommand};
 use sage::brain_templates::{default_templates_dir, find_template};
+use sage::inference;
 use sage::specialist::{
     default_specialists_dir, find_specialist, list_specialists, presets, Capability,
     HiringInfo, QualityMetrics, SpecialistProfile, SpecialistPrompt, SpecialistRole,
 };
+use sage::worker::{SpecialistWorker, TaskPriority, WorkerConfig};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(
@@ -459,27 +462,58 @@ fn cmd_hire(dir: &PathBuf, name: &str, task: Option<String>, foreground: bool) {
             println!();
 
             if foreground {
-                println!("⚙️  Starting specialist in foreground mode...");
-                println!("   System prompt loaded ({} chars)", profile.prompt.assemble().len());
+                println!("⚙️  Starting specialist worker...");
+                println!("   Loading inference engine...");
+
+                let engine = inference::default_engine();
+                let engine_name = engine.name().to_string();
+                println!("   Engine: {}", engine_name);
+
+                let worker = SpecialistWorker::new(
+                    profile.clone(),
+                    Arc::from(engine),
+                    None,
+                    Some(WorkerConfig::default()),
+                );
+
                 println!("   {} capabilities registered", profile.capabilities.len());
+                println!("   System prompt: {} chars", profile.prompt.assemble().len());
                 println!();
 
                 if let Some(ref t) = task {
-                    println!("📋 Initial task: {}", t);
-                    println!();
-                    println!("--- Specialist output ---");
-                    // TODO: Wire to worker loop for real autonomous execution
-                    println!("[specialist] Analyzing task: {}", t);
-                    println!("[specialist] Retrieving relevant knowledge from NCA brain...");
-                    println!("[specialist] Planning approach...");
-                    println!("[specialist] (Worker loop integration coming in Phase B)");
-                    println!("[specialist] Task accepted. Ready for work.");
-                } else {
-                    println!("💡 Specialist is ready. Assign tasks via:");
-                    println!("   sage-specialist hire {} --task \"your task here\"", name);
-                    println!();
-                    println!("   Or connect via API: POST /v1/specialist/{}/task", name);
+                    let task_id = worker.submit_task(t, None, TaskPriority::Normal);
+                    println!("📋 Task submitted: {} ({})", t, task_id);
                 }
+
+                println!("🟢 Worker running. Submit tasks via:");
+                println!("   sage-specialist hire {} --task \"your task\"", name);
+                println!("   POST /api/v1/specialists/{}/task", name);
+                println!();
+                println!("   Press Ctrl+C to stop.");
+                println!();
+
+                // Run the worker loop (blocks until Ctrl+C)
+                let worker_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let ws = worker_stop.clone();
+
+                // Handle Ctrl+C
+                ctrlc_handler(ws);
+
+                worker.run();
+
+                // Show final stats
+                let stats = worker.current_stats();
+                println!();
+                println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                println!("📊 Session Summary:");
+                println!("   Tasks completed: {}", stats.tasks_completed);
+                println!("   Tasks failed: {}", stats.tasks_failed);
+                println!("   Avg quality: {:.2}", stats.avg_quality);
+                println!("   Avg completion: {:.1}s", stats.avg_completion_secs);
+                println!("   Tokens used: {}", stats.total_tokens_used);
+                println!("   Brain saves: {}", stats.brain_saves);
+                println!("   Active cells: {}", stats.active_cells);
+                println!("   Uptime: {}s", stats.uptime_secs);
             } else {
                 println!("💡 To start the specialist as a background worker:");
                 println!("   sage-specialist hire {} --foreground", name);
@@ -493,6 +527,15 @@ fn cmd_hire(dir: &PathBuf, name: &str, task: Option<String>, foreground: bool) {
             std::process::exit(1);
         }
     }
+}
+
+/// Set up Ctrl+C handler to signal worker stop
+fn ctrlc_handler(stop: Arc<std::sync::atomic::AtomicBool>) {
+    let _ = ctrlc::set_handler(move || {
+        eprintln!();
+        eprintln!("🛑 Shutting down...");
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
 }
 
 fn cmd_publish(dir: &PathBuf, name: &str, hub: &str) {

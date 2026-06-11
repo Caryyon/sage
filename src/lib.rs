@@ -17,5 +17,6 @@ pub mod network;
 pub mod query_router;
 pub mod query_router_intelligent;
 pub mod specialist;
+pub mod worker;
 
 pub use grid::ConsolidationParams;
