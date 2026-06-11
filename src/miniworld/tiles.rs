@@ -606,25 +606,25 @@ pub enum TileType {
 
 impl TileType {
     pub fn is_walkable(&self) -> bool {
-        match self {
+        matches!(
+            self,
             TileType::Grass
-            | TileType::GrassLight
-            | TileType::GrassDark
-            | TileType::Path
-            | TileType::PathCorner
-            | TileType::Sand
-            | TileType::Stone
-            | TileType::Bridge
-            | TileType::Gate => true,
-            TileType::House
-            | TileType::Tavern
-            | TileType::Market
-            | TileType::Blacksmith
-            | TileType::Church
-            | TileType::Barracks
-            | TileType::Well => true,
-            _ => false,
-        }
+                | TileType::GrassLight
+                | TileType::GrassDark
+                | TileType::Path
+                | TileType::PathCorner
+                | TileType::Sand
+                | TileType::Stone
+                | TileType::Bridge
+                | TileType::Gate
+                | TileType::House
+                | TileType::Tavern
+                | TileType::Market
+                | TileType::Blacksmith
+                | TileType::Church
+                | TileType::Barracks
+                | TileType::Well
+        )
     }
 
     pub fn is_building(&self) -> bool {

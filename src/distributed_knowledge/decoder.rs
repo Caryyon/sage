@@ -361,8 +361,10 @@ mod tests {
 
     fn setup_grid_with_knowledge(text: &str) -> (Grid, EncoderConfig, (usize, usize)) {
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None; // Use hash fallback in tests
+        let config = EncoderConfig {
+            ollama_url: None, // Use hash fallback in tests
+            ..Default::default()
+        };
         let features = encode_text(text, &config);
         let pos = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
         (grid, config, pos)
@@ -404,8 +406,10 @@ mod tests {
     #[test]
     fn test_query_ranks_similar_higher() {
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
 
         let f1 = encode_text("machine learning neural networks", &config);
         write_knowledge(&mut grid, &f1, 0.9, 0.5, &config);
@@ -413,8 +417,8 @@ mod tests {
         let f2 = encode_text("cooking recipes italian food", &config);
         write_knowledge(&mut grid, &f2, 0.9, 0.5, &config);
 
-        let results = query_knowledge(&grid, "deep learning algorithms", &config, 20);
-        assert!(true, "Query should return results or empty gracefully");
+        let _results = query_knowledge(&grid, "deep learning algorithms", &config, 20);
+        // Query should return results or empty gracefully
     }
 
     #[test]
@@ -447,8 +451,10 @@ mod tests {
     #[test]
     fn test_query_empty_grid_returns_empty() {
         let grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let results = query_knowledge(&grid, "anything", &config, 10);
         assert!(results.is_empty(), "Empty grid should return no results");
     }

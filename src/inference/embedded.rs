@@ -12,6 +12,8 @@ use tokenizers::Tokenizer;
 
 use super::{ChatMessage, ChatRole, InferenceEngine};
 
+type TokenCallback = Option<Box<dyn FnMut(&str) + Send>>;
+
 /// HuggingFace repo for the default model
 const DEFAULT_REPO: &str = "HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF";
 const DEFAULT_MODEL_FILE: &str = "smollm2-1.7b-instruct-q4_k_m.gguf";
@@ -149,7 +151,7 @@ impl EmbeddedLLM {
         &self,
         prompt: &str,
         max_tokens: usize,
-        mut callback: Option<Box<dyn FnMut(&str) + Send>>,
+        mut callback: TokenCallback,
     ) -> Result<String, Box<dyn Error>> {
         let encoding = self
             .tokenizer

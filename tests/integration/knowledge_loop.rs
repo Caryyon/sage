@@ -3,7 +3,7 @@
 //! Tests the full cycle: Text → NCA Grid → Knowledge Context → LLM Response
 //! Uses a mock inference engine to verify the knowledge augmentation pipeline.
 
-use sage::distributed_knowledge::KnowledgeStore;
+
 use sage::inference::{ChatMessage, ChatRole, InferenceEngine};
 use sage::knowledge_loop::KnowledgeLoop;
 use std::error::Error;
@@ -133,7 +133,7 @@ fn test_brain_survives_save_load_cycle() {
     }
 
     let _ = std::fs::remove_file(path);
-    let _ = std::fs::remove_file(path.replace("brain", "text_store").replace(".bin", ".bin"));
+    let _ = std::fs::remove_file(path.replace("brain", "text_store"));
 }
 
 #[test]

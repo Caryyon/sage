@@ -187,11 +187,11 @@ fn persistence_survives_multiple_save_load_cycles() {
     for i in 0..3 {
         store
             .save(path)
-            .expect(&format!("Save cycle {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Save cycle {} should succeed", i));
         let mut reloaded = NCAKnowledge::new();
         reloaded
             .load(path)
-            .expect(&format!("Load cycle {} should succeed", i));
+            .unwrap_or_else(|_| panic!("Load cycle {} should succeed", i));
 
         let results = reloaded.query("cycle test", 5);
         assert!(

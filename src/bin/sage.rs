@@ -1787,7 +1787,7 @@ fn run_node_status() {
                         .unwrap_or(false);
                     if alive {
                         // Get uptime
-                        let mut uptime_str = String::new();
+                        let uptime_str = String::new();
                         #[cfg(target_os = "linux")]
                         {
                             if let Ok(stat) = std::fs::metadata(format!("/proc/{pid}")) {

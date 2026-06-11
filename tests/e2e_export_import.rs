@@ -28,7 +28,7 @@ fn test_export_import_roundtrip_preserves_facts() {
     }
 
     let original_active = original.active_knowledge(0.01).len();
-    let original_text_count = original.text_store.len();
+    let _original_text_count = original.text_store.len();
 
     // Export to temp file
     let dir = tempdir().expect("Failed to create temp dir");

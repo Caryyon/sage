@@ -233,6 +233,7 @@ fn forward_with_trace(
                 // Layer 1: input → h1 (relu)
                 let mut pre_h1 = vec![0.0; HIDDEN1_SIZE];
                 let mut h1 = vec![0.0; HIDDEN1_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for h in 0..HIDDEN1_SIZE {
                     let mut sum = weights.b1[h];
                     for i in 0..PERCEPTION_SIZE {
@@ -245,6 +246,7 @@ fn forward_with_trace(
                 // Layer 2: h1 → h2 (relu)
                 let mut pre_h2 = vec![0.0; HIDDEN2_SIZE];
                 let mut h2 = vec![0.0; HIDDEN2_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for h in 0..HIDDEN2_SIZE {
                     let mut sum = weights.b2[h];
                     for i in 0..HIDDEN1_SIZE {
@@ -257,6 +259,7 @@ fn forward_with_trace(
                 // Layer 3: h2 → delta (tanh * 0.1)
                 let mut pre_out = vec![0.0; NCA_CHANNELS];
                 let mut delta = vec![0.0; NCA_CHANNELS];
+                #[allow(clippy::needless_range_loop)]
                 for ch in 0..NCA_CHANNELS {
                     let mut sum = weights.b3[ch];
                     for h in 0..HIDDEN2_SIZE {
@@ -332,6 +335,7 @@ fn backward_through_steps(
                 // dL/d(grid_after_clamp) = d_grid[r][c]
                 // Clamp: if pre_clamp was in [-5, 5], gradient passes through; else 0
                 let mut d_post_add = [0.0; NCA_CHANNELS];
+                #[allow(clippy::needless_range_loop)]
                 for ch in 0..NCA_CHANNELS {
                     if trace.pre_clamp[ch] >= -5.0 && trace.pre_clamp[ch] <= 5.0 {
                         d_post_add[ch] = d_grid[r][c][ch];
@@ -341,6 +345,7 @@ fn backward_through_steps(
                 // grid_after = grid_before + delta
                 // dL/d(grid_before) += d_post_add (residual connection)
                 // dL/d(delta) = d_post_add
+                #[allow(clippy::needless_range_loop)]
                 for ch in 0..NCA_CHANNELS {
                     d_grid_prev[r][c][ch] += d_post_add[ch];
                 }
@@ -349,6 +354,7 @@ fn backward_through_steps(
                 // delta = tanh(pre_out) * 0.1
                 // d(delta)/d(pre_out) = 0.1 * (1 - tanh(pre_out)^2)
                 let mut d_pre_out = [0.0; NCA_CHANNELS];
+                #[allow(clippy::needless_range_loop)]
                 for ch in 0..NCA_CHANNELS {
                     let t = trace.pre_out[ch].tanh();
                     d_pre_out[ch] = d_delta[ch] * 0.1 * (1.0 - t * t);
@@ -356,6 +362,7 @@ fn backward_through_steps(
 
                 // pre_out = W3 * h2 + b3
                 let mut d_h2 = vec![0.0; HIDDEN2_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for ch in 0..NCA_CHANNELS {
                     total_grads.db3[ch] += d_pre_out[ch];
                     for h in 0..HIDDEN2_SIZE {
@@ -366,12 +373,14 @@ fn backward_through_steps(
 
                 // h2 = relu(pre_h2)
                 let mut d_pre_h2 = vec![0.0; HIDDEN2_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for h in 0..HIDDEN2_SIZE {
                     d_pre_h2[h] = if trace.pre_h2[h] > 0.0 { d_h2[h] } else { 0.0 };
                 }
 
                 // pre_h2 = W2 * h1 + b2
                 let mut d_h1 = vec![0.0; HIDDEN1_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for h in 0..HIDDEN2_SIZE {
                     total_grads.db2[h] += d_pre_h2[h];
                     for i in 0..HIDDEN1_SIZE {
@@ -382,12 +391,14 @@ fn backward_through_steps(
 
                 // h1 = relu(pre_h1)
                 let mut d_pre_h1 = vec![0.0; HIDDEN1_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..HIDDEN1_SIZE {
                     d_pre_h1[i] = if trace.pre_h1[i] > 0.0 { d_h1[i] } else { 0.0 };
                 }
 
                 // pre_h1 = W1 * input + b1
                 let mut d_input = vec![0.0; PERCEPTION_SIZE];
+                #[allow(clippy::needless_range_loop)]
                 for h in 0..HIDDEN1_SIZE {
                     total_grads.db1[h] += d_pre_h1[h];
                     for i in 0..PERCEPTION_SIZE {
@@ -599,9 +610,9 @@ pub fn train_nca_backprop(
 
             // Read activations for all vocab tokens
             let mut activations = vec![0.0; vocab_size];
-            for tid in 0..vocab_size {
+            for (tid, act) in activations.iter_mut().enumerate() {
                 let (r, c) = token_to_coord(tid, grid_size);
-                activations[tid] = grid[r][c][ACTIVATION_CH];
+                *act = grid[r][c][ACTIVATION_CH];
             }
 
             // Compute loss
@@ -610,10 +621,10 @@ pub fn train_nca_backprop(
 
             // Convert d_activations to d_grid
             let mut d_grid = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
-            for tid in 0..vocab_size {
+            for (tid, &d_act) in d_activations.iter().enumerate() {
                 let (r, c) = token_to_coord(tid, grid_size);
                 // Multiple tokens might map to same cell — accumulate
-                d_grid[r][c][ACTIVATION_CH] += d_activations[tid];
+                d_grid[r][c][ACTIVATION_CH] += d_act;
             }
 
             // Backward
@@ -728,25 +739,25 @@ fn evaluate_top5(
                         }
                     }
                     let mut h1 = vec![0.0; HIDDEN1_SIZE];
-                    for h in 0..HIDDEN1_SIZE {
+                    for (h, h1_val) in h1.iter_mut().enumerate() {
                         let mut sum = weights.b1[h];
-                        for i in 0..PERCEPTION_SIZE {
-                            sum += weights.w1[h][i] * input[i];
+                        for (i, &inp) in input.iter().enumerate() {
+                            sum += weights.w1[h][i] * inp;
                         }
-                        h1[h] = sum.max(0.0);
+                        *h1_val = sum.max(0.0);
                     }
                     let mut h2 = vec![0.0; HIDDEN2_SIZE];
-                    for h in 0..HIDDEN2_SIZE {
+                    for (h, h2_val) in h2.iter_mut().enumerate() {
                         let mut sum = weights.b2[h];
-                        for i in 0..HIDDEN1_SIZE {
-                            sum += weights.w2[h][i] * h1[i];
+                        for (i, &h1_v) in h1.iter().enumerate() {
+                            sum += weights.w2[h][i] * h1_v;
                         }
-                        h2[h] = sum.max(0.0);
+                        *h2_val = sum.max(0.0);
                     }
                     for ch in 0..NCA_CHANNELS {
                         let mut sum = weights.b3[ch];
-                        for h in 0..HIDDEN2_SIZE {
-                            sum += weights.w3[ch][h] * h2[h];
+                        for (h, &h2_v) in h2.iter().enumerate() {
+                            sum += weights.w3[ch][h] * h2_v;
                         }
                         deltas[r][c][ch] = sum.tanh() * 0.1;
                     }

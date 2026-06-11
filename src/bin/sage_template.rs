@@ -97,7 +97,7 @@ fn main() {
             domain,
             brain,
         } => {
-            let brain_path = brain.unwrap_or_else(|| default_brain_path());
+            let brain_path = brain.unwrap_or_else(default_brain_path);
             let desc = description.unwrap_or_else(|| format!("Template exported from {}", brain_path));
             match export_brain_to_template(
                 &brain_path,
@@ -119,7 +119,7 @@ fn main() {
             brain,
             force,
         } => {
-            let brain_path = brain.unwrap_or_else(|| default_brain_path());
+            let brain_path = brain.unwrap_or_else(default_brain_path);
 
             // Resolve template: name in dir, or direct path
             let template_path = if std::path::Path::new(&template).exists() {

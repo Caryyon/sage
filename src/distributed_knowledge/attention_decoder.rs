@@ -739,9 +739,10 @@ mod tests {
     use crate::grid::GRID_SIZE;
 
     fn setup_test_config() -> EncoderConfig {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None; // Use hash fallback in tests
-        config
+        EncoderConfig {
+            ollama_url: None, // Use hash fallback in tests
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1082,7 +1083,7 @@ mod tests {
         let snapshot_before: Vec<Vec<Vec<f64>>> = grid
             .cells
             .iter()
-            .map(|row| row.iter().map(|cell| cell.clone()).collect())
+            .map(|row| row.to_vec())
             .collect();
 
         // Run contrast retrieval
@@ -1120,7 +1121,7 @@ mod tests {
         let snapshot_before: Vec<Vec<Vec<f64>>> = grid
             .cells
             .iter()
-            .map(|row| row.iter().map(|cell| cell.clone()).collect())
+            .map(|row| row.to_vec())
             .collect();
 
         // Run delta retrieval (this internally clones and mutates a scratch grid)

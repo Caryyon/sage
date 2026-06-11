@@ -6,7 +6,7 @@
 use sage::distributed_knowledge::{
     BrainHeader, KnowledgeStore, NCAKnowledge, BRAIN_MAGIC, BRAIN_VERSION,
 };
-use sage::grid::{Grid, NUM_CHANNELS};
+use sage::grid::NUM_CHANNELS;
 use sage::inference::{ChatMessage, ChatRole, InferenceEngine};
 use std::error::Error;
 use std::sync::Arc;
@@ -136,7 +136,7 @@ fn test_stale_brain_file_is_handled_gracefully() {
     let mut fresh_store = NCAKnowledge::new();
     fresh_store.encode("recovery after stale brain", 0.9);
     assert!(
-        fresh_store.active_knowledge(0.01).len() > 0,
+        !fresh_store.active_knowledge(0.01).is_empty(),
         "Fresh grid should work after stale brain error"
     );
 

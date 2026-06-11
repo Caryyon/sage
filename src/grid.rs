@@ -1133,7 +1133,7 @@ mod tests {
         for ch in KNOWLEDGE_CHANNELS_START..NUM_CHANNELS {
             let val = grid.cells[0][0][ch];
             assert!(
-                val >= 0.0 && val <= 1.0,
+                (0.0..=1.0).contains(&val),
                 "Knowledge channel {} out of bounds: {}",
                 ch,
                 val

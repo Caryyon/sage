@@ -164,27 +164,27 @@ fn nca_step_grid(
             let hidden2_size = weights.b2.len();
 
             let mut h1 = vec![0.0; hidden1_size];
-            for h in 0..hidden1_size {
+            for (h, h1_val) in h1.iter_mut().enumerate() {
                 let mut sum = weights.b1[h];
-                for i in 0..perception_size {
-                    sum += weights.w1[h][i] * input[i];
+                for (i, &inp) in input.iter().enumerate() {
+                    sum += weights.w1[h][i] * inp;
                 }
-                h1[h] = sum.max(0.0);
+                *h1_val = sum.max(0.0);
             }
 
             let mut h2 = vec![0.0; hidden2_size];
-            for h in 0..hidden2_size {
+            for (h, h2_val) in h2.iter_mut().enumerate() {
                 let mut sum = weights.b2[h];
-                for i in 0..hidden1_size {
-                    sum += weights.w2[h][i] * h1[i];
+                for (i, &h1_v) in h1.iter().enumerate() {
+                    sum += weights.w2[h][i] * h1_v;
                 }
-                h2[h] = sum.max(0.0);
+                *h2_val = sum.max(0.0);
             }
 
             for ch in 0..NCA_CHANNELS {
                 let mut sum = weights.b3[ch];
-                for h in 0..hidden2_size {
-                    sum += weights.w3[ch][h] * h2[h];
+                for (h, &h2_v) in h2.iter().enumerate() {
+                    sum += weights.w3[ch][h] * h2_v;
                 }
                 let delta = sum.tanh() * 0.1;
                 new_grid[r][c][ch] = (grid[r][c][ch] + delta).clamp(-5.0, 5.0);
@@ -629,13 +629,13 @@ pub fn train_nca_critical(
         let norm_fitnesses: Vec<f64> = fitnesses.iter().map(|f| (f - mean_f) / std_f).collect();
 
         let mut new_params = base_params.clone();
-        for i in 0..n_params {
+        for (i, param) in new_params.iter_mut().enumerate().take(n_params) {
             let mut grad = 0.0;
             for j in 0..config.population_size {
                 grad += norm_fitnesses[j] * noise_vecs[j][i];
             }
             grad /= (config.population_size as f64) * config.sigma;
-            new_params[i] += config.learning_rate * grad;
+            *param += config.learning_rate * grad;
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
@@ -804,7 +804,7 @@ mod tests {
         let weights = NcaWeights::random();
         let reg = CriticalityRegularizer::new(0.3, vec![1, 2, 3]);
         let penalty = reg.penalty(&tokenizer, &weights, 8, 3);
-        assert!(penalty >= 0.0 && penalty <= 0.3);
+        assert!((0.0..=0.3).contains(&penalty));
     }
 
     #[test]
@@ -818,10 +818,10 @@ mod tests {
         assert_eq!(next.len(), gs);
         assert_eq!(next[0].len(), gs);
         // Values should be clamped
-        for r in 0..gs {
-            for c in 0..gs {
-                for ch in 0..NCA_CHANNELS {
-                    assert!(next[r][c][ch] >= -5.0 && next[r][c][ch] <= 5.0);
+        for row in &next {
+            for cell in row {
+                for &val in cell.iter().take(NCA_CHANNELS) {
+                    assert!(val >= -5.0 && val <= 5.0);
                 }
             }
         }

@@ -9,9 +9,10 @@ use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge, TextStore};
 use sage::grid::{Grid, GRID_SIZE};
 
 fn setup_test_config() -> EncoderConfig {
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None; // Use hash fallback in tests
-    config
+    EncoderConfig {
+        ollama_url: None, // Use hash fallback in tests
+        ..Default::default()
+    }
 }
 
 #[test]
@@ -135,7 +136,7 @@ fn test_knowledge_loop_integration() {
     // Should find some active cells (hash-based may not perfectly match semantically)
     // The important thing is the mechanism works without panicking
     assert!(
-        knowledge.active_knowledge(0.01).len() > 0,
+        !knowledge.active_knowledge(0.01).is_empty(),
         "Should have active knowledge cells"
     );
 
@@ -186,7 +187,7 @@ fn test_knowledge_loop_uses_attention_for_semantic_queries() {
     // With semantic embeddings, should find the France/Paris fact
     let found_france = results
         .iter()
-        .any(|r| r.text.as_ref().map_or(false, |t| t.contains("France")));
+        .any(|r| r.text.as_ref().is_some_and(|t| t.contains("France")));
 
     assert!(
         found_france,

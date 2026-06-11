@@ -762,6 +762,13 @@ impl NetworkManager {
     }
 }
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,13 +777,15 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
+    type GossipMessageQueue = Arc<Mutex<Vec<(String, GossipMessage)>>>;
+
     /// A mock transport that captures all sent messages.
     struct MockTransport {
-        sent: Arc<Mutex<Vec<(String, GossipMessage)>>>,
+        sent: GossipMessageQueue,
     }
 
     impl MockTransport {
-        fn new() -> (Self, Arc<Mutex<Vec<(String, GossipMessage)>>>) {
+        fn new() -> (Self, GossipMessageQueue) {
             let sent = Arc::new(Mutex::new(Vec::new()));
             (Self { sent: sent.clone() }, sent)
         }
@@ -809,7 +818,7 @@ mod tests {
         vec![vec![vec![val; ch]; w]; h]
     }
 
-    fn make_manager_with_mock() -> (NetworkManager, Arc<Mutex<Vec<(String, GossipMessage)>>>) {
+    fn make_manager_with_mock() -> (NetworkManager, GossipMessageQueue) {
         let identity = NodeIdentity::generate();
         let config = NetworkConfig::default();
         let (transport, captured) = MockTransport::new();
@@ -911,8 +920,10 @@ mod tests {
     #[tokio::test]
     async fn test_merge_full_state_blends_shared_channels() {
         let identity = NodeIdentity::generate();
-        let mut config = NetworkConfig::default();
-        config.local_confidence = 0.8;
+        let config = NetworkConfig {
+            local_confidence: 0.8,
+            ..Default::default()
+        };
         let mgr = NetworkManager::new(identity, config);
 
         // Local grid: 0.0 in all channels. Remote: 1.0. remote_confidence=0.2.
@@ -929,11 +940,4 @@ mod tests {
             "Shared channel should be blended: expected 0.2, got {blended}"
         );
     }
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }

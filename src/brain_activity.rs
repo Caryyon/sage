@@ -66,7 +66,7 @@ pub fn start_brain_activity(
     let stats_c = stats.clone();
 
     thread::spawn(move || {
-        let mut rng = rand::thread_rng();
+        let _rng = rand::thread_rng();
         let mut consolidation_timer = Instant::now();
         let mut smooth_timer = Instant::now();
         let mut spontaneous_timer = Instant::now();

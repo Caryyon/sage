@@ -174,10 +174,7 @@ fn encode_base58(data: &[u8]) -> String {
         num = new_num;
     }
 
-    // Add leading '1's for leading zeros
-    for _ in 0..leading_zeros {
-        result.push(b'1');
-    }
+    result.extend(std::iter::repeat_n(b'1', leading_zeros));
 
     result.reverse();
     String::from_utf8(result).unwrap_or_default()

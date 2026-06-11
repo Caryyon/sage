@@ -80,8 +80,8 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
             }
         }
     }
-    for ch in 0..NCA_CHANNELS {
-        means[ch] /= n;
+    for (_ch, mean) in means.iter_mut().take(NCA_CHANNELS).enumerate() {
+        *mean /= n;
     }
 
     // Std dev
@@ -112,8 +112,8 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
                 3
             };
             quad_counts[q] += 1;
-            for ch in 0..NCA_CHANNELS {
-                quad_sums[q][ch] += cell[ch];
+            for (ch, &val) in cell.iter().take(NCA_CHANNELS).enumerate() {
+                quad_sums[q][ch] += val;
             }
         }
     }
@@ -173,9 +173,9 @@ impl ReservoirReadout {
     pub fn predict(&self, features: &[f64]) -> Vec<f64> {
         assert_eq!(features.len(), self.feature_dim);
         let mut logits = self.bias.clone();
-        for v in 0..self.vocab_size {
-            for f in 0..self.feature_dim {
-                logits[v] += self.weights[v][f] * features[f];
+        for (v, logit) in logits.iter_mut().enumerate() {
+            for (f, &feat) in features.iter().enumerate() {
+                *logit += self.weights[v][f] * feat;
             }
         }
         logits
@@ -419,8 +419,8 @@ pub fn train_reservoir_readout(
             for v in 0..vocab_size {
                 let d = probs[v] - if v == target { 1.0 } else { 0.0 };
                 grad_b[v] += d;
-                for f in 0..feat_dim {
-                    grad_w[v][f] += d * features[f];
+                for (f, &feat) in features.iter().enumerate() {
+                    grad_w[v][f] += d * feat;
                 }
             }
         }
@@ -659,21 +659,21 @@ impl RetrievalFeedback {
             }
 
             // Adam update for weights
-            for i in 0..readout.weights.len().min(g_w.len()) {
+            for (i, w) in readout.weights.iter_mut().enumerate().take(g_w.len()) {
                 self.m_w[i] = beta1 * self.m_w[i] + (1.0 - beta1) * g_w[i];
                 self.v_w[i] = beta2 * self.v_w[i] + (1.0 - beta2) * g_w[i] * g_w[i];
                 let m_hat = self.m_w[i] / (1.0 - beta1.powf(t));
                 let v_hat = self.v_w[i] / (1.0 - beta2.powf(t));
-                readout.weights[i] -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
+                *w -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
             }
 
             // Adam update for bias
-            for c in 0..2 {
+            for (c, b) in readout.bias.iter_mut().enumerate() {
                 self.m_b[c] = beta1 * self.m_b[c] + (1.0 - beta1) * g_b[c];
                 self.v_b[c] = beta2 * self.v_b[c] + (1.0 - beta2) * g_b[c] * g_b[c];
                 let m_hat = self.m_b[c] / (1.0 - beta1.powf(t));
                 let v_hat = self.v_b[c] / (1.0 - beta2.powf(t));
-                readout.bias[c] -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
+                *b -= self.learning_rate * m_hat / (v_hat.sqrt() + eps);
             }
         }
 
@@ -876,7 +876,7 @@ mod tests {
         let result = super::train_standalone_readout(corpus, 8, 3, &config, false);
         assert!(result.is_ok());
         let (_, top1, top5, baseline) = result.unwrap();
-        assert!(top1 >= 0.0 && top1 <= 1.0);
+        assert!((0.0..=1.0).contains(&top1));
         assert!(top5 >= top1);
         assert!(baseline > 0.0);
     }
@@ -943,7 +943,7 @@ mod tests {
         assert!(loss >= 0.0, "Loss should be non-negative, got {}", loss);
         // Accuracy should be in [0, 1]
         assert!(
-            accuracy >= 0.0 && accuracy <= 1.0,
+            (0.0..=1.0).contains(&accuracy),
             "Accuracy out of range: {}",
             accuracy
         );
@@ -1007,7 +1007,7 @@ mod tests {
         let result = train_reservoir_readout(&mut predictor, corpus, &config, false);
         assert!(result.is_ok());
         let (_, top1, top5) = result.unwrap();
-        assert!(top1 >= 0.0 && top1 <= 1.0);
+        assert!((0.0..=1.0).contains(&top1));
         assert!(top5 >= top1);
     }
 }

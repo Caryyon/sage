@@ -361,46 +361,46 @@ impl NcaPredictor {
     fn nca_step(&mut self) {
         let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; self.grid_size]; self.grid_size];
 
-        for r in 0..self.grid_size {
-            for c in 0..self.grid_size {
+        for (r, row) in deltas.iter_mut().enumerate() {
+            for (c, cell) in row.iter_mut().enumerate() {
                 let input = self.perceive(r, c);
 
                 // Layer 1: perception → hidden1 (ReLU)
                 let mut h1 = vec![0.0; HIDDEN1_SIZE];
-                for h in 0..HIDDEN1_SIZE {
+                for (h, h1_val) in h1.iter_mut().enumerate() {
                     let mut sum = self.weights.b1[h];
-                    for i in 0..PERCEPTION_SIZE {
-                        sum += self.weights.w1[h][i] * input[i];
+                    for (i, &inp) in input.iter().enumerate() {
+                        sum += self.weights.w1[h][i] * inp;
                     }
-                    h1[h] = sum.max(0.0); // ReLU
+                    *h1_val = sum.max(0.0); // ReLU
                 }
 
                 // Layer 2: hidden1 → hidden2 (ReLU)
                 let mut h2 = vec![0.0; HIDDEN2_SIZE];
-                for h in 0..HIDDEN2_SIZE {
+                for (h, h2_val) in h2.iter_mut().enumerate() {
                     let mut sum = self.weights.b2[h];
-                    for i in 0..HIDDEN1_SIZE {
-                        sum += self.weights.w2[h][i] * h1[i];
+                    for (i, &h1_v) in h1.iter().enumerate() {
+                        sum += self.weights.w2[h][i] * h1_v;
                     }
-                    h2[h] = sum.max(0.0); // ReLU
+                    *h2_val = sum.max(0.0); // ReLU
                 }
 
                 // Layer 3: hidden2 → output (tanh, residual)
                 for ch in 0..NCA_CHANNELS {
                     let mut sum = self.weights.b3[ch];
-                    for h in 0..HIDDEN2_SIZE {
-                        sum += self.weights.w3[ch][h] * h2[h];
+                    for (h, &h2_v) in h2.iter().enumerate() {
+                        sum += self.weights.w3[ch][h] * h2_v;
                     }
-                    deltas[r][c][ch] = sum.tanh() * 0.1; // Small residual update
+                    cell[ch] = sum.tanh() * 0.1; // Small residual update
                 }
             }
         }
 
         // Apply deltas
-        for r in 0..self.grid_size {
+        for (r, row) in self.grid.iter_mut().enumerate() {
             for c in 0..self.grid_size {
-                for ch in 0..NCA_CHANNELS {
-                    self.grid[r][c][ch] = (self.grid[r][c][ch] + deltas[r][c][ch]).clamp(-5.0, 5.0);
+                for (ch, cell) in row[c].iter_mut().enumerate().take(NCA_CHANNELS) {
+                    *cell = (*cell + deltas[r][c][ch]).clamp(-5.0, 5.0);
                 }
             }
         }
@@ -418,9 +418,9 @@ impl NcaPredictor {
         // Read activation channel for each token position
         let vocab_size = self.tokenizer.vocab_size();
         let mut activations = vec![0.0; vocab_size];
-        for tid in 0..vocab_size {
+        for (tid, act) in activations.iter_mut().enumerate() {
             let (r, c) = token_to_coord(tid, self.grid_size);
-            activations[tid] = self.grid[r][c][ACTIVATION_CH];
+            *act = self.grid[r][c][ACTIVATION_CH];
         }
         activations
     }
@@ -893,8 +893,8 @@ fn train_cma_es_kan(
         let old_m = m.clone();
         m = vec![0.0; n];
         for i in 0..mu {
-            for j in 0..n {
-                m[j] += weights[i] * candidates[i].0[j];
+            for (j, m_j) in m.iter_mut().enumerate().take(n) {
+                *m_j += weights[i] * candidates[i].0[j];
             }
         }
 
@@ -986,8 +986,8 @@ fn evaluate_fitness_kan(
 
                     // KAN forward pass
                     let output = weights.forward(&input);
-                    for ch in 0..NCA_CHANNELS.min(output.len()) {
-                        new_grid[r][c][ch] = (grid[r][c][ch] + output[ch]).tanh();
+                    for (ch, out_val) in output.iter().enumerate().take(NCA_CHANNELS) {
+                        new_grid[r][c][ch] = (grid[r][c][ch] + out_val).tanh();
                     }
                 }
             }
@@ -1056,13 +1056,13 @@ fn train_es(
         let norm_fitnesses: Vec<f64> = fitnesses.iter().map(|f| (f - mean_f) / std_f).collect();
 
         let mut new_params = base_params.clone();
-        for i in 0..n_params {
+        for (i, param) in new_params.iter_mut().enumerate().take(n_params) {
             let mut grad = 0.0;
             for j in 0..config.population_size {
                 grad += norm_fitnesses[j] * noise_vecs[j][i];
             }
             grad /= (config.population_size as f64) * config.sigma;
-            new_params[i] += config.learning_rate * grad;
+            *param += config.learning_rate * grad;
         }
 
         let new_weights = NcaWeights::from_vec(&new_params);
@@ -1185,18 +1185,18 @@ fn train_cma_es(
 
         // Weighted recombination: new mean
         let old_mean = mean.clone();
-        for i in 0..n {
-            mean[i] = 0.0;
+        for (i, m_i) in mean.iter_mut().enumerate().take(n) {
+            *m_i = 0.0;
             for j in 0..mu {
-                mean[i] += weights[j] * candidates[j].0[i];
+                *m_i += weights[j] * candidates[j].0[i];
             }
         }
 
         // Weighted z-step
         let mut z_w = vec![0.0; n];
-        for i in 0..n {
+        for (i, z_i) in z_w.iter_mut().enumerate().take(n) {
             for j in 0..mu {
-                z_w[i] += weights[j] * candidates[j].1[i];
+                *z_i += weights[j] * candidates[j].1[i];
             }
         }
 

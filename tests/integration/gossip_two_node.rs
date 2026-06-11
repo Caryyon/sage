@@ -18,16 +18,18 @@ use sage::network::{NetworkConfig, NetworkManager};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+type GossipMessageQueue = Arc<Mutex<Vec<(String, GossipMessage)>>>;
+
 // ---------------------------------------------------------------------------
 // Mock transport
 // ---------------------------------------------------------------------------
 
 struct MockTransport {
-    sent: Arc<Mutex<Vec<(String, GossipMessage)>>>,
+    sent: GossipMessageQueue,
 }
 
 impl MockTransport {
-    fn new() -> (Self, Arc<Mutex<Vec<(String, GossipMessage)>>>) {
+    fn new() -> (Self, GossipMessageQueue) {
         let sent = Arc::new(Mutex::new(Vec::new()));
         (Self { sent: sent.clone() }, sent)
     }
@@ -68,22 +70,22 @@ fn nca_grid_to_vec(store: &NCAKnowledge) -> Vec<Vec<Vec<f64>>> {
     let g = &store.grid;
     let ch_count = g.cells[0][0].len();
     let mut out = vec![vec![vec![0.0f64; ch_count]; g.width]; g.height];
-    for y in 0..g.height {
-        for x in 0..g.width {
+    for (y, row) in out.iter_mut().enumerate().take(g.height) {
+        for (x, cell) in row.iter_mut().enumerate().take(g.width) {
             for ch in 0..ch_count {
-                out[y][x][ch] = g.cells[y][x][ch];
+                cell[ch] = g.cells[y][x][ch];
             }
         }
     }
     out
 }
 
-fn vec_to_nca_grid(store: &mut NCAKnowledge, grid_vec: &Vec<Vec<Vec<f64>>>) {
+fn vec_to_nca_grid(store: &mut NCAKnowledge, grid_vec: &[Vec<Vec<f64>>]) {
     let ch_count = store.grid.cells[0][0].len();
-    for y in 0..store.grid.height {
-        for x in 0..store.grid.width {
-            for ch in 0..ch_count.min(grid_vec[y][x].len()) {
-                store.grid.cells[y][x][ch] = grid_vec[y][x][ch];
+    for (y, grid_row) in grid_vec.iter().enumerate().take(store.grid.height) {
+        for (x, cell) in grid_row.iter().enumerate().take(store.grid.width) {
+            for ch in 0..ch_count.min(cell.len()) {
+                store.grid.cells[y][x][ch] = cell[ch];
             }
         }
     }
@@ -211,7 +213,7 @@ fn network_manager_full_state_request() {
     match &sent[0].1 {
         GossipMessage::GridStateResponse(GridStateResponse::FullState { grid, .. }) => {
             assert_eq!(grid.len(), node_a.grid.height, "Grid rows should match");
-            assert!(grid[0].len() > 0, "Grid columns should be non-empty");
+            assert!(!grid[0].is_empty(), "Grid columns should be non-empty");
             println!(
                 "✅ NetworkManager FullState: sent {}×{} grid to node-b",
                 grid.len(),

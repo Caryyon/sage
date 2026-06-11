@@ -791,8 +791,10 @@ mod tests {
 
     #[test]
     fn test_similar_texts_similar_embeddings() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let f1 = encode_text("the cat sat on the mat", &config);
         let f2 = encode_text("the cat sat on a mat", &config);
         let f3 = encode_text("quantum physics equations", &config);
@@ -810,8 +812,10 @@ mod tests {
 
     #[test]
     fn test_encoding_is_normalized() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let features = encode_text("test normalization", &config);
         let mag: f64 = features.values.iter().map(|v| v * v).sum::<f64>().sqrt();
         assert!(
@@ -824,8 +828,10 @@ mod tests {
     #[test]
     fn test_write_knowledge_to_grid() {
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let features = encode_text("test knowledge", &config);
 
         let (cx, cy) = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
@@ -841,8 +847,10 @@ mod tests {
     #[test]
     fn test_spatial_locality() {
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let features = encode_text("spatial test", &config);
 
         let (cx, cy) = write_knowledge(&mut grid, &features, 0.9, 0.5, &config);
@@ -861,8 +869,10 @@ mod tests {
 
     #[test]
     fn test_feature_to_position_in_bounds() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         for text in &["hello", "world", "test", "another one", ""] {
             let features = encode_text(text, &config);
             let (x, y) = feature_to_position(&features, GRID_SIZE, GRID_SIZE);
@@ -901,9 +911,11 @@ mod tests {
     #[test]
     fn test_feature_to_position_uses_12_dims() {
         // Verify that changing dims 6-11 changes the position (12-dim hash)
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
-        config.num_features = 64;
+        let config = EncoderConfig {
+            ollama_url: None,
+            num_features: 64,
+            ..Default::default()
+        };
 
         // Construct two feature vectors that differ only in dims 6-11
         let mut fv1 = FeatureVector::new(64);
@@ -938,9 +950,11 @@ mod tests {
     fn test_collision_rate_decreases_with_secondary_positions() {
         use crate::distributed_knowledge::GRID_SIZE;
 
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
-        config.num_hash_positions = 3; // primary + 2 secondary
+        let config = EncoderConfig {
+            ollama_url: None,
+            num_hash_positions: 3, // primary + 2 secondary
+            ..Default::default()
+        };
 
         // Encode 20 semantically distinct items
         let items = [
@@ -1001,8 +1015,10 @@ mod tests {
 
     #[test]
     fn test_secondary_positions_are_different_from_primary() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
 
         let features = encode_text_hash("test secondary hashing", &config);
         let primary = feature_to_position(&features, GRID_SIZE, GRID_SIZE);
@@ -1034,8 +1050,10 @@ mod tests {
         use crate::distributed_knowledge::text_store::TextStore;
 
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None; // Use hash fallback for deterministic tests
+        let config = EncoderConfig {
+            ollama_url: None, // Use hash fallback for deterministic tests
+            ..Default::default()
+        };
         let mut text_store = TextStore::new();
 
         // Encode a specific fact
@@ -1076,8 +1094,10 @@ mod tests {
         use crate::distributed_knowledge::text_store::TextStore;
 
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
         let mut text_store = TextStore::new();
 
         // Encode 10 semantically distinct facts
@@ -1145,8 +1165,10 @@ mod tests {
     /// by ensuring stopwords get lower weight than content words
     #[test]
     fn test_tfidf_weighting_effect() {
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
 
         // Two queries: one with mainly stopwords, one with content words
         let stopword_heavy = "the a an is are was were be to of in for on";
@@ -1307,7 +1329,7 @@ mod tests {
         // W[0][0] should now be 1.0 - 0.1 * 1.0 = 0.9
         assert!((proj.weights[0] - 0.9).abs() < 1e-9);
         // W[1][1] should remain 1.0
-        assert!((proj.weights[1 * dim + 1] - 1.0).abs() < 1e-9);
+        assert!((proj.weights[dim + 1] - 1.0).abs() < 1e-9);
     }
 
     #[test]
@@ -1328,12 +1350,14 @@ mod tests {
     /// embeddings but queries compared against raw hash features.
     #[test]
     fn test_encode_decode_same_embedding_space_with_projection() {
-        use crate::distributed_knowledge::decoder::query_knowledge_with_text;
+        
         use crate::distributed_knowledge::text_store::TextStore;
 
         let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None; // Use hash fallback for deterministic tests
+        let config = EncoderConfig {
+            ollama_url: None, // Use hash fallback for deterministic tests
+            ..Default::default()
+        };
         let mut text_store = TextStore::new();
 
         // Create a non-identity projection
@@ -1405,10 +1429,12 @@ mod tests {
     /// This ensures the projection doesn't degrade retrieval quality.
     #[test]
     fn test_retrieval_with_projection_maintains_quality() {
-        use crate::distributed_knowledge::text_store::TextStore;
+        
 
-        let mut config = EncoderConfig::default();
-        config.ollama_url = None;
+        let config = EncoderConfig {
+            ollama_url: None,
+            ..Default::default()
+        };
 
         // Create a deterministic "trained" projection (not identity, but structured)
         let mut proj = super::LinearProjection::identity(config.num_features);

@@ -17,8 +17,10 @@ fn test_initializes_without_ollama() {
     let start = Instant::now();
 
     // Configure to point at a dead port
-    let mut config = EncoderConfig::default();
-    config.ollama_url = Some("http://localhost:19999".to_string());
+    let config = EncoderConfig {
+        ollama_url: Some("http://localhost:19999".to_string()),
+        ..Default::default()
+    };
 
     // Detect embedding status (this triggers the Ollama check)
     let status = detect_embedding_status(&config);
@@ -116,8 +118,10 @@ fn test_encode_retrieve_without_ollama() {
 #[test]
 fn test_embedding_status_reflects_reality() {
     // Test 1: With dead Ollama URL
-    let mut config_dead = EncoderConfig::default();
-    config_dead.ollama_url = Some("http://localhost:19999".to_string());
+    let config_dead = EncoderConfig {
+        ollama_url: Some("http://localhost:19999".to_string()),
+        ..Default::default()
+    };
     let status_dead = detect_embedding_status(&config_dead);
 
     match status_dead {
@@ -130,8 +134,10 @@ fn test_embedding_status_reflects_reality() {
     }
 
     // Test 2: With no Ollama URL configured
-    let mut config_none = EncoderConfig::default();
-    config_none.ollama_url = None;
+    let config_none = EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    };
     let status_none = detect_embedding_status(&config_none);
 
     match status_none {
@@ -165,8 +171,10 @@ fn test_embedding_status_reflects_reality() {
 /// grid position (for reproducibility).
 #[test]
 fn test_hash_encoding_deterministic() {
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None; // Force fallback
+    let config = EncoderConfig {
+        ollama_url: None, // Force fallback
+        ..Default::default()
+    };
 
     // Encode same text twice
     let text = "deterministic encoding test";
@@ -283,8 +291,10 @@ fn test_embedding_status_detection_timeout() {
     });
 
     // Configure to use our hanging server
-    let mut config = EncoderConfig::default();
-    config.ollama_url = Some(format!("http://127.0.0.1:{}", port));
+    let config = EncoderConfig {
+        ollama_url: Some(format!("http://127.0.0.1:{}", port)),
+        ..Default::default()
+    };
 
     let start = Instant::now();
     let status = detect_embedding_status(&config);

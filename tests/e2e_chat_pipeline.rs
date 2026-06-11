@@ -5,7 +5,7 @@
 use sage::distributed_knowledge::attention_decoder::AttentionDecoder;
 use sage::distributed_knowledge::encoder::{encode_text, write_knowledge, EncoderConfig};
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
-use sage::grid::{Grid, GRID_SIZE, KNOWLEDGE_ACTIVATION};
+use sage::grid::{Grid, GRID_SIZE};
 use sage::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 
 /// Test: Chat input gets encoded and is queryable.
@@ -89,8 +89,10 @@ fn test_retrieval_feedback_accumulates() {
 #[test]
 fn test_contrast_retrieval_query_conditioned() {
     let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    let config = EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    };
     let decoder = AttentionDecoder::new(GRID_SIZE, GRID_SIZE);
 
     // Encode semantically distinct facts
@@ -156,7 +158,7 @@ fn test_encode_retrieve_multiple_rounds() {
 
         // Retrieve
         let query = format!("Round {} topic", round);
-        let results = store.query(&query, 5);
+        let _results = store.query(&query, 5);
 
         // Should not panic or corrupt state
         let active = store.active_knowledge(0.01).len();
@@ -203,7 +205,7 @@ fn test_feedback_training_improves_scoring() {
     let irrelevant_feat = vec![-1.0, -0.5, -0.1, -0.2, -0.3, 0.1, 0.0, -0.4];
 
     let score_rel_before = readout.score(&relevant_feat);
-    let score_irrel_before = readout.score(&irrelevant_feat);
+    let _score_irrel_before = readout.score(&irrelevant_feat);
     assert!(
         (score_rel_before - 0.5).abs() < 0.01,
         "Before training, score should be 0.5"
@@ -233,8 +235,10 @@ fn test_feedback_training_improves_scoring() {
 /// Test: Chat encoding creates consistent positions for same input.
 #[test]
 fn test_chat_encoding_consistency() {
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    let config = EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    };
 
     let text = "the weather is nice today";
 
@@ -292,8 +296,10 @@ fn test_large_conversation_capacity() {
 #[test]
 fn test_attention_on_chat_content() {
     let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    let config = EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    };
     let decoder = AttentionDecoder::new(GRID_SIZE, GRID_SIZE);
 
     // Encode chat-like content

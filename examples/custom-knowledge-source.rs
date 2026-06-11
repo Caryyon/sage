@@ -17,13 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sage = KnowledgeLoop::new(engine);
 
     // Ingest a custom knowledge base
-    let documents = vec![
-        "SAGE uses a 256×256 neural grid to store knowledge with zero collisions.",
+    let documents = ["SAGE uses a 256×256 neural grid to store knowledge with zero collisions.",
         "The knowledge grid has 38 channels per cell including RGBA, hidden, pattern, and knowledge channels.",
         "NCA consolidation applies Hebbian reinforcement to frequently accessed memories.",
         "libp2p gossip protocol syncs knowledge diffs between peers.",
-        "Ed25519 signatures prevent knowledge poisoning attacks.",
-    ];
+        "Ed25519 signatures prevent knowledge poisoning attacks."];
 
     println!("Ingesting {} documents into SAGE...\n", documents.len());
 

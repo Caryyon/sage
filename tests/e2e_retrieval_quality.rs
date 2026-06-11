@@ -4,10 +4,10 @@
 //! pipeline maintains minimum quality standards.
 
 use sage::distributed_knowledge::encoder::{
-    detect_embedding_status, encode_text, write_knowledge, EmbeddingStatus, EncoderConfig,
+    detect_embedding_status, encode_text, write_knowledge, EncoderConfig,
 };
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
-use sage::grid::{Grid, GRID_SIZE, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START};
+use sage::grid::{Grid, GRID_SIZE};
 
 /// QUALITY GATE: Encode 10 fact pairs, retrieve each, assert >= 70% hit rate.
 ///
@@ -109,7 +109,7 @@ fn test_hash_fallback_works() {
     store.config.ollama_url = None;
 
     // Verify we're using hash fallback (not fastembed or Ollama)
-    let features = encode_text("test fallback", &store.config);
+    let _features = encode_text("test fallback", &store.config);
     // Hash fallback returns is_semantic = false if fastembed isn't available
     // This test just ensures the system works regardless of embedding backend
 
@@ -177,8 +177,10 @@ fn test_retrieval_does_not_mutate_grid() {
     use sage::distributed_knowledge::attention_decoder::AttentionDecoder;
 
     let mut grid = Grid::new(GRID_SIZE, GRID_SIZE);
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None;
+    let config = EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    };
 
     // Encode some knowledge
     let texts = [
@@ -196,7 +198,7 @@ fn test_retrieval_does_not_mutate_grid() {
     let snapshot_before: Vec<Vec<Vec<f64>>> = grid
         .cells
         .iter()
-        .map(|row| row.iter().map(|cell| cell.clone()).collect())
+        .map(|row| row.to_vec())
         .collect();
 
     // Verify snapshot captured correctly
@@ -220,12 +222,11 @@ fn test_retrieval_does_not_mutate_grid() {
 
     // Verify grid is IDENTICAL after all retrieval operations
     let mut mutations = 0;
-    for y in 0..grid.height {
-        for x in 0..grid.width {
-            for ch in 0..grid.cells[y][x].len() {
-                let before = snapshot_before[y][x][ch];
+    for (y, row) in snapshot_before.iter().enumerate().take(grid.height) {
+        for (x, cell) in row.iter().enumerate().take(grid.width) {
+            for (ch, before) in cell.iter().enumerate().take(grid.cells[y][x].len()) {
                 let after = grid.cells[y][x][ch];
-                if (before - after).abs() > 1e-15 {
+                if (*before - after).abs() > 1e-15 {
                     mutations += 1;
                     if mutations <= 5 {
                         eprintln!("MUTATION at [{y}][{x}][{ch}]: {} -> {}", before, after);

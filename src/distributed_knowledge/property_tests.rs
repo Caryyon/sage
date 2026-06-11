@@ -21,9 +21,10 @@ use crate::grid::{Grid, KNOWLEDGE_CHANNELS_START, NUM_CHANNELS};
 
 /// Create an offline encoder config (no Ollama, hash-only)
 fn offline_config() -> EncoderConfig {
-    let mut config = EncoderConfig::default();
-    config.ollama_url = None;
-    config
+    EncoderConfig {
+        ollama_url: None,
+        ..Default::default()
+    }
 }
 
 proptest! {
@@ -55,7 +56,7 @@ proptest! {
                     let v = grid.cells[y][x][ch];
                     prop_assert!(v.is_finite(), "NaN/inf at cell ({},{}) ch {}", x, y, ch);
                     // Soft range check — values should generally stay bounded
-                    prop_assert!(v >= -5.0 && v <= 5.0, "value {} out of soft range at ({},{}) ch {}", v, x, y, ch);
+                    prop_assert!((-5.0..=5.0).contains(&v), "value {} out of soft range at ({},{}) ch {}", v, x, y, ch);
                 }
             }
         }
@@ -274,6 +275,6 @@ mod additional_tests {
         grid.smooth_hidden_channels(63, 0, 10, 2);
 
         // Should not panic
-        assert!(true);
+
     }
 }

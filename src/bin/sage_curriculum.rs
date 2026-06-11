@@ -91,7 +91,7 @@ fn main() {
     let cli = Cli::parse();
     let brain_path = cli
         .brain
-        .unwrap_or_else(|| default_brain_path());
+        .unwrap_or_else(default_brain_path);
 
     match cli.command {
         Commands::Ingest {

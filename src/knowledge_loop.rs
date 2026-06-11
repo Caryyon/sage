@@ -1031,14 +1031,14 @@ mod tests {
         );
 
         // Retrieve mechanism should work on color-related query
-        let knowledge = kl.retrieve_knowledge("favorite color");
+        let _knowledge = kl.retrieve_knowledge("favorite color");
         // With hash-based encoding, exact recall depends on hash collisions
         // but the retrieval mechanism itself should not panic and should return
         // either results or None gracefully
 
         // Final conversation should work
         let response = kl.chat("What is my favorite color?").unwrap();
-        assert!(response.len() > 0, "Should get a response");
+        assert!(!response.is_empty(), "Should get a response");
 
         // Verify history accumulated (4 exchanges × 2 messages)
         assert_eq!(kl.history().len(), 8, "Should track all message history");
@@ -1089,8 +1089,7 @@ mod tests {
         // With hash-based encoding and exact same text, retrieval should work
         // (text is stored at the exact position)
         // Allow either finding context or the mechanism working (no panic)
-        if context.is_some() {
-            let ctx = context.unwrap();
+        if let Some(ctx) = context {
             assert!(
                 ctx.contains("Recalled Knowledge"),
                 "Context should have knowledge header"

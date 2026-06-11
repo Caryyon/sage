@@ -12,11 +12,13 @@ use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::KNOWLEDGE_ACTIVATION;
 use std::sync::{Arc, Mutex};
 
+type MessageQueue = Arc<Mutex<Vec<(usize, Vec<u8>)>>>;
+
 /// Simulated in-memory gossip bus: all nodes share the same channel.
 #[derive(Clone, Default)]
 struct GossipBus {
     /// Broadcast messages: (sender_id, serialized grid delta bytes)
-    messages: Arc<Mutex<Vec<(usize, Vec<u8>)>>>,
+    messages: MessageQueue,
 }
 
 impl GossipBus {

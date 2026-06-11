@@ -30,13 +30,12 @@ fn bspline_basis(t: f64, knots: &[f64], order: usize) -> Vec<f64> {
     // Order 0 (piecewise constant)
     let mut prev: Vec<f64> = (0..knots.len() - 1)
         .map(|i| {
-            if knots[i] <= t && t < knots[i + 1] {
-                1.0
-            } else if (t - knots[knots.len() - 1]).abs() < 1e-15
-                && knots[i] < knots[i + 1]
-                && (knots[i + 1] - knots[knots.len() - 1]).abs() < 1e-15
+            if (knots[i] <= t && t < knots[i + 1])
+                || ((t - knots[knots.len() - 1]).abs() < 1e-15
+                    && knots[i] < knots[i + 1]
+                    && (knots[i + 1] - knots[knots.len() - 1]).abs() < 1e-15)
             {
-                1.0 // include right endpoint for last non-degenerate interval
+                1.0 // also include right endpoint for last non-degenerate interval
             } else {
                 0.0
             }
