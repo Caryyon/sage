@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use sage::specialist::SpecialistProfile;
 use tokio::time::{interval, Duration};
 use tower_http::cors::CorsLayer;
 
@@ -86,6 +86,7 @@ struct AppState {
     nodes: Arc<Mutex<HashMap<String, NodeStats>>>,
     activities: Arc<Mutex<Vec<ActivityEvent>>>,
     pending: Arc<Mutex<Vec<PendingApproval>>>,
+    specialists: Arc<Mutex<HashMap<String, SpecialistProfile>>>,
     sage_api_url: String,
 }
 
@@ -435,6 +436,9 @@ async fn main() {
         .route("/api/v1/network/pending", get(get_pending))
         .route("/api/v1/network/ping", post(node_ping))
         .route("/api/v1/router/stats", get(get_router_stats))
+        .route("/api/v1/specialists", get(list_specialists_handler))
+        .route("/api/v1/specialists/:name", get(get_specialist_handler))
+        .route("/api/v1/specialists", post(publish_specialist_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -445,4 +449,61 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("🚀 Server running on http://{}", addr);
     axum::serve(listener, app).await.unwrap();
+}
+
+// ─── Specialist Catalog Handlers ─────────────────────────────────────
+
+/// GET /api/v1/specialists — list all published specialists
+async fn list_specialists_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let specialists = state.specialists.lock().unwrap();
+    let list: Vec<&SpecialistProfile> = specialists.values().collect();
+    Json(serde_json::json!({
+        "specialists": list,
+        "count": list.len(),
+    }))
+}
+
+/// GET /api/v1/specialists/:name — get a specific specialist
+async fn get_specialist_handler(
+    State(state): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let specialists = state.specialists.lock().unwrap();
+    match specialists.get(&name) {
+        Some(profile) => Json(serde_json::json!(profile)).into_response(),
+        None => (StatusCode::NOT_FOUND, format!("Specialist '{}' not found", name)).into_response(),
+    }
+}
+
+/// POST /api/v1/specialists — publish a new specialist
+async fn publish_specialist_handler(
+    State(state): State<AppState>,
+    Json(profile): Json<SpecialistProfile>,
+) -> impl IntoResponse {
+    let mut specialists = state.specialists.lock().unwrap();
+
+    if specialists.contains_key(&profile.name) {
+        return (
+            StatusCode::CONFLICT,
+            format!("Specialist '{}' already exists. Use PUT to update.", profile.name),
+        )
+            .into_response();
+    }
+
+    let name = profile.name.clone();
+    specialists.insert(name.clone(), profile);
+
+    println!("📦 Specialist published: {}", name);
+
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "status": "published",
+            "name": name,
+            "url": format!("/api/v1/specialists/{}", name),
+        })),
+    )
+        .into_response()
 }

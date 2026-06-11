@@ -80,7 +80,7 @@ fn extract_spatial_stats(grid: &[Vec<[f64; NCA_CHANNELS]>]) -> Vec<f64> {
             }
         }
     }
-    for (_ch, mean) in means.iter_mut().take(NCA_CHANNELS).enumerate() {
+    for mean in means.iter_mut().take(NCA_CHANNELS) {
         *mean /= n;
     }
 

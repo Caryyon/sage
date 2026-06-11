@@ -386,21 +386,21 @@ impl NcaPredictor {
                 }
 
                 // Layer 3: hidden2 → output (tanh, residual)
-                for ch in 0..NCA_CHANNELS {
+                for (ch, delta) in cell.iter_mut().enumerate().take(NCA_CHANNELS) {
                     let mut sum = self.weights.b3[ch];
                     for (h, &h2_v) in h2.iter().enumerate() {
                         sum += self.weights.w3[ch][h] * h2_v;
                     }
-                    cell[ch] = sum.tanh() * 0.1; // Small residual update
+                    *delta = sum.tanh() * 0.1; // Small residual update
                 }
             }
         }
 
         // Apply deltas
         for (r, row) in self.grid.iter_mut().enumerate() {
-            for c in 0..self.grid_size {
-                for (ch, cell) in row[c].iter_mut().enumerate().take(NCA_CHANNELS) {
-                    *cell = (*cell + deltas[r][c][ch]).clamp(-5.0, 5.0);
+            for (c, grid_cell) in row.iter_mut().enumerate() {
+                for (ch, val) in grid_cell.iter_mut().enumerate().take(NCA_CHANNELS) {
+                    *val = (*val + deltas[r][c][ch]).clamp(-5.0, 5.0);
                 }
             }
         }

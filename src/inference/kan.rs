@@ -169,18 +169,18 @@ impl KanLayer {
         debug_assert_eq!(input.len(), self.n_in);
         let mut output = self.bias.clone();
 
-        for j in 0..self.n_out {
-            for i in 0..self.n_in {
-                let x = input[i].clamp(self.lo, self.hi);
+        for (j, out_val) in output.iter_mut().enumerate() {
+            for (i, &inp) in input.iter().enumerate() {
+                let x = inp.clamp(self.lo, self.hi);
                 let basis = bspline_basis(x, &self.knots, self.order);
 
                 let mut spline_val = 0.0;
                 let n = basis.len().min(self.n_coeffs);
-                for k in 0..n {
-                    spline_val += self.coeffs[j][i][k] * basis[k];
+                for (k, &b) in basis.iter().enumerate().take(n) {
+                    spline_val += self.coeffs[j][i][k] * b;
                 }
 
-                output[j] += spline_val + self.res_weights[j][i] * silu(x);
+                *out_val += spline_val + self.res_weights[j][i] * silu(x);
             }
         }
 

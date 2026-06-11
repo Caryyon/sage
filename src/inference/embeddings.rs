@@ -21,6 +21,7 @@ pub struct EmbeddingEngine {
     mode: EmbeddingMode,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum EmbeddingMode {
     /// Semantic embeddings via all-MiniLM-L6-v2
     Semantic {

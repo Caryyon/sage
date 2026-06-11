@@ -110,6 +110,10 @@ name = "sage-network-server"
 path = "src/bin/sage_network_server.rs"
 
 [[bin]]
+name = "sage-specialist"
+path = "src/bin/sage_specialist.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 

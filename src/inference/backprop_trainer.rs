@@ -724,8 +724,8 @@ fn evaluate_top5(
         // Forward (no trace needed for eval)
         for _ in 0..nca_steps {
             let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
-            for r in 0..grid_size {
-                for c in 0..grid_size {
+            for (r, row) in deltas.iter_mut().enumerate() {
+                for (c, cell) in row.iter_mut().enumerate() {
                     let mut input = [0.0; PERCEPTION_SIZE];
                     let mut idx = 0;
                     for dr in [-1i32, 0, 1] {
@@ -754,12 +754,12 @@ fn evaluate_top5(
                         }
                         *h2_val = sum.max(0.0);
                     }
-                    for ch in 0..NCA_CHANNELS {
+                    for (ch, delta) in cell.iter_mut().enumerate().take(NCA_CHANNELS) {
                         let mut sum = weights.b3[ch];
                         for (h, &h2_v) in h2.iter().enumerate() {
                             sum += weights.w3[ch][h] * h2_v;
                         }
-                        deltas[r][c][ch] = sum.tanh() * 0.1;
+                        *delta = sum.tanh() * 0.1;
                     }
                 }
             }

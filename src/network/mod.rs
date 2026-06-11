@@ -744,13 +744,12 @@ impl NetworkManager {
                 let num_channels = cell
                     .len()
                     .min(remote_grid[remote_row][remote_col].len());
-                for ch in 0..num_channels {
+                for (ch, val) in cell.iter_mut().enumerate().take(num_channels) {
                     if !is_shared_channel(ch) {
                         continue;
                     }
-                    let lv = cell[ch];
                     let rv = remote_grid[remote_row][remote_col][ch];
-                    cell[ch] = (lv * local_weight + rv * remote_weight).clamp(-5.0, 5.0);
+                    *val = (*val * local_weight + rv * remote_weight).clamp(-5.0, 5.0);
                 }
             }
         }
