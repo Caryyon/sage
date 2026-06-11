@@ -154,6 +154,20 @@ enum Commands {
         hub: String,
     },
 
+    /// Pull a specialist from the SAGE hub
+    Pull {
+        /// Specialist name to pull
+        name: String,
+
+        /// Hub URL (default: https://api.whatssage.ai)
+        #[arg(long, default_value = "https://api.whatssage.ai")]
+        hub: String,
+
+        /// Force overwrite if already exists locally
+        #[arg(long)]
+        force: bool,
+    },
+
     /// List available preset roles
     Presets {
         /// Output as JSON
@@ -217,6 +231,7 @@ fn main() {
             foreground,
         } => cmd_hire(&specialists_dir, &name, task, foreground),
         Commands::Publish { name, hub } => cmd_publish(&specialists_dir, &name, &hub),
+        Commands::Pull { name, hub, force } => cmd_pull(&specialists_dir, &name, &hub, force),
         Commands::Presets { json } => cmd_presets(json),
     }
 }
@@ -618,4 +633,71 @@ fn cmd_presets(json: bool) {
         println!();
     }
     println!("Use: sage-specialist define <name> --role <preset>");
+}
+
+fn cmd_pull(dir: &PathBuf, name: &str, hub: &str, force: bool) {
+    let local_path = dir.join(format!("{}.specialist", name.to_lowercase().replace(' ', "_")));
+
+    if local_path.exists() && !force {
+        eprintln!("⚠️  Specialist '{}' already exists locally.", name);
+        eprintln!("   Use --force to overwrite.");
+        std::process::exit(1);
+    }
+
+    println!("📡 Pulling specialist '{}' from {}...", name, hub);
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(async {
+        let client = reqwest::Client::new();
+        client
+            .get(format!("{}/api/v1/specialists/{}", hub, name))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+    });
+
+    match result {
+        Ok(resp) if resp.status().is_success() => {
+            let body = rt.block_on(async { resp.text().await });
+            match body {
+                Ok(json_str) => {
+                    match serde_json::from_str::<SpecialistProfile>(&json_str) {
+                        Ok(profile) => {
+                            match profile.save(dir) {
+                                Ok(path) => {
+                                    println!("✅ Pulled specialist: {}", profile.display_name);
+                                    println!("   Saved to: {}", path);
+                                    println!();
+                                    println!("{}", profile.summary());
+                                    println!();
+                                    println!("Next: sage-specialist hire {} --foreground", name);
+                                }
+                                Err(e) => {
+                                    eprintln!("❌ Failed to save: {}", e);
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("❌ Invalid specialist data from hub: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to read response: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Ok(resp) => {
+            eprintln!("❌ Hub returned {}: {:?}", resp.status(), rt.block_on(async { resp.text().await }));
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to reach hub: {}", e);
+            eprintln!("   Hub URL: {}", hub);
+            std::process::exit(1);
+        }
+    }
 }

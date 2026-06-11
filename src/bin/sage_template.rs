@@ -82,6 +82,20 @@ enum Commands {
         #[arg(short, long, default_value_t = 4)]
         step: usize,
     },
+
+    /// Pull a template from the SAGE hub
+    Pull {
+        /// Template name to pull
+        name: String,
+
+        /// Hub URL (default: https://api.whatssage.ai)
+        #[arg(long, default_value = "https://api.whatssage.ai")]
+        hub: String,
+
+        /// Force overwrite if already exists locally
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() {
@@ -182,6 +196,7 @@ fn main() {
                 }
             }
         }
+        Commands::Pull { name, hub, force } => cmd_pull(&templates_dir, &name, &hub, force),
     }
 }
 
@@ -277,4 +292,74 @@ fn sanitize_name(name: &str) -> String {
     name.to_lowercase()
         .replace(' ', "_")
         .replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "")
+}
+
+fn cmd_pull(templates_dir: &PathBuf, name: &str, hub: &str, force: bool) {
+    let local_path = templates_dir.join(format!("{}.template", sanitize_name(name)));
+
+    if local_path.exists() && !force {
+        eprintln!("⚠️  Template '{}' already exists locally.", name);
+        eprintln!("   Use --force to overwrite.");
+        std::process::exit(1);
+    }
+
+    println!("📡 Pulling template '{}' from {}...", name, hub);
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(async {
+        let client = reqwest::Client::new();
+        client
+            .get(format!("{}/api/v1/templates/{}", hub, name))
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+    });
+
+    match result {
+        Ok(resp) if resp.status().is_success() => {
+            let bytes = rt.block_on(async { resp.bytes().await });
+            match bytes {
+                Ok(data) => {
+                    // Verify the template deserializes correctly
+                    let bundle: BrainTemplateBundle = match bincode::deserialize(&data) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            eprintln!("❌ Invalid template data from hub: {}", e);
+                            std::process::exit(1);
+                        }
+                    };
+
+                    // Save to local templates dir
+                    std::fs::create_dir_all(templates_dir).ok();
+                    if let Err(e) = std::fs::write(&local_path, &data) {
+                        eprintln!("❌ Failed to save template: {}", e);
+                        std::process::exit(1);
+                    }
+
+                    println!("✅ Pulled template: {}", bundle.meta.name);
+                    println!("   Saved to: {}", local_path.display());
+                    println!("   {} active cells | {} tags | {}",
+                        bundle.meta.active_cells,
+                        bundle.meta.tags.join(", "),
+                        bundle.meta.description,
+                    );
+                    println!();
+                    println!("Next: sage-template import {}", name);
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to read response: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Ok(resp) => {
+            eprintln!("❌ Hub returned {}: {:?}", resp.status(), rt.block_on(async { resp.text().await }));
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("❌ Failed to reach hub: {}", e);
+            eprintln!("   Hub URL: {}", hub);
+            std::process::exit(1);
+        }
+    }
 }

@@ -15,6 +15,7 @@
 
 use crate::distributed_knowledge::{KnowledgeStore, NCAKnowledge, TextStore};
 use crate::grid::{Grid, NUM_CHANNELS};
+use crate::network::identity::NodeIdentity;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -118,6 +119,52 @@ impl BrainTemplateBundle {
 
         bincode::deserialize(&data)
             .map_err(|e| format!("Template deserialization error: {}", e))
+    }
+
+    /// Sign this template with the node's Ed25519 identity.
+    /// Returns the signature bytes (64 bytes).
+    pub fn sign(&self, identity: &NodeIdentity) -> Result<Vec<u8>, String> {
+        let data = bincode::serialize(self)
+            .map_err(|e| format!("Template serialization error: {}", e))?;
+        Ok(identity.sign(&data).to_vec())
+    }
+
+    /// Verify a signature against this template using a public key.
+    pub fn verify_signature(&self, signature: &[u8; 64], public_key: &[u8; 32]) -> Result<bool, String> {
+        let data = bincode::serialize(self)
+            .map_err(|e| format!("Template serialization error: {}", e))?;
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+        let sig = Signature::from_bytes(signature);
+        let vk = VerifyingKey::from_bytes(public_key)
+            .map_err(|e| format!("Invalid public key: {}", e))?;
+        Ok(vk.verify(&data, &sig).is_ok())
+    }
+
+    /// Check if a newer version of this template exists on the hub.
+    /// Returns Some(new_version) if an update is available.
+    pub fn check_for_update(&self, hub_url: &str) -> Option<String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .ok()?;
+
+        let resp = client
+            .get(format!("{}/api/v1/templates/{}", hub_url, self.meta.name))
+            .send()
+            .ok()?;
+
+        if !resp.status().is_success() {
+            return None;
+        }
+
+        let bytes = resp.bytes().ok()?;
+        let remote: BrainTemplateBundle = bincode::deserialize(&bytes).ok()?;
+
+        if remote.meta.version != self.meta.version {
+            Some(remote.meta.version)
+        } else {
+            None
+        }
     }
 
     /// Human-readable summary for CLI output

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use sage::brain_templates::BrainTemplateBundle;
 use sage::specialist::SpecialistProfile;
 use tokio::time::{interval, Duration};
 use tower_http::cors::CorsLayer;
@@ -87,6 +88,7 @@ struct AppState {
     activities: Arc<Mutex<Vec<ActivityEvent>>>,
     pending: Arc<Mutex<Vec<PendingApproval>>>,
     specialists: Arc<Mutex<HashMap<String, SpecialistProfile>>>,
+    templates: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     sage_api_url: String,
 }
 
@@ -417,6 +419,8 @@ async fn main() {
         nodes: Arc::new(Mutex::new(HashMap::new())),
         activities: Arc::new(Mutex::new(Vec::new())),
         pending: Arc::new(Mutex::new(Vec::new())),
+        specialists: Arc::new(Mutex::new(HashMap::new())),
+        templates: Arc::new(Mutex::new(HashMap::new())),
         sage_api_url: args.sage_api.clone(),
     };
 
@@ -439,6 +443,9 @@ async fn main() {
         .route("/api/v1/specialists", get(list_specialists_handler))
         .route("/api/v1/specialists/:name", get(get_specialist_handler))
         .route("/api/v1/specialists", post(publish_specialist_handler))
+        .route("/api/v1/templates", get(list_templates_handler))
+        .route("/api/v1/templates/:name", get(get_template_handler))
+        .route("/api/v1/templates", post(publish_template_handler))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -503,6 +510,88 @@ async fn publish_specialist_handler(
             "status": "published",
             "name": name,
             "url": format!("/api/v1/specialists/{}", name),
+        })),
+    )
+        .into_response()
+}
+
+// ─── Template Hub Handlers ───────────────────────────────────────────
+
+/// GET /api/v1/templates — list all published templates
+async fn list_templates_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let templates = state.templates.lock().unwrap();
+    let list: Vec<serde_json::Value> = templates.iter().map(|(name, data)| {
+        serde_json::json!({
+            "name": name,
+            "size_bytes": data.len(),
+        })
+    }).collect();
+    Json(serde_json::json!({
+        "templates": list,
+        "count": list.len(),
+    }))
+}
+
+/// GET /api/v1/templates/:name — download a template binary
+async fn get_template_handler(
+    State(state): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let templates = state.templates.lock().unwrap();
+    match templates.get(&name) {
+        Some(data) => {
+            let bytes = data.clone();
+            (
+                StatusCode::OK,
+                [("Content-Type", "application/octet-stream")],
+                bytes,
+            ).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, format!("Template '{}' not found", name)).into_response(),
+    }
+}
+
+/// POST /api/v1/templates — publish a template binary
+async fn publish_template_handler(
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    // Try to deserialize to get the template name
+    let bundle: BrainTemplateBundle = match bincode::deserialize(&body) {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid template binary: {}", e),
+            ).into_response();
+        }
+    };
+
+    let name = bundle.meta.name.clone();
+    let mut templates = state.templates.lock().unwrap();
+
+    if templates.contains_key(&name) {
+        return (
+            StatusCode::CONFLICT,
+            format!("Template '{}' already exists. Use PUT to update.", name),
+        ).into_response();
+    }
+
+    templates.insert(name.clone(), body.to_vec());
+
+    println!("📦 Template published: {} ({} bytes, {} cells)",
+        name, body.len(), bundle.meta.active_cells);
+
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "status": "published",
+            "name": name,
+            "size_bytes": body.len(),
+            "active_cells": bundle.meta.active_cells,
+            "url": format!("/api/v1/templates/{}", name),
         })),
     )
         .into_response()
