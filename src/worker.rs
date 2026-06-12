@@ -378,7 +378,7 @@ impl SpecialistWorker {
     }
 
     /// Process one step of a task's lifecycle. Returns the next action.
-    fn process_task_step(&self, task: &mut WorkerTask) -> TaskStepResult {
+    pub fn process_task_step(&self, task: &mut WorkerTask) -> TaskStepResult {
         match task.state {
             TaskState::Retrieving => {
                 // Validate capability match
@@ -600,7 +600,7 @@ impl SpecialistWorker {
 }
 
 /// Result of processing one task step
-enum TaskStepResult {
+pub enum TaskStepResult {
     /// Task needs more processing (state advanced, continue loop)
     Continue,
     /// Task completed with output and quality score
@@ -631,7 +631,7 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
+    use crate::inference::{ChatMessage, InferenceEngine};
     use crate::specialist::presets;
     use std::error::Error;
     use std::sync::Mutex;
@@ -775,7 +775,7 @@ mod tests {
 
         // Simulate what run() does: start the queued task
         {
-            let mut queue = worker.task_queue.lock().unwrap();
+        let mut queue = worker.task_queue.lock().unwrap();
             queue[0].transition(TaskState::Retrieving);
         }
 

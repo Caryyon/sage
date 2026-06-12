@@ -45,7 +45,7 @@ enum Commands {
         tags: Vec<String>,
 
         /// Domain this template specializes in
-        #[arg(short, long)]
+        #[arg(long)]
         domain: Option<String>,
 
         /// Source brain.bin path (default: ~/.sage/brain.bin)

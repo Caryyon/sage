@@ -22,7 +22,7 @@ use std::path::PathBuf;
 // ---------------------------------------------------------------------------
 
 /// Grid side length for the token prediction grid (separate from main SAGE grid)
-const NCA_GRID_SIZE: usize = 181; // 181*181 = 32761 cells ≥ 32K vocab
+pub const NCA_GRID_SIZE: usize = 181; // 181*181 = 32761 cells ≥ 32K vocab
 /// Smaller grid for training (16×16 = 256 cells, sufficient for demo vocab)
 const TRAINING_GRID_SIZE: usize = 8;
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ const HIDDEN2_SIZE: usize = 128; // Second hidden layer
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
 
 /// Default NCA update steps per prediction
-const DEFAULT_STEPS: usize = 10; // Reduced from 20 for Pi-friendly inference
+pub const DEFAULT_STEPS: usize = 10; // Reduced from 20 for Pi-friendly inference
 
 // ---------------------------------------------------------------------------
 // Tokenizer (simple word-level with BPE-like fallback)
@@ -314,7 +314,7 @@ impl NcaPredictor {
     }
 
     /// Reset the grid to zeros
-    fn clear_grid(&mut self) {
+    pub fn clear_grid(&mut self) {
         for row in &mut self.grid {
             for cell in row.iter_mut() {
                 *cell = [0.0; NCA_CHANNELS];
@@ -323,7 +323,7 @@ impl NcaPredictor {
     }
 
     /// Activate grid cells for the given token ids
-    fn activate_tokens(&mut self, token_ids: &[usize]) {
+    pub fn activate_tokens(&mut self, token_ids: &[usize]) {
         for (pos, &tid) in token_ids.iter().enumerate() {
             let (r, c) = token_to_coord(tid, self.grid_size);
             // Set activation to 1.0 and encode position in channels
@@ -358,7 +358,7 @@ impl NcaPredictor {
     }
 
     /// Apply the NCA update rule (one step) — 3-layer MLP
-    fn nca_step(&mut self) {
+    pub fn nca_step(&mut self) {
         let mut deltas = vec![vec![[0.0; NCA_CHANNELS]; self.grid_size]; self.grid_size];
 
         for (r, row) in deltas.iter_mut().enumerate() {
@@ -478,6 +478,16 @@ impl NcaPredictor {
             self.nca_step();
         }
         self.grid.clone()
+    }
+
+    /// Get the number of NCA steps
+    pub fn steps(&self) -> usize {
+        self.steps
+    }
+
+    /// Get a reference to the current grid state
+    pub fn grid_state(&self) -> &Vec<Vec<[f64; NCA_CHANNELS]>> {
+        &self.grid
     }
 
     /// Get the grid size

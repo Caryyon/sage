@@ -14,12 +14,14 @@ pub mod embedded;
 pub mod embeddings;
 pub mod kan;
 pub mod local_llm;
+pub mod nca_language_head;
 pub mod nca_predictor;
 pub mod offline;
 pub mod ollama;
 pub mod reservoir;
 
 // Re-export key types for public API
+pub use nca_language_head::NcaLanguageHead;
 pub use offline::OfflineEngine;
 pub use ollama::OllamaEngine;
 
@@ -159,10 +161,25 @@ pub fn detect_generation_backend() -> GenerationBackend {
 }
 
 /// Create the default inference engine.
-/// Priority: Embedded (candle/SmolLM2) > Offline
-/// Ollama is opt-in only — use engine_with_preference() to enable it.
+/// Priority: NCA-native language head (trained) > Embedded (candle/SmolLM2) > Offline
+/// No external LLM dependency. The NCA IS the language model.
 pub fn default_engine() -> Box<dyn InferenceEngine> {
-    // Try embedded first — runs SmolLM2-1.7B in-process, no external deps
+    // Try NCA-native language head first — fully self-contained, no downloads
+    let head_path = nca_language_head::default_language_head_path();
+    let vocab_path = nca_language_head::default_vocab_path();
+    if head_path.exists() && vocab_path.exists() {
+        match nca_language_head::NcaLanguageHead::load_trained(Some(&head_path), Some(&vocab_path)) {
+            Ok(head) => {
+                eprintln!("🧠 Using NCA-native language head ({} tokens) — no external LLM", head.vocab_size());
+                return Box::new(head);
+            }
+            Err(e) => {
+                eprintln!("⚠️  Trained NCA head found but failed to load: {}", e);
+            }
+        }
+    }
+
+    // Try embedded SmolLM2 as fallback
     match embedded::EmbeddedLLM::new(None) {
         Ok(engine) => {
             eprintln!("🧠 Using embedded {} (candle) — fully self-contained", engine.name());
@@ -170,35 +187,12 @@ pub fn default_engine() -> Box<dyn InferenceEngine> {
         }
         Err(e) => {
             eprintln!("⚠️  Embedded LLM unavailable: {}", e);
-            eprintln!("   Trying local model at ~/.sage/model.gguf...");
         }
     }
 
-    // Try local llama.cpp if model exists
-    #[cfg(feature = "local-llm")]
-    {
-        if local_llm::LocalLLM::model_exists() {
-            match local_llm::LocalLLM::new(None) {
-                Ok(engine) => {
-                    eprintln!(
-                        "⚡ Using local {} ({}) via llama.cpp",
-                        engine.model_name(),
-                        engine.model_size_formatted()
-                    );
-                    return Box::new(engine);
-                }
-                Err(e) => {
-                    eprintln!("⚠️  Local LLM unavailable: {}", e);
-                }
-            }
-        }
-    }
-
-    // Fallback: offline mode (knowledge retrieval + NCA — still useful!)
-    eprintln!("💭 No local model found — using offline mode (knowledge retrieval only)");
-    eprintln!("   Download a model: ollama pull qwen2.5:7b && sage --ollama");
-    eprintln!("   Or SAGE will auto-download SmolLM2-1.7B on first run if candle supports your platform.");
-    eprintln!("   Knowledge grid + retrieval still work — you can ingest curriculums and query.");
+    // Final fallback: offline mode
+    eprintln!("💭 No language head trained — using offline mode (knowledge retrieval only)");
+    eprintln!("   Train one: sage train language-head --corpus curricula/junior-react-dev.json");
     Box::new(offline::OfflineEngine::new())
 }
 

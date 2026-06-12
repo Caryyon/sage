@@ -911,7 +911,7 @@ mod tests {
     #[test]
     fn test_feature_to_position_uses_12_dims() {
         // Verify that changing dims 6-11 changes the position (12-dim hash)
-        let config = EncoderConfig {
+        let _config = EncoderConfig {
             ollama_url: None,
             num_features: 64,
             ..Default::default()

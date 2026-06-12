@@ -126,6 +126,11 @@ enum Commands {
         #[command(subcommand)]
         command: ConsolidationCommands,
     },
+    /// Train the NCA-native language head on a corpus
+    Train {
+        #[command(subcommand)]
+        command: TrainCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -180,6 +185,32 @@ enum ConsolidationCommands {
         /// Save trained parameters to file
         #[arg(short, long)]
         save: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum TrainCommands {
+    /// Train the NCA-native language head on a text corpus
+    LanguageHead {
+        /// Path to corpus file (text or curriculum JSON)
+        #[arg(short, long)]
+        corpus: Option<String>,
+
+        /// Direct text to train on
+        #[arg(short, long)]
+        text: Option<String>,
+
+        /// Max vocabulary size
+        #[arg(long, default_value_t = 5000)]
+        max_vocab: usize,
+
+        /// Number of training epochs
+        #[arg(short, long, default_value_t = 20)]
+        epochs: usize,
+
+        /// Population size for CMA-ES
+        #[arg(short, long, default_value_t = 20)]
+        population: usize,
     },
 }
 
@@ -368,6 +399,17 @@ fn main() {
                 save,
             } => {
                 run_consolidation_train(epochs, population, facts, queries, steps, save.as_deref());
+            }
+        },
+        Some(Commands::Train { command }) => match command {
+            TrainCommands::LanguageHead {
+                corpus,
+                text,
+                max_vocab,
+                epochs,
+                population,
+            } => {
+                run_train_language_head(corpus, text, max_vocab, epochs, population);
             }
         },
         Some(Commands::Node { command }) => match command {
@@ -3500,6 +3542,59 @@ fn run_consolidation_train(
         }
         Err(e) => {
             eprintln!("❌ Training failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_train_language_head(
+    corpus_path: Option<String>,
+    text: Option<String>,
+    max_vocab: usize,
+    epochs: usize,
+    population: usize,
+) {
+    use sage::inference::nca_language_head::NcaLanguageHead;
+
+    let corpus = if let Some(ref path) = corpus_path {
+        match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("❌ Failed to read corpus file: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else if let Some(ref t) = text {
+        t.clone()
+    } else {
+        eprintln!("❌ Must provide --corpus or --text");
+        eprintln!("   Example: sage train language-head --corpus curricula/junior-react-dev.json");
+        std::process::exit(1);
+    };
+
+    println!("🧠 Training NCA-native language head");
+    println!("   Corpus size: {} chars", corpus.len());
+    println!("   Max vocab: {}", max_vocab);
+    println!("   Epochs: {}", epochs);
+    println!("   Population: {}", population);
+    println!();
+
+    let mut head = NcaLanguageHead::new();
+
+    match head.train_on_corpus(&corpus, max_vocab, epochs, population) {
+        Ok(()) => {
+            println!();
+            println!("✅ Language head trained successfully!");
+            println!("   Vocab size: {} tokens", head.vocab_size());
+            println!("   Saved to: ~/.sage/language_head.bin");
+            println!("   Vocab saved to: ~/.sage/language_head.vocab");
+            println!();
+            println!("The NCA-native language head is now the default inference engine.");
+            println!("Run `sage chat` to use it, or `sage-specialist hire <name> --foreground`.");
+        }
+        Err(e) => {
+            eprintln!("❌ Training failed: {}", e);
+            eprintln!("   Try a larger corpus or fewer epochs.");
             std::process::exit(1);
         }
     }

@@ -4,158 +4,428 @@
   "topics": [
     {
       "name": "react-fundamentals",
-      "region": [0, 0, 64, 64],
+      "region": [
+        0,
+        0,
+        64,
+        64
+      ],
       "facts": [
-        "React is a JavaScript library for building user interfaces developed by Meta",
-        "React uses a virtual DOM to efficiently update the real DOM",
-        "JSX is a syntax extension that looks like HTML but compiles to React.createElement calls",
-        "Components are the building blocks of React applications — they are reusable pieces of UI",
-        "Functional components are JavaScript functions that return JSX",
-        "Props are read-only inputs passed to components from parent to child",
-        "State is mutable data managed within a component using useState hook",
-        "useState returns an array with the current state value and a setter function",
-        "useEffect runs side effects after render — for data fetching, subscriptions, DOM manipulation",
-        "The dependency array in useEffect controls when the effect re-runs",
-        "Hooks must be called at the top level of a component, never inside loops or conditions",
-        "useContext provides a way to pass data through the component tree without prop drilling",
-        "useRef creates a mutable reference that persists across renders without causing re-renders",
-        "useMemo memoizes expensive computations to avoid recalculating on every render",
-        "useCallback memoizes function references to prevent unnecessary child re-renders",
-        "Keys help React identify which items have changed in a list — use stable unique IDs",
-        "React fragments (<>...</>) let you group elements without adding extra DOM nodes",
-        "Conditional rendering uses &&, ternary operators, or if statements to show/hide elements",
-        "Event handlers in React use camelCase naming like onClick, onChange, onSubmit",
-        "Controlled components have their form state managed by React state, not the DOM"
+        {
+          "fact": "React is a JavaScript library for building user interfaces developed by Meta"
+        },
+        {
+          "fact": "React uses a virtual DOM to efficiently update the real DOM"
+        },
+        {
+          "fact": "JSX is a syntax extension that looks like HTML but compiles to React.createElement calls"
+        },
+        {
+          "fact": "Components are the building blocks of React applications \u2014 they are reusable pieces of UI"
+        },
+        {
+          "fact": "Functional components are JavaScript functions that return JSX"
+        },
+        {
+          "fact": "Props are read-only inputs passed to components from parent to child"
+        },
+        {
+          "fact": "State is mutable data managed within a component using useState hook"
+        },
+        {
+          "fact": "useState returns an array with the current state value and a setter function"
+        },
+        {
+          "fact": "useEffect runs side effects after render \u2014 for data fetching, subscriptions, DOM manipulation"
+        },
+        {
+          "fact": "The dependency array in useEffect controls when the effect re-runs"
+        },
+        {
+          "fact": "Hooks must be called at the top level of a component, never inside loops or conditions"
+        },
+        {
+          "fact": "useContext provides a way to pass data through the component tree without prop drilling"
+        },
+        {
+          "fact": "useRef creates a mutable reference that persists across renders without causing re-renders"
+        },
+        {
+          "fact": "useMemo memoizes expensive computations to avoid recalculating on every render"
+        },
+        {
+          "fact": "useCallback memoizes function references to prevent unnecessary child re-renders"
+        },
+        {
+          "fact": "Keys help React identify which items have changed in a list \u2014 use stable unique IDs"
+        },
+        {
+          "fact": "React fragments (<>...</>) let you group elements without adding extra DOM nodes"
+        },
+        {
+          "fact": "Conditional rendering uses &&, ternary operators, or if statements to show/hide elements"
+        },
+        {
+          "fact": "Event handlers in React use camelCase naming like onClick, onChange, onSubmit"
+        },
+        {
+          "fact": "Controlled components have their form state managed by React state, not the DOM"
+        }
       ]
     },
     {
       "name": "typescript-basics",
-      "region": [64, 0, 128, 64],
+      "region": [
+        64,
+        0,
+        128,
+        64
+      ],
       "facts": [
-        "TypeScript is a typed superset of JavaScript that compiles to plain JavaScript",
-        "Type annotations are written with a colon after the variable name: let name: string",
-        "Interfaces define the shape of objects with required and optional properties",
-        "Type aliases can create union types, intersection types, and complex type expressions",
-        "Generics allow functions and components to work with any type while preserving type safety",
-        "The 'any' type disables type checking — avoid it when possible",
-        "The 'unknown' type is safer than 'any' because you must narrow it before use",
-        "Type narrowing uses typeof, instanceof, or custom type guards to refine types",
-        "Optional chaining (?.) safely accesses nested properties without throwing on null/undefined",
-        "Nullish coalescing (??) provides a default value only when the left side is null or undefined",
-        "Enums define a set of named constants — prefer const enums or union types for better output",
-        "The 'as' keyword performs type assertions — use sparingly, it bypasses type checking",
-        "Readonly<T> makes all properties of T immutable",
-        "Partial<T> makes all properties of T optional",
-        "Pick<T, K> creates a type with only the specified keys from T",
-        "Omit<T, K> creates a type with all keys from T except the specified ones",
-        "Record<K, V> creates an object type with keys K and values V",
-        "ReturnType<T> extracts the return type of a function type",
-        "tsconfig.json controls compiler options like strict mode, target, and module resolution",
-        "Strict mode enables strictNullChecks, noImplicitAny, and other safety checks"
+        {
+          "fact": "TypeScript is a typed superset of JavaScript that compiles to plain JavaScript"
+        },
+        {
+          "fact": "Type annotations are written with a colon after the variable name: let name: string"
+        },
+        {
+          "fact": "Interfaces define the shape of objects with required and optional properties"
+        },
+        {
+          "fact": "Type aliases can create union types, intersection types, and complex type expressions"
+        },
+        {
+          "fact": "Generics allow functions and components to work with any type while preserving type safety"
+        },
+        {
+          "fact": "The 'any' type disables type checking \u2014 avoid it when possible"
+        },
+        {
+          "fact": "The 'unknown' type is safer than 'any' because you must narrow it before use"
+        },
+        {
+          "fact": "Type narrowing uses typeof, instanceof, or custom type guards to refine types"
+        },
+        {
+          "fact": "Optional chaining (?.) safely accesses nested properties without throwing on null/undefined"
+        },
+        {
+          "fact": "Nullish coalescing (??) provides a default value only when the left side is null or undefined"
+        },
+        {
+          "fact": "Enums define a set of named constants \u2014 prefer const enums or union types for better output"
+        },
+        {
+          "fact": "The 'as' keyword performs type assertions \u2014 use sparingly, it bypasses type checking"
+        },
+        {
+          "fact": "Readonly<T> makes all properties of T immutable"
+        },
+        {
+          "fact": "Partial<T> makes all properties of T optional"
+        },
+        {
+          "fact": "Pick<T, K> creates a type with only the specified keys from T"
+        },
+        {
+          "fact": "Omit<T, K> creates a type with all keys from T except the specified ones"
+        },
+        {
+          "fact": "Record<K, V> creates an object type with keys K and values V"
+        },
+        {
+          "fact": "ReturnType<T> extracts the return type of a function type"
+        },
+        {
+          "fact": "tsconfig.json controls compiler options like strict mode, target, and module resolution"
+        },
+        {
+          "fact": "Strict mode enables strictNullChecks, noImplicitAny, and other safety checks"
+        }
       ]
     },
     {
       "name": "nextjs-fundamentals",
-      "region": [128, 0, 192, 64],
+      "region": [
+        128,
+        0,
+        192,
+        64
+      ],
       "facts": [
-        "Next.js is a React framework for production with built-in routing, rendering, and optimization",
-        "Pages are React components exported from files in the pages/ or app/ directory",
-        "App Router (Next.js 13+) uses file-system based routing with layout.tsx, page.tsx, loading.tsx",
-        "Server Components render on the server and send HTML to the client — no client JavaScript needed",
-        "Client Components use 'use client' directive and run in the browser with full interactivity",
-        "Static generation (SSG) pre-renders pages at build time for maximum performance",
-        "Server-side rendering (SSR) generates pages on each request for dynamic content",
-        "Incremental Static Regeneration (ISR) updates static pages after deployment without full rebuild",
-        "API routes in Next.js let you build backend endpoints alongside your frontend",
-        "Middleware runs before requests complete — useful for auth, redirects, and header modification",
-        "Image optimization with next/image provides automatic resizing, lazy loading, and WebP conversion",
-        "next/link enables client-side navigation with prefetching for instant page transitions",
-        "Environment variables prefixed with NEXT_PUBLIC_ are exposed to the browser",
-        "next.config.js configures webpack, redirects, headers, and other build settings",
-        "Dynamic imports with next/dynamic load components only when needed for code splitting",
-        "getServerSideProps runs on each request for pages that need fresh data",
-        "getStaticProps runs at build time for pages that can be pre-rendered",
-        "getStaticPaths defines which dynamic routes to pre-render at build time",
-        "Vercel is the company behind Next.js and provides optimized hosting",
-        "Edge runtime runs code at the CDN edge for lower latency globally"
+        {
+          "fact": "Next.js is a React framework for production with built-in routing, rendering, and optimization"
+        },
+        {
+          "fact": "Pages are React components exported from files in the pages/ or app/ directory"
+        },
+        {
+          "fact": "App Router (Next.js 13+) uses file-system based routing with layout.tsx, page.tsx, loading.tsx"
+        },
+        {
+          "fact": "Server Components render on the server and send HTML to the client \u2014 no client JavaScript needed"
+        },
+        {
+          "fact": "Client Components use 'use client' directive and run in the browser with full interactivity"
+        },
+        {
+          "fact": "Static generation (SSG) pre-renders pages at build time for maximum performance"
+        },
+        {
+          "fact": "Server-side rendering (SSR) generates pages on each request for dynamic content"
+        },
+        {
+          "fact": "Incremental Static Regeneration (ISR) updates static pages after deployment without full rebuild"
+        },
+        {
+          "fact": "API routes in Next.js let you build backend endpoints alongside your frontend"
+        },
+        {
+          "fact": "Middleware runs before requests complete \u2014 useful for auth, redirects, and header modification"
+        },
+        {
+          "fact": "Image optimization with next/image provides automatic resizing, lazy loading, and WebP conversion"
+        },
+        {
+          "fact": "next/link enables client-side navigation with prefetching for instant page transitions"
+        },
+        {
+          "fact": "Environment variables prefixed with NEXT_PUBLIC_ are exposed to the browser"
+        },
+        {
+          "fact": "next.config.js configures webpack, redirects, headers, and other build settings"
+        },
+        {
+          "fact": "Dynamic imports with next/dynamic load components only when needed for code splitting"
+        },
+        {
+          "fact": "getServerSideProps runs on each request for pages that need fresh data"
+        },
+        {
+          "fact": "getStaticProps runs at build time for pages that can be pre-rendered"
+        },
+        {
+          "fact": "getStaticPaths defines which dynamic routes to pre-render at build time"
+        },
+        {
+          "fact": "Vercel is the company behind Next.js and provides optimized hosting"
+        },
+        {
+          "fact": "Edge runtime runs code at the CDN edge for lower latency globally"
+        }
       ]
     },
     {
       "name": "tailwind-css",
-      "region": [192, 0, 256, 64],
+      "region": [
+        192,
+        0,
+        256,
+        64
+      ],
       "facts": [
-        "Tailwind CSS is a utility-first CSS framework for rapidly building custom designs",
-        "Utility classes like 'flex', 'p-4', 'text-lg' compose directly in HTML without writing custom CSS",
-        "Responsive prefixes (sm:, md:, lg:, xl:) apply styles at specific breakpoints",
-        "Dark mode with 'dark:' prefix applies styles when the user prefers dark color scheme",
-        "Hover, focus, active states use prefixes like 'hover:', 'focus:', 'active:'",
-        "The config file (tailwind.config.js) customizes colors, spacing, fonts, and breakpoints",
-        "Arbitrary values like 'w-[300px]' or 'bg-[#bada55]' allow one-off custom values",
-        "JIT (Just-In-Time) compiler generates only the CSS classes you actually use",
-        "The 'group' utility styles children based on parent state with 'group-hover:'",
-        "The 'peer' utility styles siblings based on a peer element's state",
-        "Container queries with '@container' enable component-level responsive design",
-        "Tailwind's typography plugin provides prose classes for rich text content",
-        "Forms plugin resets form elements to a consistent cross-browser baseline",
-        "Aspect ratio plugin provides fixed aspect ratio containers",
-        "Line clamp plugin truncates text to a specific number of lines",
-        "CSS Grid utilities (grid, grid-cols-N, col-span-N) create complex grid layouts",
-        "Flexbox utilities (flex, items-center, justify-between) handle most layout needs",
-        "Spacing scale uses a consistent 4px-based system: p-1=4px, p-4=16px, p-8=32px",
-        "Color opacity utilities like 'bg-red-500/50' set background color at 50% opacity",
-        "The 'space-y-N' and 'space-x-N' utilities add consistent spacing between child elements"
+        {
+          "fact": "Tailwind CSS is a utility-first CSS framework for rapidly building custom designs"
+        },
+        {
+          "fact": "Utility classes like 'flex', 'p-4', 'text-lg' compose directly in HTML without writing custom CSS"
+        },
+        {
+          "fact": "Responsive prefixes (sm:, md:, lg:, xl:) apply styles at specific breakpoints"
+        },
+        {
+          "fact": "Dark mode with 'dark:' prefix applies styles when the user prefers dark color scheme"
+        },
+        {
+          "fact": "Hover, focus, active states use prefixes like 'hover:', 'focus:', 'active:'"
+        },
+        {
+          "fact": "The config file (tailwind.config.js) customizes colors, spacing, fonts, and breakpoints"
+        },
+        {
+          "fact": "Arbitrary values like 'w-[300px]' or 'bg-[#bada55]' allow one-off custom values"
+        },
+        {
+          "fact": "JIT (Just-In-Time) compiler generates only the CSS classes you actually use"
+        },
+        {
+          "fact": "The 'group' utility styles children based on parent state with 'group-hover:'"
+        },
+        {
+          "fact": "The 'peer' utility styles siblings based on a peer element's state"
+        },
+        {
+          "fact": "Container queries with '@container' enable component-level responsive design"
+        },
+        {
+          "fact": "Tailwind's typography plugin provides prose classes for rich text content"
+        },
+        {
+          "fact": "Forms plugin resets form elements to a consistent cross-browser baseline"
+        },
+        {
+          "fact": "Aspect ratio plugin provides fixed aspect ratio containers"
+        },
+        {
+          "fact": "Line clamp plugin truncates text to a specific number of lines"
+        },
+        {
+          "fact": "CSS Grid utilities (grid, grid-cols-N, col-span-N) create complex grid layouts"
+        },
+        {
+          "fact": "Flexbox utilities (flex, items-center, justify-between) handle most layout needs"
+        },
+        {
+          "fact": "Spacing scale uses a consistent 4px-based system: p-1=4px, p-4=16px, p-8=32px"
+        },
+        {
+          "fact": "Color opacity utilities like 'bg-red-500/50' set background color at 50% opacity"
+        },
+        {
+          "fact": "The 'space-y-N' and 'space-x-N' utilities add consistent spacing between child elements"
+        }
       ]
     },
     {
       "name": "testing",
-      "region": [0, 64, 64, 128],
+      "region": [
+        0,
+        64,
+        64,
+        128
+      ],
       "facts": [
-        "Vitest is a Vite-native testing framework compatible with Jest's API",
-        "Unit tests verify individual functions or components in isolation",
-        "Integration tests verify that multiple units work together correctly",
-        "React Testing Library tests components from the user's perspective, not implementation details",
-        "render() from RTL renders a component into a virtual DOM for testing",
-        "screen.getByText() finds elements by their text content",
-        "screen.getByRole() finds elements by their ARIA role — preferred method",
-        "screen.getByTestId() finds elements by data-testid attribute — use as last resort",
-        "fireEvent simulates browser events like click, change, submit",
-        "userEvent (from @testing-library/user-event) simulates realistic user interactions",
-        "waitFor waits for assertions to pass within a timeout — useful for async operations",
-        "Mock functions (vi.fn()) track calls and control return values in tests",
-        "describe() groups related tests together for organization",
-        "beforeEach() runs setup code before each test in a describe block",
-        "afterEach() runs cleanup code after each test",
-        "test.todo() marks tests that need to be written later",
-        "test.skip() temporarily skips a test without deleting it",
-        "Code coverage measures what percentage of code is executed during tests",
-        "Snapshot testing captures rendered output and alerts on unexpected changes",
-        "End-to-end tests with Playwright or Cypress test the full application in a real browser"
+        {
+          "fact": "Vitest is a Vite-native testing framework compatible with Jest's API"
+        },
+        {
+          "fact": "Unit tests verify individual functions or components in isolation"
+        },
+        {
+          "fact": "Integration tests verify that multiple units work together correctly"
+        },
+        {
+          "fact": "React Testing Library tests components from the user's perspective, not implementation details"
+        },
+        {
+          "fact": "render() from RTL renders a component into a virtual DOM for testing"
+        },
+        {
+          "fact": "screen.getByText() finds elements by their text content"
+        },
+        {
+          "fact": "screen.getByRole() finds elements by their ARIA role \u2014 preferred method"
+        },
+        {
+          "fact": "screen.getByTestId() finds elements by data-testid attribute \u2014 use as last resort"
+        },
+        {
+          "fact": "fireEvent simulates browser events like click, change, submit"
+        },
+        {
+          "fact": "userEvent (from @testing-library/user-event) simulates realistic user interactions"
+        },
+        {
+          "fact": "waitFor waits for assertions to pass within a timeout \u2014 useful for async operations"
+        },
+        {
+          "fact": "Mock functions (vi.fn()) track calls and control return values in tests"
+        },
+        {
+          "fact": "describe() groups related tests together for organization"
+        },
+        {
+          "fact": "beforeEach() runs setup code before each test in a describe block"
+        },
+        {
+          "fact": "afterEach() runs cleanup code after each test"
+        },
+        {
+          "fact": "test.todo() marks tests that need to be written later"
+        },
+        {
+          "fact": "test.skip() temporarily skips a test without deleting it"
+        },
+        {
+          "fact": "Code coverage measures what percentage of code is executed during tests"
+        },
+        {
+          "fact": "Snapshot testing captures rendered output and alerts on unexpected changes"
+        },
+        {
+          "fact": "End-to-end tests with Playwright or Cypress test the full application in a real browser"
+        }
       ]
     },
     {
       "name": "react-patterns",
-      "region": [64, 64, 128, 128],
+      "region": [
+        64,
+        64,
+        128,
+        128
+      ],
       "facts": [
-        "Presentational components focus on how things look, container components on how things work",
-        "Higher-Order Components (HOCs) are functions that take a component and return a new component",
-        "Render props share code between components using a prop whose value is a function",
-        "Compound components work together as a group — like Select/Option or Tabs/TabPanel",
-        "Custom hooks extract reusable stateful logic from components",
-        "The Context API provides a way to share values between components without prop drilling",
-        "Error boundaries catch JavaScript errors in child components and display fallback UI",
-        "Portals render children into a DOM node outside the parent component hierarchy",
-        "Lazy loading with React.lazy and Suspense splits code and shows fallback during loading",
-        "The useReducer hook manages complex state logic with actions and a reducer function",
-        "Immer simplifies immutable state updates by letting you write mutable-looking code",
-        "Zustand is a lightweight state management library with a simple hook-based API",
-        "React Query (TanStack Query) manages server state with caching, refetching, and mutations",
-        "Debouncing delays function execution until after a pause in calls — good for search inputs",
-        "Throttling limits function execution to at most once per time period — good for scroll handlers",
-        "Optimistic updates show the expected result immediately before the server confirms",
-        "Composition over inheritance — prefer composing components rather than extending classes",
-        "The children prop is special — anything between opening and closing tags becomes children",
-        "ForwardRef passes a ref through a component to a child DOM element",
-        "useImperativeHandle customizes the ref value exposed to parent components"
+        {
+          "fact": "Presentational components focus on how things look, container components on how things work"
+        },
+        {
+          "fact": "Higher-Order Components (HOCs) are functions that take a component and return a new component"
+        },
+        {
+          "fact": "Render props share code between components using a prop whose value is a function"
+        },
+        {
+          "fact": "Compound components work together as a group \u2014 like Select/Option or Tabs/TabPanel"
+        },
+        {
+          "fact": "Custom hooks extract reusable stateful logic from components"
+        },
+        {
+          "fact": "The Context API provides a way to share values between components without prop drilling"
+        },
+        {
+          "fact": "Error boundaries catch JavaScript errors in child components and display fallback UI"
+        },
+        {
+          "fact": "Portals render children into a DOM node outside the parent component hierarchy"
+        },
+        {
+          "fact": "Lazy loading with React.lazy and Suspense splits code and shows fallback during loading"
+        },
+        {
+          "fact": "The useReducer hook manages complex state logic with actions and a reducer function"
+        },
+        {
+          "fact": "Immer simplifies immutable state updates by letting you write mutable-looking code"
+        },
+        {
+          "fact": "Zustand is a lightweight state management library with a simple hook-based API"
+        },
+        {
+          "fact": "React Query (TanStack Query) manages server state with caching, refetching, and mutations"
+        },
+        {
+          "fact": "Debouncing delays function execution until after a pause in calls \u2014 good for search inputs"
+        },
+        {
+          "fact": "Throttling limits function execution to at most once per time period \u2014 good for scroll handlers"
+        },
+        {
+          "fact": "Optimistic updates show the expected result immediately before the server confirms"
+        },
+        {
+          "fact": "Composition over inheritance \u2014 prefer composing components rather than extending classes"
+        },
+        {
+          "fact": "The children prop is special \u2014 anything between opening and closing tags becomes children"
+        },
+        {
+          "fact": "ForwardRef passes a ref through a component to a child DOM element"
+        },
+        {
+          "fact": "useImperativeHandle customizes the ref value exposed to parent components"
+        }
       ]
     }
   ]

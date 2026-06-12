@@ -4,80 +4,215 @@
   "topics": [
     {
       "name": "technical-writing",
-      "region": [0, 0, 64, 64],
+      "region": [
+        0,
+        0,
+        64,
+        64
+      ],
       "facts": [
-        "Technical writing communicates complex information clearly and accurately",
-        "Know your audience — adjust depth and terminology based on reader expertise",
-        "Use active voice: 'Click the button' not 'The button should be clicked'",
-        "Keep sentences short — aim for 15-25 words per sentence",
-        "One idea per paragraph — start with the main point, then elaborate",
-        "Headings create scannable structure — use descriptive, action-oriented titles",
-        "Lists break down sequences, options, or requirements into digestible chunks",
-        "Code examples must be correct, runnable, and minimal — remove unnecessary details",
-        "Screenshots supplement text but need alt text and annotations",
-        "API documentation describes endpoints, parameters, request/response formats, and errors",
-        "README files answer: what is this, why use it, how to install, how to use, how to contribute",
-        "Release notes communicate what changed, what's new, what's fixed, and migration steps",
-        "Tutorials guide users through a complete task from start to finish",
-        "How-to guides solve specific problems with step-by-step instructions",
-        "Reference documentation provides comprehensive technical detail",
-        "Explanation/discussion provides background, context, and reasoning",
-        "Style guides ensure consistency — pick one (Google, Microsoft, Apple) and stick to it",
-        "Accessibility: use semantic HTML, alt text, sufficient contrast, and keyboard-navigable content",
-        "Version control documentation alongside code — docs are part of the product",
-        "Review docs like code — have someone else read and test your instructions"
+        {
+          "fact": "Technical writing communicates complex information clearly and accurately"
+        },
+        {
+          "fact": "Know your audience \u2014 adjust depth and terminology based on reader expertise"
+        },
+        {
+          "fact": "Use active voice: 'Click the button' not 'The button should be clicked'"
+        },
+        {
+          "fact": "Keep sentences short \u2014 aim for 15-25 words per sentence"
+        },
+        {
+          "fact": "One idea per paragraph \u2014 start with the main point, then elaborate"
+        },
+        {
+          "fact": "Headings create scannable structure \u2014 use descriptive, action-oriented titles"
+        },
+        {
+          "fact": "Lists break down sequences, options, or requirements into digestible chunks"
+        },
+        {
+          "fact": "Code examples must be correct, runnable, and minimal \u2014 remove unnecessary details"
+        },
+        {
+          "fact": "Screenshots supplement text but need alt text and annotations"
+        },
+        {
+          "fact": "API documentation describes endpoints, parameters, request/response formats, and errors"
+        },
+        {
+          "fact": "README files answer: what is this, why use it, how to install, how to use, how to contribute"
+        },
+        {
+          "fact": "Release notes communicate what changed, what's new, what's fixed, and migration steps"
+        },
+        {
+          "fact": "Tutorials guide users through a complete task from start to finish"
+        },
+        {
+          "fact": "How-to guides solve specific problems with step-by-step instructions"
+        },
+        {
+          "fact": "Reference documentation provides comprehensive technical detail"
+        },
+        {
+          "fact": "Explanation/discussion provides background, context, and reasoning"
+        },
+        {
+          "fact": "Style guides ensure consistency \u2014 pick one (Google, Microsoft, Apple) and stick to it"
+        },
+        {
+          "fact": "Accessibility: use semantic HTML, alt text, sufficient contrast, and keyboard-navigable content"
+        },
+        {
+          "fact": "Version control documentation alongside code \u2014 docs are part of the product"
+        },
+        {
+          "fact": "Review docs like code \u2014 have someone else read and test your instructions"
+        }
       ]
     },
     {
       "name": "developer-relations",
-      "region": [64, 0, 128, 64],
+      "region": [
+        64,
+        0,
+        128,
+        64
+      ],
       "facts": [
-        "Developer relations (DevRel) bridges the gap between a company and its developer users",
-        "Blog posts share technical insights, tutorials, and product updates",
-        "Tutorials should have a clear goal, prerequisites, step-by-step instructions, and a working result",
-        "Social media (Twitter/X, LinkedIn, Mastodon) amplifies content and builds community",
-        "Conference talks establish authority and reach new audiences",
-        "Webinars and live streams provide interactive learning experiences",
-        "Newsletters maintain ongoing engagement with curated content",
-        "Community forums (Discord, Discourse, GitHub Discussions) provide peer support",
-        "Open source contributions build credibility and improve the ecosystem",
-        "SDK and library documentation helps developers integrate with your product",
-        "Sample apps and starter templates reduce time-to-first-success",
-        "Changelog and release communication keeps users informed of improvements",
-        "Feedback loops: collect developer pain points and channel them to product teams",
-        "Metrics: track page views, time on page, bounce rate, and task completion rate",
-        "SEO for developer content: use descriptive titles, headings, meta descriptions, and internal links",
-        "Developer personas help tailor content to different experience levels and use cases",
-        "Hackathons engage the community in creative problem-solving",
-        "Swag and recognition programs reward community contributions",
-        "Code of conduct establishes behavioral expectations for community spaces",
-        "Dogfooding: use your own product to write authentic, credible content"
+        {
+          "fact": "Developer relations (DevRel) bridges the gap between a company and its developer users"
+        },
+        {
+          "fact": "Blog posts share technical insights, tutorials, and product updates"
+        },
+        {
+          "fact": "Tutorials should have a clear goal, prerequisites, step-by-step instructions, and a working result"
+        },
+        {
+          "fact": "Social media (Twitter/X, LinkedIn, Mastodon) amplifies content and builds community"
+        },
+        {
+          "fact": "Conference talks establish authority and reach new audiences"
+        },
+        {
+          "fact": "Webinars and live streams provide interactive learning experiences"
+        },
+        {
+          "fact": "Newsletters maintain ongoing engagement with curated content"
+        },
+        {
+          "fact": "Community forums (Discord, Discourse, GitHub Discussions) provide peer support"
+        },
+        {
+          "fact": "Open source contributions build credibility and improve the ecosystem"
+        },
+        {
+          "fact": "SDK and library documentation helps developers integrate with your product"
+        },
+        {
+          "fact": "Sample apps and starter templates reduce time-to-first-success"
+        },
+        {
+          "fact": "Changelog and release communication keeps users informed of improvements"
+        },
+        {
+          "fact": "Feedback loops: collect developer pain points and channel them to product teams"
+        },
+        {
+          "fact": "Metrics: track page views, time on page, bounce rate, and task completion rate"
+        },
+        {
+          "fact": "SEO for developer content: use descriptive titles, headings, meta descriptions, and internal links"
+        },
+        {
+          "fact": "Developer personas help tailor content to different experience levels and use cases"
+        },
+        {
+          "fact": "Hackathons engage the community in creative problem-solving"
+        },
+        {
+          "fact": "Swag and recognition programs reward community contributions"
+        },
+        {
+          "fact": "Code of conduct establishes behavioral expectations for community spaces"
+        },
+        {
+          "fact": "Dogfooding: use your own product to write authentic, credible content"
+        }
       ]
     },
     {
       "name": "markdown-and-tools",
-      "region": [128, 0, 192, 64],
+      "region": [
+        128,
+        0,
+        192,
+        64
+      ],
       "facts": [
-        "Markdown is a lightweight markup language for formatting plain text",
-        "Headers use # for h1, ## for h2, ### for h3, etc.",
-        "Bold uses **double asterisks**, italic uses *single asterisks*",
-        "Links: [text](url) — reference-style links define URLs separately",
-        "Images: ![alt text](url) — always include descriptive alt text",
-        "Code inline uses `backticks`, code blocks use triple backticks with optional language",
-        "Lists: unordered with - or *, ordered with 1. 2. 3.",
-        "Blockquotes use > for quoted content",
-        "Tables use pipes | and dashes — keep them simple, complex tables are hard to read",
-        "Horizontal rules with --- separate sections",
-        "Task lists use - [ ] for unchecked and - [x] for checked",
-        "Footnotes provide supplementary information without interrupting flow",
-        "Frontmatter (YAML between --- markers) adds metadata like title, date, tags",
-        "MDX combines Markdown with JSX for interactive documentation components",
-        "Docusaurus builds documentation websites from Markdown with versioning and search",
-        "GitBook provides a hosted documentation platform with collaboration features",
-        "Notion combines docs, databases, and project management",
-        "Obsidian creates a local knowledge base with bidirectional linking",
-        "Grammarly and Hemingway help catch grammar issues and improve readability",
-        "Prettier formats Markdown consistently — use it in CI to enforce style"
+        {
+          "fact": "Markdown is a lightweight markup language for formatting plain text"
+        },
+        {
+          "fact": "Headers use # for h1, ## for h2, ### for h3, etc."
+        },
+        {
+          "fact": "Bold uses **double asterisks**, italic uses *single asterisks*"
+        },
+        {
+          "fact": "Links: [text](url) \u2014 reference-style links define URLs separately"
+        },
+        {
+          "fact": "Images: ![alt text](url) \u2014 always include descriptive alt text"
+        },
+        {
+          "fact": "Code inline uses `backticks`, code blocks use triple backticks with optional language"
+        },
+        {
+          "fact": "Lists: unordered with - or *, ordered with 1. 2. 3."
+        },
+        {
+          "fact": "Blockquotes use > for quoted content"
+        },
+        {
+          "fact": "Tables use pipes | and dashes \u2014 keep them simple, complex tables are hard to read"
+        },
+        {
+          "fact": "Horizontal rules with --- separate sections"
+        },
+        {
+          "fact": "Task lists use - [ ] for unchecked and - [x] for checked"
+        },
+        {
+          "fact": "Footnotes provide supplementary information without interrupting flow"
+        },
+        {
+          "fact": "Frontmatter (YAML between --- markers) adds metadata like title, date, tags"
+        },
+        {
+          "fact": "MDX combines Markdown with JSX for interactive documentation components"
+        },
+        {
+          "fact": "Docusaurus builds documentation websites from Markdown with versioning and search"
+        },
+        {
+          "fact": "GitBook provides a hosted documentation platform with collaboration features"
+        },
+        {
+          "fact": "Notion combines docs, databases, and project management"
+        },
+        {
+          "fact": "Obsidian creates a local knowledge base with bidirectional linking"
+        },
+        {
+          "fact": "Grammarly and Hemingway help catch grammar issues and improve readability"
+        },
+        {
+          "fact": "Prettier formats Markdown consistently \u2014 use it in CI to enforce style"
+        }
       ]
     }
   ]

@@ -4,106 +4,286 @@
   "topics": [
     {
       "name": "python-data",
-      "region": [0, 0, 64, 64],
+      "region": [
+        0,
+        0,
+        64,
+        64
+      ],
       "facts": [
-        "Pandas is the primary Python library for data manipulation and analysis",
-        "A DataFrame is a 2D labeled data structure with columns of potentially different types",
-        "df.head() shows the first 5 rows, df.tail() shows the last 5 rows",
-        "df.describe() generates descriptive statistics for numeric columns",
-        "df.info() shows column types, non-null counts, and memory usage",
-        "df.groupby() splits data into groups for aggregation and transformation",
-        "df.merge() combines DataFrames like SQL JOINs on specified columns",
-        "df.pivot_table() creates spreadsheet-style pivot tables with aggregation",
-        "df.fillna() replaces missing values with a specified value or method",
-        "df.dropna() removes rows or columns containing missing values",
-        "df.sort_values() sorts by one or more columns in ascending or descending order",
-        "df.apply() applies a function along an axis of the DataFrame",
-        "pd.read_csv() reads CSV files into DataFrames with automatic type inference",
-        "pd.to_datetime() converts strings or numbers to datetime objects",
-        "df.resample() groups time series data by time frequency for aggregation",
-        "NumPy provides the ndarray — a fast multidimensional array object",
-        "np.mean(), np.median(), np.std() compute basic statistics on arrays",
-        "np.where() returns elements chosen from arrays based on a condition",
-        "Matplotlib is the foundational Python plotting library",
-        "Seaborn builds on Matplotlib with higher-level statistical visualizations"
+        {
+          "fact": "Pandas is the primary Python library for data manipulation and analysis"
+        },
+        {
+          "fact": "A DataFrame is a 2D labeled data structure with columns of potentially different types"
+        },
+        {
+          "fact": "df.head() shows the first 5 rows, df.tail() shows the last 5 rows"
+        },
+        {
+          "fact": "df.describe() generates descriptive statistics for numeric columns"
+        },
+        {
+          "fact": "df.info() shows column types, non-null counts, and memory usage"
+        },
+        {
+          "fact": "df.groupby() splits data into groups for aggregation and transformation"
+        },
+        {
+          "fact": "df.merge() combines DataFrames like SQL JOINs on specified columns"
+        },
+        {
+          "fact": "df.pivot_table() creates spreadsheet-style pivot tables with aggregation"
+        },
+        {
+          "fact": "df.fillna() replaces missing values with a specified value or method"
+        },
+        {
+          "fact": "df.dropna() removes rows or columns containing missing values"
+        },
+        {
+          "fact": "df.sort_values() sorts by one or more columns in ascending or descending order"
+        },
+        {
+          "fact": "df.apply() applies a function along an axis of the DataFrame"
+        },
+        {
+          "fact": "pd.read_csv() reads CSV files into DataFrames with automatic type inference"
+        },
+        {
+          "fact": "pd.to_datetime() converts strings or numbers to datetime objects"
+        },
+        {
+          "fact": "df.resample() groups time series data by time frequency for aggregation"
+        },
+        {
+          "fact": "NumPy provides the ndarray \u2014 a fast multidimensional array object"
+        },
+        {
+          "fact": "np.mean(), np.median(), np.std() compute basic statistics on arrays"
+        },
+        {
+          "fact": "np.where() returns elements chosen from arrays based on a condition"
+        },
+        {
+          "fact": "Matplotlib is the foundational Python plotting library"
+        },
+        {
+          "fact": "Seaborn builds on Matplotlib with higher-level statistical visualizations"
+        }
       ]
     },
     {
       "name": "sql",
-      "region": [64, 0, 128, 64],
+      "region": [
+        64,
+        0,
+        128,
+        64
+      ],
       "facts": [
-        "SELECT retrieves data from one or more tables",
-        "WHERE filters rows based on conditions before grouping",
-        "GROUP BY groups rows sharing a value so aggregate functions can be applied",
-        "HAVING filters groups after aggregation — like WHERE but for grouped data",
-        "JOIN combines rows from two or more tables based on a related column",
-        "INNER JOIN returns rows when there is a match in both tables",
-        "LEFT JOIN returns all rows from the left table and matched rows from the right",
-        "RIGHT JOIN returns all rows from the right table and matched rows from the left",
-        "FULL OUTER JOIN returns rows when there is a match in either table",
-        "UNION combines result sets of two or more SELECT statements (removes duplicates)",
-        "UNION ALL combines result sets without removing duplicates",
-        "Subqueries are queries nested inside another query — in SELECT, FROM, or WHERE",
-        "CTEs (Common Table Expressions) with WITH clause create temporary named result sets",
-        "Window functions (ROW_NUMBER, RANK, LAG, LEAD) operate on a set of rows related to the current row",
-        "OVER clause defines the window for window functions with PARTITION BY and ORDER BY",
-        "Indexes speed up data retrieval — CREATE INDEX on frequently queried columns",
-        "Primary keys uniquely identify each row in a table",
-        "Foreign keys establish relationships between tables and enforce referential integrity",
-        "Normalization reduces data redundancy by organizing into related tables",
-        "EXPLAIN shows the query execution plan for performance analysis"
+        {
+          "fact": "SELECT retrieves data from one or more tables"
+        },
+        {
+          "fact": "WHERE filters rows based on conditions before grouping"
+        },
+        {
+          "fact": "GROUP BY groups rows sharing a value so aggregate functions can be applied"
+        },
+        {
+          "fact": "HAVING filters groups after aggregation \u2014 like WHERE but for grouped data"
+        },
+        {
+          "fact": "JOIN combines rows from two or more tables based on a related column"
+        },
+        {
+          "fact": "INNER JOIN returns rows when there is a match in both tables"
+        },
+        {
+          "fact": "LEFT JOIN returns all rows from the left table and matched rows from the right"
+        },
+        {
+          "fact": "RIGHT JOIN returns all rows from the right table and matched rows from the left"
+        },
+        {
+          "fact": "FULL OUTER JOIN returns rows when there is a match in either table"
+        },
+        {
+          "fact": "UNION combines result sets of two or more SELECT statements (removes duplicates)"
+        },
+        {
+          "fact": "UNION ALL combines result sets without removing duplicates"
+        },
+        {
+          "fact": "Subqueries are queries nested inside another query \u2014 in SELECT, FROM, or WHERE"
+        },
+        {
+          "fact": "CTEs (Common Table Expressions) with WITH clause create temporary named result sets"
+        },
+        {
+          "fact": "Window functions (ROW_NUMBER, RANK, LAG, LEAD) operate on a set of rows related to the current row"
+        },
+        {
+          "fact": "OVER clause defines the window for window functions with PARTITION BY and ORDER BY"
+        },
+        {
+          "fact": "Indexes speed up data retrieval \u2014 CREATE INDEX on frequently queried columns"
+        },
+        {
+          "fact": "Primary keys uniquely identify each row in a table"
+        },
+        {
+          "fact": "Foreign keys establish relationships between tables and enforce referential integrity"
+        },
+        {
+          "fact": "Normalization reduces data redundancy by organizing into related tables"
+        },
+        {
+          "fact": "EXPLAIN shows the query execution plan for performance analysis"
+        }
       ]
     },
     {
       "name": "statistics",
-      "region": [128, 0, 192, 64],
+      "region": [
+        128,
+        0,
+        192,
+        64
+      ],
       "facts": [
-        "Mean is the average — sum of values divided by count",
-        "Median is the middle value when data is sorted — robust to outliers",
-        "Mode is the most frequently occurring value",
-        "Standard deviation measures the spread of data around the mean",
-        "Variance is the average squared deviation from the mean",
-        "Correlation measures the strength and direction of a linear relationship between two variables",
-        "Pearson correlation ranges from -1 (perfect negative) to +1 (perfect positive)",
-        "P-value is the probability of observing results at least as extreme given the null hypothesis is true",
-        "Null hypothesis (H0) assumes no effect or no difference",
-        "Alternative hypothesis (H1) is what you want to prove",
-        "Type I error rejects a true null hypothesis (false positive)",
-        "Type II error fails to reject a false null hypothesis (false negative)",
-        "Confidence interval gives a range likely to contain the true population parameter",
-        "T-test compares means between two groups",
-        "ANOVA compares means across three or more groups",
-        "Chi-square test assesses relationships between categorical variables",
-        "Linear regression models the relationship between a dependent variable and one or more independent variables",
-        "R-squared measures how well the regression model explains the variance in the data",
-        "Normal distribution is symmetric bell-shaped — 68% within 1 SD, 95% within 2 SD",
-        "Central Limit Theorem: sample means approach normal distribution as sample size increases"
+        {
+          "fact": "Mean is the average \u2014 sum of values divided by count"
+        },
+        {
+          "fact": "Median is the middle value when data is sorted \u2014 robust to outliers"
+        },
+        {
+          "fact": "Mode is the most frequently occurring value"
+        },
+        {
+          "fact": "Standard deviation measures the spread of data around the mean"
+        },
+        {
+          "fact": "Variance is the average squared deviation from the mean"
+        },
+        {
+          "fact": "Correlation measures the strength and direction of a linear relationship between two variables"
+        },
+        {
+          "fact": "Pearson correlation ranges from -1 (perfect negative) to +1 (perfect positive)"
+        },
+        {
+          "fact": "P-value is the probability of observing results at least as extreme given the null hypothesis is true"
+        },
+        {
+          "fact": "Null hypothesis (H0) assumes no effect or no difference"
+        },
+        {
+          "fact": "Alternative hypothesis (H1) is what you want to prove"
+        },
+        {
+          "fact": "Type I error rejects a true null hypothesis (false positive)"
+        },
+        {
+          "fact": "Type II error fails to reject a false null hypothesis (false negative)"
+        },
+        {
+          "fact": "Confidence interval gives a range likely to contain the true population parameter"
+        },
+        {
+          "fact": "T-test compares means between two groups"
+        },
+        {
+          "fact": "ANOVA compares means across three or more groups"
+        },
+        {
+          "fact": "Chi-square test assesses relationships between categorical variables"
+        },
+        {
+          "fact": "Linear regression models the relationship between a dependent variable and one or more independent variables"
+        },
+        {
+          "fact": "R-squared measures how well the regression model explains the variance in the data"
+        },
+        {
+          "fact": "Normal distribution is symmetric bell-shaped \u2014 68% within 1 SD, 95% within 2 SD"
+        },
+        {
+          "fact": "Central Limit Theorem: sample means approach normal distribution as sample size increases"
+        }
       ]
     },
     {
       "name": "visualization",
-      "region": [192, 0, 256, 64],
+      "region": [
+        192,
+        0,
+        256,
+        64
+      ],
       "facts": [
-        "Bar charts compare quantities across categories",
-        "Line charts show trends over time or continuous data",
-        "Scatter plots show relationships between two numeric variables",
-        "Histograms show the distribution of a single numeric variable",
-        "Box plots show median, quartiles, and outliers of a distribution",
-        "Heatmaps display matrix data with color intensity",
-        "Pie charts show proportions of a whole — use sparingly, bar charts are often better",
-        "Stacked bar charts show both total and composition across categories",
-        "Area charts are line charts with the area below filled — good for volume over time",
-        "Dual-axis charts combine two different scales on the same plot",
-        "Color should be meaningful and accessible — use colorblind-friendly palettes",
-        "Chart titles should describe what the viewer should take away",
-        "Axis labels must include units of measurement",
-        "Legends should be positioned where they don't obscure data",
-        "Gridlines should be subtle — they support reading, not dominate",
-        "Annotations call out specific data points or events",
-        "Dashboards combine multiple visualizations to tell a complete story",
-        "Interactivity (filters, drill-downs, tooltips) lets users explore data themselves",
-        "Tableau is a leading drag-and-drop visualization platform",
-        "Data storytelling combines visualization with narrative to drive decisions"
+        {
+          "fact": "Bar charts compare quantities across categories"
+        },
+        {
+          "fact": "Line charts show trends over time or continuous data"
+        },
+        {
+          "fact": "Scatter plots show relationships between two numeric variables"
+        },
+        {
+          "fact": "Histograms show the distribution of a single numeric variable"
+        },
+        {
+          "fact": "Box plots show median, quartiles, and outliers of a distribution"
+        },
+        {
+          "fact": "Heatmaps display matrix data with color intensity"
+        },
+        {
+          "fact": "Pie charts show proportions of a whole \u2014 use sparingly, bar charts are often better"
+        },
+        {
+          "fact": "Stacked bar charts show both total and composition across categories"
+        },
+        {
+          "fact": "Area charts are line charts with the area below filled \u2014 good for volume over time"
+        },
+        {
+          "fact": "Dual-axis charts combine two different scales on the same plot"
+        },
+        {
+          "fact": "Color should be meaningful and accessible \u2014 use colorblind-friendly palettes"
+        },
+        {
+          "fact": "Chart titles should describe what the viewer should take away"
+        },
+        {
+          "fact": "Axis labels must include units of measurement"
+        },
+        {
+          "fact": "Legends should be positioned where they don't obscure data"
+        },
+        {
+          "fact": "Gridlines should be subtle \u2014 they support reading, not dominate"
+        },
+        {
+          "fact": "Annotations call out specific data points or events"
+        },
+        {
+          "fact": "Dashboards combine multiple visualizations to tell a complete story"
+        },
+        {
+          "fact": "Interactivity (filters, drill-downs, tooltips) lets users explore data themselves"
+        },
+        {
+          "fact": "Tableau is a leading drag-and-drop visualization platform"
+        },
+        {
+          "fact": "Data storytelling combines visualization with narrative to drive decisions"
+        }
       ]
     }
   ]

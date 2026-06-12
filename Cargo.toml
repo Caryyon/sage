@@ -171,6 +171,10 @@ path = "tests/integration/libp2p_direct_send.rs"
 name = "e2e_local_llm"
 path = "tests/e2e_local_llm.rs"
 
+[[test]]
+name = "e2e_specialist_proof"
+path = "tests/e2e_specialist_proof.rs"
+
 [[bin]]
 name = "nca-timing"
 path = "src/bin/nca_timing.rs"
@@ -178,6 +182,50 @@ path = "src/bin/nca_timing.rs"
 [[bin]]
 name = "train-nca"
 path = "src/bin/train_nca.rs"
+
+[[bin]]
+name = "nca-generate-demo"
+path = "src/bin/nca_generate_demo.rs"
+
+[[bin]]
+name = "nca-train-demo"
+path = "src/bin/nca_train_demo.rs"
+
+[[bin]]
+name = "nca-reservoir-demo"
+path = "src/bin/nca_reservoir_demo.rs"
+
+[[bin]]
+name = "nca-full-demo"
+path = "src/bin/nca_full_demo.rs"
+
+[[bin]]
+name = "nca-char-demo"
+path = "src/bin/nca_char_demo.rs"
+
+[[bin]]
+name = "nca-self-train"
+path = "src/bin/nca_self_train.rs"
+
+[[bin]]
+name = "nca-fast-train"
+path = "src/bin/nca_fast_train.rs"
+
+[[bin]]
+name = "nca-word-train"
+path = "src/bin/nca_word_train.rs"
+
+[[bin]]
+name = "nca-trigram"
+path = "src/bin/nca_trigram.rs"
+
+[[bin]]
+name = "nca-bigram"
+path = "src/bin/nca_bigram.rs"
+
+[[bin]]
+name = "nca-prod"
+path = "src/bin/nca_prod.rs"
 
 [[bin]]
 name = "benchmark"

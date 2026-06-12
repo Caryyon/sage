@@ -13,7 +13,7 @@ use sage::brain_templates::{default_templates_dir, find_template};
 use sage::inference;
 use sage::specialist::{
     default_specialists_dir, find_specialist, list_specialists, presets, Capability,
-    HiringInfo, QualityMetrics, SpecialistProfile, SpecialistPrompt, SpecialistRole,
+    HiringInfo, QualityMetrics, SpecialistProfile, SpecialistRole,
 };
 use sage::worker::{SpecialistWorker, TaskPriority, WorkerConfig};
 use std::path::PathBuf;
@@ -48,19 +48,19 @@ enum Commands {
         name: String,
 
         /// Display name (e.g. "Junior React Developer")
-        #[arg(short, long)]
+        #[arg(long)]
         display_name: Option<String>,
 
         /// Short tagline / pitch
-        #[arg(short, long)]
+        #[arg(long)]
         tagline: Option<String>,
 
         /// Longer description
-        #[arg(short, long)]
+        #[arg(long)]
         description: Option<String>,
 
         /// Preset role to use (junior-react-dev, data-analyst, content-writer, devops-engineer, customer-support)
-        #[arg(short, long)]
+        #[arg(long)]
         role: Option<String>,
 
         /// Custom role category
@@ -88,7 +88,7 @@ enum Commands {
         industries: Vec<String>,
 
         /// Brain template to base this specialist on
-        #[arg(short, long)]
+        #[arg(long)]
         template: Option<String>,
 
         /// Suggested hourly rate in USD
@@ -104,7 +104,7 @@ enum Commands {
         max_tasks: usize,
 
         /// Comma-separated tags
-        #[arg(short, long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',')]
         tags: Vec<String>,
 
         /// Quality: hit rate (0.0-1.0)
@@ -579,7 +579,9 @@ fn cmd_publish(dir: &PathBuf, name: &str, hub: &str) {
                     println!("   View at: {}/specialists/{}", hub, profile.name);
                 }
                 Ok(resp) => {
-                    eprintln!("❌ Hub returned {}: {:?}", resp.status(), resp.text());
+                    let status = resp.status();
+                    let body = rt.block_on(async { resp.text().await.unwrap_or_default() });
+                    eprintln!("❌ Hub returned {}: {}", status, body);
                     std::process::exit(1);
                 }
                 Err(e) => {
