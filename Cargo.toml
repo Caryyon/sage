@@ -115,6 +115,18 @@ name = "sage-specialist"
 path = "src/bin/sage_specialist.rs"
 
 [[bin]]
+name = "nca-lm-train"
+path = "src/bin/nca_lm_train.rs"
+
+[[bin]]
+name = "gpu-train"
+path = "src/bin/gpu_train.rs"
+
+[[bin]]
+name = "sage-tui"
+path = "src/bin/sage_tui.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 

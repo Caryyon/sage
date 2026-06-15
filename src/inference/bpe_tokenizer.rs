@@ -127,6 +127,13 @@ impl BpeTokenizer {
     pub fn id_to_token_str(&self, id: usize) -> Option<&str> {
         self.id_to_token.get(id).map(|s| s.as_str())
     }
+
+    /// Save the tokenizer to a file
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        self.inner
+            .save(path.to_string_lossy().to_string(), false)
+            .map_err(|e| format!("Failed to save tokenizer: {}", e))
+    }
 }
 
 #[cfg(test)]

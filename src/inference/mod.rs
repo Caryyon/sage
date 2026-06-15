@@ -6,6 +6,7 @@
 //! - `OllamaEngine`: HTTP client to external Ollama process (optional fallback)
 //! - `OfflineEngine`: Graceful degradation when no LLM is available (Phase 3 groundwork)
 
+pub mod attractor_network;
 pub mod backprop_trainer;
 pub mod consolidation_trainer;
 pub mod criticality;
@@ -15,6 +16,9 @@ pub mod embeddings;
 pub mod kan;
 pub mod local_llm;
 pub mod nca_language_head;
+pub mod nca_lm;
+pub mod nca_lm_gpu;
+pub mod nca_lm_trainer;
 pub mod nca_predictor;
 pub mod offline;
 pub mod ollama;
@@ -161,25 +165,30 @@ pub fn detect_generation_backend() -> GenerationBackend {
 }
 
 /// Create the default inference engine.
-/// Priority: NCA-native language head (trained) > Embedded (candle/SmolLM2) > Offline
-/// No external LLM dependency. The NCA IS the language model.
+/// Priority: Embedded (candle/SmolLM2) > Ollama > NCA-native (if properly trained) > Offline
+/// The NCA-native head is experimental — only used if it has a real vocabulary.
 pub fn default_engine() -> Box<dyn InferenceEngine> {
-    // Try NCA-native language head first — fully self-contained, no downloads
-    let head_path = nca_language_head::default_language_head_path();
-    let vocab_path = nca_language_head::default_vocab_path();
-    if head_path.exists() && vocab_path.exists() {
-        match nca_language_head::NcaLanguageHead::load_trained(Some(&head_path), Some(&vocab_path)) {
-            Ok(head) => {
-                eprintln!("🧠 Using NCA-native language head ({} tokens) — no external LLM", head.vocab_size());
-                return Box::new(head);
+    // 1. Try NCA Language Model first — fully self-contained, no external dependencies
+    let lm_weights = nca_lm::default_lm_weights_path();
+    let lm_vocab = nca_lm::default_lm_vocab_path();
+    let lm_config = nca_lm::default_lm_config_path();
+    if lm_weights.exists() && lm_vocab.exists() && lm_config.exists() {
+        match nca_lm::NcaLanguageModel::load(Some(&lm_weights), Some(&lm_vocab), Some(&lm_config)) {
+            Ok(model) => {
+                if model.is_trained() && model.vocab_size() >= 100 {
+                    eprintln!("🧬 Using NCA Language Model — {}×{} grid, {} tokens, {}K params",
+                        model.config().grid_size, model.config().grid_size,
+                        model.vocab_size(), model.weights().param_count() / 1000);
+                    return Box::new(nca_lm::NcaLmEngine::new(model));
+                }
             }
             Err(e) => {
-                eprintln!("⚠️  Trained NCA head found but failed to load: {}", e);
+                eprintln!("⚠️  NCA LM found but failed to load: {}", e);
             }
         }
     }
 
-    // Try embedded SmolLM2 as fallback
+    // 2. Try embedded SmolLM2 — fully self-contained, real language model
     match embedded::EmbeddedLLM::new(None) {
         Ok(engine) => {
             eprintln!("🧠 Using embedded {} (candle) — fully self-contained", engine.name());
@@ -190,9 +199,35 @@ pub fn default_engine() -> Box<dyn InferenceEngine> {
         }
     }
 
+    // 3. Try Ollama — local but external process
+    let ollama = ollama::OllamaEngine::new(None, None);
+    if ollama.is_available() {
+        eprintln!("🔗 Using {} — local Ollama backend", ollama.name());
+        return Box::new(ollama);
+    }
+    eprintln!("⚠️  Ollama not available at http://localhost:11434");
+
+    // 4. NCA-native language head — ONLY if it has a real vocabulary (≥100 tokens)
+    let head_path = nca_language_head::default_language_head_path();
+    let vocab_path = nca_language_head::default_vocab_path();
+    if head_path.exists() && vocab_path.exists() {
+        match nca_language_head::NcaLanguageHead::load_trained(Some(&head_path), Some(&vocab_path)) {
+            Ok(head) => {
+                if head.vocab_size() >= 100 {
+                    eprintln!("🧠 Using NCA-native language head ({} tokens)", head.vocab_size());
+                    return Box::new(head);
+                } else {
+                    eprintln!("⚠️  NCA language head has only {} tokens — skipping (need ≥100)", head.vocab_size());
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Trained NCA head found but failed to load: {}", e);
+            }
+        }
+    }
+
     // Final fallback: offline mode
-    eprintln!("💭 No language head trained — using offline mode (knowledge retrieval only)");
-    eprintln!("   Train one: sage train language-head --corpus curricula/junior-react-dev.json");
+    eprintln!("💭 No LLM available — using offline mode (knowledge retrieval only)");
     Box::new(offline::OfflineEngine::new())
 }
 

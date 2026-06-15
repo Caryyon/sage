@@ -11,6 +11,7 @@
 //!     KNOWLEDGE <query>\n  — query knowledge grid
 //!     BRAIN\n              — get brain grid snapshot (activation values)
 //!     EXPORT_TEMPLATE <n>\n — export current brain to named template
+//!     IMPORT_TEMPLATE <n>\n — load brain template without restart
 //!     LIST_TEMPLATES\n     — list available brain templates
 //!     QUIT\n               — disconnect
 //!
@@ -461,6 +462,39 @@ async fn handle_client(
                 }
             }
             let _ = writer.write_all(b"DONE\n").await;
+        } else if let Some(name) = line.strip_prefix("IMPORT_TEMPLATE ") {
+            // Import brain template without restart
+            let templates_dir = sage::brain_templates::default_templates_dir();
+            match sage::brain_templates::find_template(name, &templates_dir) {
+                Ok(bundle) => {
+                    let imported_name = bundle.meta.name.clone();
+                    let active_cells = bundle.meta.active_cells;
+                    let new_knowledge = bundle.to_knowledge();
+                    
+                    // Update state and save
+                    {
+                        let mut s = state.lock().await;
+                        s.knowledge = new_knowledge;
+                        let _ = s.knowledge.save(&s.brain_path);
+                    }
+                    
+                    let _ = writer
+                        .write_all(
+                            format!(
+                                "OK Imported template '{}' ({} active cells)\n",
+                                imported_name, active_cells
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    let _ = writer
+                        .write_all(format!("ERROR Import failed: {}\n", e).as_bytes())
+                        .await;
+                }
+            }
+            let _ = writer.write_all(b"DONE\n").await;
         } else if line == "LIST_TEMPLATES" {
             let templates_dir = sage::brain_templates::default_templates_dir();
             let templates = sage::brain_templates::list_templates(&templates_dir);
@@ -492,7 +526,7 @@ async fn handle_client(
         } else {
             let _ = writer
                 .write_all(
-                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, EXPORT_TEMPLATE, LIST_TEMPLATES, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
+                    b"ERROR Unknown command. Use CHAT, STATUS, PEERS, KNOWLEDGE, BRAIN, EXPORT_TEMPLATE, IMPORT_TEMPLATE, LIST_TEMPLATES, KNOWLEDGE_QUERY, SPECULATE, or QUIT.\n",
                 )
                 .await;
             let _ = writer.write_all(b"DONE\n").await;

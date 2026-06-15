@@ -85,7 +85,21 @@ impl NcaLanguageHead {
         let tokenizer = SimpleTokenizer::from_corpus(&vocab_text, 5000);
         let vocab_size = tokenizer.vocab_size();
 
-        let predictor = NcaPredictor::with_default_steps(tokenizer, weights);
+        // Load training config if available (grid_size, steps)
+        let cp = wp.with_extension("json");
+        let (grid_size, steps) = if let Ok(cfg_text) = fs::read_to_string(&cp) {
+            if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_text) {
+                let gs = cfg.get("grid_size").and_then(|v| v.as_u64()).unwrap_or(4) as usize;
+                let st = cfg.get("steps").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+                (gs, st)
+            } else {
+                (4, 1)
+            }
+        } else {
+            (4, 1) // default to training config
+        };
+
+        let predictor = NcaPredictor::with_grid_size(tokenizer, weights, steps, grid_size);
 
         Ok(Self {
             predictor: Mutex::new(predictor),
@@ -160,6 +174,14 @@ impl NcaLanguageHead {
         let vp = default_vocab_path();
         trained_predictor.weights().save(&wp)?;
         fs::write(&vp, corpus)?;
+
+        // Save training config for correct loading
+        let cp = wp.with_extension("json");
+        let cfg = serde_json::json!({
+            "grid_size": grid_size,
+            "steps": config.nca_steps,
+        });
+        fs::write(&cp, cfg.to_string())?;
 
         // Update predictor with trained weights
         let trained_weights = trained_predictor.weights().clone();

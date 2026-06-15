@@ -59,6 +59,21 @@ pub struct SimpleTokenizer {
 }
 
 impl SimpleTokenizer {
+    /// Create a basic tokenizer with common ASCII characters and words.
+    /// Useful for testing when no corpus is available.
+    pub fn new(max_vocab: usize) -> Self {
+        // Seed with common English words + character-level tokens
+        let seed = "the a an is are was were be been being have has had do does did \
+            will would shall should can could may might must I you he she it we they \
+            this that these those my your his her its our their cat dog bird fish \
+            run ran walk jump fly swim eat drink sleep see hear think know say tell \
+            big small fast slow hot cold new old good bad happy sad red blue green \
+            in on at by for with from to of and or but not if then when where why how \
+            one two three four five six seven eight nine ten north south east west \
+            mat park winter ocean deep quick brown fox jumps over lazy dog sat";
+        Self::from_corpus(seed, max_vocab)
+    }
+
     /// Build vocabulary from text (whitespace + punctuation split, capped at max_vocab)
     pub fn from_corpus(text: &str, max_vocab: usize) -> Self {
         let mut freq: HashMap<String, usize> = HashMap::new();
@@ -108,7 +123,8 @@ impl SimpleTokenizer {
     }
 
     fn tokenize_raw(text: &str) -> Vec<String> {
-        // Simple split: lowercase, split on whitespace, separate punctuation
+        // Split on whitespace, keep punctuation attached to words
+        // This preserves natural word boundaries: "hello?" stays as one token
         let text = text.to_lowercase();
         let mut tokens = Vec::new();
         for word in text.split_whitespace() {
@@ -116,14 +132,22 @@ impl SimpleTokenizer {
             if word.is_empty() {
                 continue;
             }
-            // Split trailing punctuation
-            let trimmed = word.trim_end_matches(|c: char| c.is_ascii_punctuation());
-            let suffix = &word[trimmed.len()..];
-            if !trimmed.is_empty() {
-                tokens.push(trimmed.to_string());
-            }
-            if !suffix.is_empty() {
-                tokens.push(suffix.to_string());
+            // Keep the word as-is, including any attached punctuation
+            // Only split off standalone punctuation at the very end
+            // e.g. "hello!" stays as "hello!", but "hello!!!" becomes "hello!" + "!!"
+            let stripped = word.trim_end_matches(|c: char| c.is_ascii_punctuation());
+            let punct_suffix = &word[stripped.len()..];
+            if !stripped.is_empty() {
+                // Keep first punctuation char attached to word
+                if punct_suffix.len() <= 1 {
+                    tokens.push(word.to_string());
+                } else {
+                    tokens.push(format!("{}{}", stripped, &punct_suffix[..1]));
+                    tokens.push(punct_suffix[1..].to_string());
+                }
+            } else if !punct_suffix.is_empty() {
+                // Pure punctuation token
+                tokens.push(punct_suffix.to_string());
             }
         }
         tokens

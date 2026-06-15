@@ -8,6 +8,7 @@
 
 use clap::{Parser, Subcommand};
 use sage::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
+use sage::inference::default_engine;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -898,19 +899,33 @@ fn run_node_start(
                                 line.clone()
                             };
 
-                            let k3: tokio::sync::MutexGuard<'_, NCAKnowledge> = k2.lock().await;
-                            let results = k3.query(&query, 5);
-                            drop(k3);
+                            // Try trained NCA-native language head first
+                            let mut response = tokio::task::spawn_blocking({
+                                let query = query.clone();
+                                move || {
+                                    let engine = default_engine();
+                                    let prompt = format!("User: {}\nAssistant:", query);
+                                    match engine.generate(&prompt, 100) {
+                                        Ok(text) if !text.is_empty() && !text.starts_with("I'm SAGE") => text,
+                                        _ => String::new()
+                                    }
+                                }
+                            }).await.unwrap_or_default();
 
-                            // Build a simple response using NCA context + embedded model
-                            let response = if results.is_empty() {
-                                format!("I'm SAGE — a decentralized AI running on a Neural Cellular Automata grid. My brain is still learning (0 patterns matched for: \"{}\"). Ask me about my architecture, or try again after I've learned more from the network.", query)
-                            } else {
-                                let context: Vec<String> = results.iter().map(|r| {
-                                    format!("pattern at [{},{}] (relevance {:.3})", r.position.0, r.position.1, r.relevance)
-                                }).collect();
-                                format!("I found {} relevant patterns in my NCA grid for \"{}\": {}. I'm SAGE — a distributed AI that learns from every conversation and shares knowledge across nodes.", results.len(), query, context.join(", "))
-                            };
+                            // Fallback to NCA knowledge grid if language head returns empty
+                            if response.is_empty() {
+                                let k3: tokio::sync::MutexGuard<'_, NCAKnowledge> = k2.lock().await;
+                                let results = k3.query(&query, 5);
+                                drop(k3);
+                                response = if results.is_empty() {
+                                    format!("I'm SAGE — a decentralized AI running on a Neural Cellular Automata grid. My brain is still learning (0 patterns matched for: \"{}\"). Ask me about my architecture, or try again after I've learned more from the network.", query)
+                                } else {
+                                    let context: Vec<String> = results.iter().map(|r| {
+                                        format!("pattern at [{},{}] (relevance {:.3})", r.position.0, r.position.1, r.relevance)
+                                    }).collect();
+                                    format!("I found {} relevant patterns in my NCA grid for \"{}\": {}. I'm SAGE — a distributed AI that learns from every conversation and shares knowledge across nodes.", results.len(), query, context.join(", "))
+                                }
+                            }
 
                             // Send response as TOKEN lines (sage-api protocol)
                             for word in response.split('\n') {
@@ -1829,7 +1844,7 @@ fn run_node_status() {
                         .unwrap_or(false);
                     if alive {
                         // Get uptime
-                        let uptime_str = String::new();
+                        let mut uptime_str = String::new();
                         #[cfg(target_os = "linux")]
                         {
                             if let Ok(stat) = std::fs::metadata(format!("/proc/{pid}")) {
