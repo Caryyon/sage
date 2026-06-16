@@ -8,6 +8,7 @@
 
 pub mod attractor_network;
 pub mod backprop_trainer;
+pub mod binary_nca;
 pub mod consolidation_trainer;
 pub mod criticality;
 pub mod distributed;

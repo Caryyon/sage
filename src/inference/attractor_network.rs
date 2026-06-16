@@ -491,7 +491,7 @@ mod tests {
         let mlp = AttractorMlp::new(&device).unwrap();
 
         // Create a random perception vector
-        let perception = Tensor::randn(0.0, 1.0, (PERCEPTION_SIZE,), DType::F64, &device).unwrap();
+        let perception = Tensor::randn(0.0f64, 1.0, (PERCEPTION_SIZE,), &device).unwrap();
         let output = mlp.forward_cell(&perception).unwrap();
 
         assert_eq!(output.dims(), &[NCA_CHANNELS]);
@@ -504,7 +504,7 @@ mod tests {
         let grid_size = 16;
 
         // Create a random grid
-        let grid = Tensor::randn(0.0, 0.5, (grid_size, grid_size, NCA_CHANNELS), DType::F64, &device).unwrap();
+        let grid = Tensor::randn(0.0f64, 0.5, (grid_size, grid_size, NCA_CHANNELS), &device).unwrap();
 
         // Run one step
         let next = nca_step(&grid, &mlp, grid_size).unwrap();

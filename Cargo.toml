@@ -115,6 +115,18 @@ name = "sage-specialist"
 path = "src/bin/sage_specialist.rs"
 
 [[bin]]
+name = "sage-discover"
+path = "src/bin/sage_discover.rs"
+
+[[bin]]
+name = "sage-learn"
+path = "src/bin/sage_learn.rs"
+
+[[bin]]
+name = "nca-binary-demo"
+path = "src/bin/nca_binary_demo.rs"
+
+[[bin]]
 name = "nca-lm-train"
 path = "src/bin/nca_lm_train.rs"
 
