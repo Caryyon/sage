@@ -11,7 +11,7 @@
 //!   5. Evaluate top-5 accuracy, save checkpoint
 //!   6. Repeat for N epochs
 
-use super::nca_lm::{self, NcaLanguageModel, NcaLmConfig, NcaLmTrainingConfig};
+use super::nca_lm::{NcaLanguageModel, NcaLmTrainingConfig};
 use super::nca_predictor::{NcaWeights, SimpleTokenizer, NCA_CHANNELS};
 use std::error::Error;
 use std::fs;
@@ -340,14 +340,16 @@ struct CellTrace {
     pre_h2: Vec<f64>,
     h2: Vec<f64>,
     pre_out: Vec<f64>,
-    delta: Vec<f64>,
+    #[allow(dead_code)]
+    delta: Vec<f64>, // Stored for debugging; gradient computed from backward pass
     pre_clamp: Vec<f64>,
 }
 
 /// All traces for one NCA step across the whole grid
 struct StepTrace {
     cells: Vec<Vec<CellTrace>>,
-    grid_before: Vec<Vec<[f64; NCA_CHANNELS]>>,
+    #[allow(dead_code)]
+    grid_before: Vec<Vec<[f64; NCA_CHANNELS]>>, // Stored for debugging/visualization
 }
 
 /// Forward pass with full trace recording for backprop

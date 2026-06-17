@@ -17,11 +17,8 @@
 //!   - The grid IS the brain — NCA dynamics are the whole point
 
 use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_nn::{Linear, VarBuilder, VarMap};
-use rand::Rng;
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
 
 use super::nca_predictor::{SimpleTokenizer, NCA_CHANNELS};
 
@@ -31,14 +28,19 @@ const ACTIVATION_CH: usize = 0;
 const PERCEPTION_SIZE: usize = 9 * NCA_CHANNELS; // 144
 const HIDDEN1_SIZE: usize = 1024;
 const HIDDEN2_SIZE: usize = 384;
+#[allow(dead_code)]
 const DEFAULT_GRID_SIZE: usize = 64;
+#[allow(dead_code)]
 const DEFAULT_NCA_STEPS: usize = 60; // enough to converge to attractor
 const HEBBIAN_LR: f64 = 0.01;
 const WEIGHT_NORM_MAX: f64 = 1.0;
-const STABILITY_THRESHOLD: f64 = 0.001;
+#[allow(dead_code)]
+const STABILITY_THRESHOLD: f64 = 0.001; // grid change below this = stable
 const SPARSE_FRACTION: f64 = 0.5;
+#[allow(dead_code)]
 const COMPETITIVE_TOP: f64 = 0.3; // strengthen top 30% most active
-const COMPETITIVE_BOTTOM: f64 = 0.3; // weaken bottom 30% least active // grid change below this = stable
+#[allow(dead_code)]
+const COMPETITIVE_BOTTOM: f64 = 0.3; // weaken bottom 30% least active
 
 /// 3×3 neighbor offsets
 const NEIGHBOR_OFFSETS: [(i32, i32); 9] = [
@@ -204,6 +206,7 @@ pub fn nca_steps_with_trace(
 }
 
 /// Check if grid has stabilized (mean absolute change below threshold)
+#[allow(dead_code)]
 fn is_stable(prev: &Tensor, current: &Tensor) -> candle_core::Result<bool> {
     let diff = current.sub(prev)?.abs()?.mean_all()?;
     let val: f64 = diff.to_scalar()?;
@@ -317,7 +320,7 @@ pub fn store_memory(
     mlp: &mut AttractorMlp,
     grid_size: usize,
     steps: usize,
-    device: &Device,
+    _device: &Device,
 ) -> candle_core::Result<Vec<Tensor>> {
     let trace = nca_steps_with_trace(grid, mlp, grid_size, steps)?;
     let stabilized = trace.last().unwrap();
@@ -366,7 +369,7 @@ pub fn store_memory(
         (&mut mlp.w2, (HIDDEN1_SIZE, HIDDEN2_SIZE)),
         (&mut mlp.w3, (HIDDEN2_SIZE, NCA_CHANNELS)),
     ] {
-        let n_elems = (shape.0 * shape.1) as f64;
+        let _n_elems = (shape.0 * shape.1) as f64;
         let frob = w.sqr()?.mean_all()?.sqrt()?;
         let frob_val: f64 = frob.to_scalar()?;
         if frob_val > WEIGHT_NORM_MAX {
