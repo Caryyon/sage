@@ -139,6 +139,26 @@ name = "test-reencode"
 path = "src/bin/test_reencode.rs"
 
 [[bin]]
+name = "clear-brain"
+path = "src/bin/clear_brain.rs"
+
+[[bin]]
+name = "curated-brain"
+path = "src/bin/curated_brain.rs"
+
+[[bin]]
+name = "sage-hdc-brain"
+path = "src/bin/sage_hdc_brain.rs"
+
+[[bin]]
+name = "hybrid-bench"
+path = "src/bin/hybrid_bench.rs"
+
+[[bin]]
+name = "hdc-check"
+path = "src/bin/hdc_check.rs"
+
+[[bin]]
 name = "sage-rebuild-brain"
 path = "src/bin/sage_rebuild_brain.rs"
 

@@ -6,6 +6,7 @@ pub mod config;
 pub mod distributed_knowledge;
 pub mod feedback;
 pub mod grid;
+pub mod hdc;
 pub mod inference;
 pub mod knowledge_loop;
 pub mod brain_activity;
