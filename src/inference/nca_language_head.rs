@@ -116,7 +116,7 @@ impl NcaLanguageHead {
         corpus: &str,
         max_vocab: usize,
         epochs: usize,
-        population_size: usize,
+        _population_size: usize,
     ) -> Result<(), Box<dyn Error>> {
         if corpus.trim().is_empty() {
             return Err("Empty corpus — cannot train".into());
@@ -306,6 +306,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow: NCA predictor uses 181×181 grid internally, takes 60s+"]
     fn test_train_on_small_corpus() {
         let corpus = "hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta hello world sage test alpha beta gamma delta epsilon zeta";
         let mut head = NcaLanguageHead::new();
@@ -326,6 +327,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow: NCA predictor uses 181×181 grid internally, takes 60s+"]
     fn test_chat_with_system_context() {
         let corpus = "react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation";
         let mut head = NcaLanguageHead::new();

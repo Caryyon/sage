@@ -75,7 +75,7 @@ impl NcaMlp {
 /// at (r+dr, c+dc) in the original grid. We concatenate all 9 rolled
 /// views along the channel dimension to get [G, G, 144].
 fn gather_neighborhood(grid: &Tensor) -> candle_core::Result<Tensor> {
-    let dims = grid.dims(); // [G, G, C]
+    let _dims = grid.dims(); // [G, G, C]
 
     let mut views = Vec::with_capacity(9);
     for &(dr, dc) in &NEIGHBOR_OFFSETS {
@@ -403,8 +403,8 @@ pub fn train_nca_lm_gpu(
                 last_grid = Some(final_grid.copy()?);
 
                 // Read activation at target position
-                let target_row = target / grid_size;
-                let target_col = target % grid_size;
+                let _target_row = target / grid_size;
+                let _target_col = target % grid_size;
 
                 // Read ALL activations using hash-spread pooling
                 // Each token is spread across many positions; pool them

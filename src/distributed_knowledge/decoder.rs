@@ -238,41 +238,38 @@ pub fn query_knowledge_by_features_with_text(
         query_features
     };
 
-    let (qx, qy) = feature_to_position(features_for_position, grid.width, grid.height);
-
-    let search_radius = (config.spread_radius * 4) as i32;
+    // Search ALL active cells (global retrieval) — the hash position is only
+    // used for encoding, not for retrieval. Semantic similarity should find matches
+    // anywhere in the grid.
     let mut results = Vec::new();
     // Track which text snippets we've already seen to deduplicate
     let mut seen_texts = std::collections::HashSet::new();
 
-    for dy in -search_radius..=search_radius {
-        for dx in -search_radius..=search_radius {
-            let nx = ((qx as i32 + dx).rem_euclid(grid.width as i32)) as usize;
-            let ny = ((qy as i32 + dy).rem_euclid(grid.height as i32)) as usize;
-
-            let cell = &grid.cells[ny][nx];
+    for y in 0..grid.height {
+        for x in 0..grid.width {
+            let cell = &grid.cells[y][x];
             let activation = safe_knowledge_activation(cell);
             if activation < 1e-6 {
                 continue;
             }
 
-            let dist = ((dx * dx + dy * dy) as f64).sqrt();
-            let proximity = 1.0 / (1.0 + dist);
             let confidence = safe_knowledge_confidence(cell);
 
             // Cosine similarity between query embedding and cell embedding slots
-            // Use projection if available to match the encoded embedding space
-            let cell_embed = cell_embedding_vec(grid, ny, nx);
+            let cell_embed = cell_embedding_vec(grid, y, x);
             let cos_sim = cosine_sim_query_cell(query_features, &cell_embed, projection);
-            // Clamp to [0, 1] for scoring (negative similarity → 0)
             let cos_sim_pos = cos_sim.max(0.0);
 
-            // Semantic retrieval: 70% cosine similarity, 30% proximity
-            // Also factor in activation as a multiplier so empty cells don't score
-            let relevance = activation * (0.3 * proximity + 0.7 * cos_sim_pos + 0.1 * confidence);
+            // Semantic retrieval: 80% cosine similarity, 10% activation, 10% confidence
+            let relevance = 0.8 * cos_sim_pos + 0.1 * activation + 0.1 * confidence;
 
             // Look up original text
-            let text = text_store.and_then(|ts| ts.peek(nx, ny).map(|s| s.to_string()));
+            let text = text_store.and_then(|ts| ts.peek(x, y).map(|s| s.to_string()));
+
+            // Skip cells with no text — they're useless for retrieval
+            if text.is_none() {
+                continue;
+            }
 
             // Deduplicate by text content
             if let Some(ref t) = text {
@@ -283,11 +280,11 @@ pub fn query_knowledge_by_features_with_text(
             }
 
             results.push(KnowledgeActivation {
-                position: (nx, ny),
+                position: (x, y),
                 activation,
                 confidence,
                 timestamp: 0.0,
-                embedding: cell_embedding(grid, ny, nx),
+                embedding: cell_embedding(grid, y, x),
                 relevance,
                 text,
             });
