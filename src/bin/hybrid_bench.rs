@@ -1,4 +1,4 @@
-//! Quick hybrid benchmark — loads existing HDC store, builds keyword index, tests
+//! Hybrid Q&A with LLM Synthesis — loads HDC store, retrieves passages, asks Ollama to answer
 use sage::hdc::{default_hdc_path, HdcStore};
 use std::collections::HashMap;
 use std::path::Path;
@@ -38,7 +38,6 @@ fn hybrid_query<'a>(
 ) -> Vec<(f32, &'a str)> {
     let query_tokens = tokenize(query_text);
     
-    // Step 1: Find all entry indices that contain at least one query keyword
     let mut candidate_indices: HashMap<usize, u32> = HashMap::new();
     for token in &query_tokens {
         if let Some(entries) = keyword_index.get(token) {
@@ -48,7 +47,6 @@ fn hybrid_query<'a>(
         }
     }
     
-    // Step 2: Also include top HDC results (union, not intersection)
     let hdc_results = store.query(query_embedding, 500.min(store.len()));
     for (_score, text) in &hdc_results {
         if let Some(idx) = store.entries.iter().position(|e| e.text.as_str() == *text) {
@@ -60,7 +58,6 @@ fn hybrid_query<'a>(
         return store.query(query_embedding, k);
     }
     
-    // Step 3: Score all candidates with HDC cosine similarity + keyword boost
     let query_mag: f32 = query_embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
     
     let mut scored: Vec<(f32, usize)> = Vec::with_capacity(candidate_indices.len());
@@ -74,14 +71,12 @@ fn hybrid_query<'a>(
             0.0
         };
         
-        // Keyword boost: bonus for matching query terms
         let kw_boost = if kw_count > 0 {
             (kw_count as f32 / query_tokens.len().max(1) as f32) * 0.3
         } else {
             0.0
         };
         
-        // Fuse: HDC score + keyword boost
         let fused = hdc_score + kw_boost;
         scored.push((fused, idx));
     }
@@ -94,8 +89,35 @@ fn hybrid_query<'a>(
         .collect()
 }
 
+/// Ask Ollama to synthesize an answer from retrieved passages
+fn synthesize_answer(client: &reqwest::blocking::Client, question: &str, passages: &[&str]) -> String {
+    let mut prompt = format!("Based on these passages from books, answer the question in one short sentence.\n\nPassages:\n");
+    for (i, p) in passages.iter().enumerate() {
+        let truncated = if p.len() > 500 { &p[..500] } else { p };
+        prompt.push_str(&format!("{}. {}\n", i + 1, truncated));
+    }
+    prompt.push_str(&format!("\nQuestion: {}\nAnswer:", question));
+    
+    let res = client.post("http://localhost:11434/api/generate")
+        .json(&serde_json::json!({
+            "model": "qwen2.5:7b",
+            "prompt": prompt,
+            "stream": false,
+            "options": {"temperature": 0.1, "num_predict": 100}
+        }))
+        .send();
+    
+    match res {
+        Ok(r) if r.status().is_success() => {
+            let resp: serde_json::Value = r.json().unwrap_or_default();
+            resp["response"].as_str().unwrap_or("").trim().to_string()
+        }
+        _ => String::from("(synthesis failed)"),
+    }
+}
+
 fn main() {
-    println!("=== Hybrid Q&A Benchmark v2 ===\n");
+    println!("=== SAGE Hybrid Q&A + LLM Synthesis ===\n");
     
     let store = HdcStore::load(Path::new(&default_hdc_path())).unwrap();
     println!("Loaded {} entries", store.len());
@@ -105,7 +127,10 @@ fn main() {
     let keyword_index = build_keyword_index(&store);
     println!("  {} unique words in {:.1}s\n", keyword_index.len(), kw_start.elapsed().as_secs_f64());
     
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap();
     
     let questions = vec![
         ("What is the capital of France?", "paris"),
@@ -125,13 +150,15 @@ fn main() {
         ("What is the main subject of Origin of Species?", "evolution"),
     ];
     
-    let mut hits = 0;
-    let mut total_relevance = 0.0;
-    let mut total_ms = 0u128;
+    let mut retrieval_hits = 0;
+    let mut synthesis_hits = 0;
+    let mut total_retrieval_ms = 0u128;
+    let mut total_synthesis_ms = 0u128;
     
     for (question, expected_keyword) in &questions {
         let q_start = Instant::now();
         
+        // Embed the question
         let res = client.post("http://localhost:11434/api/embeddings")
             .json(&serde_json::json!({"model":"nomic-embed-text","prompt":question}))
             .send();
@@ -144,30 +171,40 @@ fn main() {
                         .map(|v| v.as_f64().unwrap_or(0.0) as f32)
                         .collect();
                     
+                    // Hybrid retrieval
                     let results = hybrid_query(&store, &keyword_index, &q_emb, question, 5);
-                    let query_ms = q_start.elapsed().as_millis();
-                    total_ms += query_ms;
+                    let retrieval_ms = q_start.elapsed().as_millis();
+                    total_retrieval_ms += retrieval_ms;
                     
-                    let top_relevance = results.first().map(|(r, _)| *r).unwrap_or(0.0);
-                    total_relevance += top_relevance;
-                    
-                    let found = results.iter().any(|(_, text): &(f32, &str)| {
+                    // Check if keyword is in retrieved passages
+                    let retrieval_found = results.iter().any(|(_, text): &(f32, &str)| {
                         text.to_lowercase().contains(&expected_keyword.to_lowercase())
                     });
                     
-                    if found {
-                        hits += 1;
-                        println!("✅ Q: {}", question);
-                    } else {
-                        println!("❌ Q: {}", question);
-                    }
+                    // LLM synthesis
+                    let syn_start = Instant::now();
+                    let passages: Vec<&str> = results.iter().map(|(_, t)| *t).collect();
+                    let answer = synthesize_answer(&client, question, &passages);
+                    let synthesis_ms = syn_start.elapsed().as_millis();
+                    total_synthesis_ms += synthesis_ms;
                     
+                    // Check if keyword is in synthesized answer
+                    let synthesis_found = answer.to_lowercase().contains(&expected_keyword.to_lowercase());
+                    
+                    if retrieval_found { retrieval_hits += 1; }
+                    if synthesis_found { synthesis_hits += 1; }
+                    
+                    let icon = if synthesis_found { "✅" } else if retrieval_found { "⚠️" } else { "❌" };
+                    println!("{} Q: {}", icon, question);
                     println!("   Expected: '{}'", expected_keyword);
-                    for (i, (rel, text)) in results.iter().take(3).enumerate() {
-                        let preview: &str = if text.len() > 150 { &text[..150] } else { text };
-                        println!("   #{} [rel={:.4}] {}...", i, rel, preview);
-                    }
-                    println!("   Time: {}ms\n", query_ms);
+                    println!("   Retrieval: {} | Synthesis: {}", 
+                        if retrieval_found { "✓" } else { "✗" },
+                        if synthesis_found { "✓" } else { "✗" });
+                    println!("   Answer: {}", &answer[..answer.len().min(150)]);
+                    println!("   Top passage: {}", 
+                        results.first().map(|(_, t)| &t[..t.len().min(100)])
+                            .unwrap_or("(none)"));
+                    println!("   Time: {}ms retrieval + {}ms synthesis\n", retrieval_ms, synthesis_ms);
                 }
             }
             _ => { println!("❌ Q: {} (embedding failed)\n", question); }
@@ -177,7 +214,9 @@ fn main() {
     let n = questions.len() as f64;
     println!("=== Summary ===");
     println!("Questions: {}", questions.len());
-    println!("Hits: {}/{} ({:.1}%)", hits, questions.len(), hits as f64 / n * 100.0);
-    println!("Mean top relevance: {:.4}", total_relevance / n as f32);
-    println!("Mean query time: {:.1}ms (embedding + retrieval)", total_ms as f64 / n);
+    println!("Retrieval hits: {}/{} ({:.1}%)", retrieval_hits, questions.len(), retrieval_hits as f64 / n * 100.0);
+    println!("Synthesis hits: {}/{} ({:.1}%)", synthesis_hits, questions.len(), synthesis_hits as f64 / n * 100.0);
+    println!("Mean retrieval time: {:.0}ms", total_retrieval_ms as f64 / n);
+    println!("Mean synthesis time: {:.0}ms", total_synthesis_ms as f64 / n);
+    println!("\nThis is SAGE v0.6.0 — HDC retrieval + LLM synthesis. No API keys. Local only.");
 }

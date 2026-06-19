@@ -101,33 +101,53 @@ fn hybrid_query<'a>(
 // ── Metadata Extraction ──
 
 fn extract_metadata(content: &str) -> (String, String) {
-    let lines: Vec<&str> = content.lines().take(15).collect();
+    // First try Gutenberg structured metadata (Title: / Author: lines)
     let mut title = String::new();
     let mut author = String::new();
     
-    for (i, line) in lines.iter().enumerate() {
+    for line in content.lines().take(80) {
         let line = line.trim();
-        if line.is_empty() { continue; }
-        if line.starts_with("[") || line.contains("Project Gutenberg") || line.contains("***") || line.contains("http") {
-            continue;
+        if line.starts_with("Title:") {
+            title = line[6..].trim().to_string();
         }
-        if line.to_lowercase().starts_with("by ") {
-            author = line[3..].trim().to_string();
-            continue;
+        if line.starts_with("Author:") {
+            author = line[7..].trim().to_string();
         }
-        if title.is_empty() {
-            title = line.to_string();
-            for j in (i+1)..lines.len() {
-                let next = lines[j].trim();
-                if next.is_empty() { continue; }
-                if next.to_lowercase().starts_with("by ") {
-                    author = next[3..].trim().to_string();
+        if !title.is_empty() && !author.is_empty() { break; }
+    }
+    
+    // Fallback: parse first non-boilerplate lines
+    if title.is_empty() {
+        let lines: Vec<&str> = content.lines().take(15).collect();
+        for (i, line) in lines.iter().enumerate() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            if line.starts_with("[") || line.contains("Project Gutenberg") || line.contains("***") || line.contains("http") {
+                continue;
+            }
+            if line.to_lowercase().starts_with("by ") {
+                if author.is_empty() { author = line[3..].trim().to_string(); }
+                continue;
+            }
+            // Skip publisher/producer lines
+            if line.contains("Produced by") || line.contains("Publisher") || line.contains("Online Distributed") {
+                continue;
+            }
+            if title.is_empty() {
+                title = line.trim_end_matches(';').trim().to_string();
+                for j in (i+1)..lines.len() {
+                    let next = lines[j].trim();
+                    if next.is_empty() { continue; }
+                    if next.to_lowercase().starts_with("by ") && author.is_empty() {
+                        author = next[3..].trim().to_string();
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
     
+    // Clean up title
     if title.contains("—") {
         title = title.split("—").next().unwrap_or(&title).trim().to_string();
     }
@@ -139,11 +159,40 @@ fn strip_gutenberg_boilerplate(content: &str) -> String {
     let start_marker = "*** START OF";
     let end_marker = "*** END OF";
     let mut text = content.to_string();
+    
+    // Try standard Gutenberg markers first
     if let Some(idx) = content.find(start_marker) {
         if let Some(eol) = content[idx..].find('\n') {
             text = content[idx + eol + 1..].to_string();
         }
+    } else {
+        // No markers — strip the Gutenberg header by finding first substantial paragraph
+        // Gutenberg headers are 20-50 lines of legal boilerplate
+        let lines: Vec<&str> = content.lines().collect();
+        let mut start = 0;
+        for (i, line) in lines.iter().enumerate() {
+            let line = line.trim();
+            // Skip empty lines, title/author lines, boilerplate
+            if line.is_empty() || line.starts_with("[") || line.starts_with("Title:") || line.starts_with("Author:") {
+                continue;
+            }
+            if line.contains("Project Gutenberg") || line.contains("eBook") || line.contains("http") {
+                continue;
+            }
+            if line.len() < 60 && (line.contains("CHAPTER") || line.contains("Contents") || line.contains("Illustration")) {
+                continue;
+            }
+            // First substantial line of prose — this is where the book starts
+            if line.len() > 80 && !line.to_uppercase().eq(&line) {
+                start = i;
+                break;
+            }
+        }
+        if start > 0 {
+            text = lines[start..].join("\n");
+        }
     }
+    
     if let Some(idx) = text.find(end_marker) {
         text.truncate(idx);
     }
@@ -306,86 +355,5 @@ fn main() {
 
     let file_size = std::fs::metadata(&hdc_path).map(|m| m.len()).unwrap_or(0);
     println!("HDC file: {:.1} MB", file_size as f64 / 1_048_576.0);
-
-    // ── Hybrid Q&A Benchmark ──
-    println!("\n=== Hybrid Q&A Benchmark ===\n");
-
-    let questions = vec![
-        ("What is the capital of France?", "paris"),
-        ("Who wrote Pride and Prejudice?", "austen"),
-        ("What is the name of the monster in Frankenstein?", "frankenstein"),
-        ("Who is the author of The Great Gatsby?", "fitzgerald"),
-        ("What animal is Moby Dick?", "whale"),
-        ("Who wrote The Art of War?", "sun tzu"),
-        ("What is the main theme of The Prince?", "power"),
-        ("Who is the protagonist of Don Quixote?", "quixote"),
-        ("What is the setting of Wuthering Heights?", "moor"),
-        ("Who wrote The Republic?", "plato"),
-        ("What is the name of Sherlock Holmes companion?", "watson"),
-        ("Who wrote Alice in Wonderland?", "carroll"),
-        ("What is the central concept of Tao Te Ching?", "tao"),
-        ("Who wrote Meditations?", "marcus aurelius"),
-        ("What is the main subject of Origin of Species?", "evolution"),
-    ];
-
-    let mut hits = 0;
-    let mut total_relevance = 0.0;
-    let mut total_ms = 0u128;
-
-    for (question, expected_keyword) in &questions {
-        let q_start = Instant::now();
-
-        let res = client.post("http://localhost:11434/api/embeddings")
-            .json(&serde_json::json!({"model":"nomic-embed-text","prompt":question}))
-            .send();
-
-        match res {
-            Ok(r) if r.status().is_success() => {
-                let resp: serde_json::Value = r.json().unwrap_or_default();
-                if let Some(emb) = resp["embedding"].as_array() {
-                    let q_emb: Vec<f32> = emb.iter()
-                        .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-                        .collect();
-
-                    // Hybrid query
-                    let results = hybrid_query(&store, &keyword_index, &q_emb, question, 5);
-                    let query_ms = q_start.elapsed().as_millis();
-                    total_ms += query_ms;
-
-                    let top_relevance = results.first().map(|(r, _)| *r).unwrap_or(0.0);
-                    total_relevance += top_relevance;
-
-                    let found = results.iter().any(|(_, text): &(f32, &str)| {
-                        text.to_lowercase().contains(&expected_keyword.to_lowercase())
-                    });
-
-                    if found {
-                        hits += 1;
-                        println!("✅ Q: {}", question);
-                    } else {
-                        println!("❌ Q: {}", question);
-                    }
-
-                    println!("   Expected: '{}'", expected_keyword);
-                    for (i, (rel, text)) in results.iter().take(3).enumerate() {
-                        let preview: &str = if text.len() > 150 { &text[..150] } else { text };
-                        println!("   #{} [rel={:.4}] {}...", i, rel, preview);
-                    }
-                    println!("   Time: {}ms\n", query_ms);
-                }
-            }
-            _ => { println!("❌ Q: {} (embedding failed)\n", question); }
-        }
-    }
-
-    let n = questions.len() as f64;
-    println!("=== Summary ===");
-    println!("Questions: {}", questions.len());
-    println!("Hits: {}/{} ({:.1}%)", hits, questions.len(), hits as f64 / n * 100.0);
-    println!("Mean top relevance: {:.4}", total_relevance / n as f32);
-    println!("Mean query time: {:.1}ms (embedding + retrieval)", total_ms as f64 / n);
-    println!("\nHDC store: {} entries, {:.1} MB", store.len(), file_size as f64 / 1_048_576.0);
-    println!("Keyword index: {} unique words", unique_words);
-    println!("\nThis is SAGE v0.6.0 — a brain that runs on anything, knows what it reads,");
-    println!("and belongs to whoever runs it. No API keys. No cloud. No GPU.");
+    println!("\nDone. Run 'hybrid-bench' to test retrieval + LLM synthesis.");
 }
