@@ -118,7 +118,7 @@ fn extract_metadata(content: &str) -> (String, String) {
     
     // Fallback: parse first non-boilerplate lines
     if title.is_empty() {
-        let lines: Vec<&str> = content.lines().take(15).collect();
+        let lines: Vec<&str> = content.lines().take(30).collect();
         for (i, line) in lines.iter().enumerate() {
             let line = line.trim();
             if line.is_empty() { continue; }
@@ -129,8 +129,25 @@ fn extract_metadata(content: &str) -> (String, String) {
                 if author.is_empty() { author = line[3..].trim().to_string(); }
                 continue;
             }
-            // Skip publisher/producer lines
-            if line.contains("Produced by") || line.contains("Publisher") || line.contains("Online Distributed") {
+            // Skip publisher/producer/illustration lines
+            if line.contains("Produced by") || line.contains("Online Distributed")
+                || line.contains("CHISWICK PRESS") || line.contains("PRINTED IN")
+                || line.starts_with("RUSKIN") || line.starts_with("Ruskin")
+                || line.to_lowercase().contains("publisher") || line.to_lowercase().contains("press:")
+                || line.starts_with("[") || line.starts_with("_") || line.starts_with("(")
+                || line.contains("SERVICE & PATON") || line.contains("HENRIETTA STREET")
+                || line.contains("CHARING CROSS")
+            {
+                continue;
+            }
+            // Skip lines that are clearly addresses (contain street/road/lane + number pattern)
+            if (line.contains("Street") || line.contains("Road") || line.contains("Lane") || line.contains("Square"))
+                && line.chars().any(|c| c.is_ascii_digit())
+            {
+                continue;
+            }
+            // Skip single-word lines that aren't real titles
+            if line.split_whitespace().count() == 1 && line.len() < 20 {
                 continue;
             }
             if title.is_empty() {
@@ -182,6 +199,10 @@ fn strip_gutenberg_boilerplate(content: &str) -> String {
             if line.len() < 60 && (line.contains("CHAPTER") || line.contains("Contents") || line.contains("Illustration")) {
                 continue;
             }
+            // Skip TOC-like lines (dense chapter/letter listings)
+            if is_toc_paragraph(line) {
+                continue;
+            }
             // First substantial line of prose — this is where the book starts
             if line.len() > 80 && !line.to_uppercase().eq(&line) {
                 start = i;
@@ -199,6 +220,90 @@ fn strip_gutenberg_boilerplate(content: &str) -> String {
     text.replace("\r\n", "\n")
 }
 
+/// Check if a paragraph is a table-of-contents listing (not real content)
+fn is_toc_paragraph(text: &str) -> bool {
+    let trimmed = text.trim();
+    
+    // "Contents" / "CONTENTS" / "Table of Contents" header
+    if trimmed.eq_ignore_ascii_case("contents")
+        || trimmed.eq_ignore_ascii_case("table of contents")
+        || trimmed.eq_ignore_ascii_case("index of chapters")
+        || trimmed.eq_ignore_ascii_case("index")
+    {
+        return true;
+    }
+    
+    // Single-line TOC: 3+ CHAPTER/Chapter references on one line
+    // e.g. "CHAPTER I. Down the Rabbit-Hole CHAPTER II. The Pool of Tears ..."
+    let chapter_matches = trimmed.match_indices("CHAPTER").count()
+        + trimmed.match_indices("Chapter").count();
+    if chapter_matches >= 3 {
+        return true;
+    }
+    
+    // Dense roman-numeral listing: 5+ roman numerals on one line
+    // e.g. "I. Preface II. In Chancery III. A Progress IV. Telescopic..."
+    let roman_count = trimmed.split_whitespace()
+        .filter(|w| {
+            let cleaned = w.trim_end_matches(|c: char| c == '.' || c == ',' || c == ';' || c == ':');
+            is_roman_numeral(cleaned)
+        })
+        .count();
+    if roman_count >= 5 {
+        return true;
+    }
+    
+    // Dense numeric listing: 5+ numbers on one line (e.g. "Letter 1 Letter 2 Letter 3...")
+    let numeric_count = trimmed.split_whitespace()
+        .filter(|w| {
+            let cleaned = w.trim_end_matches(|c: char| c == '.' || c == ',' || c == ';' || c == ':');
+            cleaned.parse::<u32>().is_ok()
+        })
+        .count();
+    if numeric_count >= 5 {
+        return true;
+    }
+    
+    // "Chapter I. Chapter II. Chapter III." pattern (no CHAPTER keyword, just Chapter)
+    let chapter_word_count = trimmed.match_indices("Chapter ").count();
+    if chapter_word_count >= 5 {
+        return true;
+    }
+    
+    // "Letter 1 Letter 2 Letter 3 Letter 4" pattern (Frankenstein)
+    let letter_count = trimmed.match_indices("Letter ").count();
+    if letter_count >= 4 {
+        return true;
+    }
+    
+    // Individual TOC entry: short line starting with numeral + period
+    // e.g. "I. In Chancery", "1. Introduction", "XII. Alice's Evidence"
+    if trimmed.len() < 120 {
+        if let Some(first_word) = trimmed.split_whitespace().next() {
+            let cleaned = first_word.trim_end_matches(|c: char| c == '.' || c == ',' || c == ';' || c == ':');
+            if is_roman_numeral(cleaned) || cleaned.parse::<u32>().is_ok() {
+                // Rest of line is short and title-like (not prose)
+                let rest: Vec<&str> = trimmed.split_whitespace().skip(1).collect();
+                if rest.len() <= 8 && !trimmed.contains('.') {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // Illustration list: "PAGE" followed by numbers
+    if trimmed.contains("PAGE") && trimmed.contains("Illustration") {
+        return true;
+    }
+    
+    false
+}
+
+fn is_roman_numeral(s: &str) -> bool {
+    if s.is_empty() || s.len() > 5 { return false; }
+    s.chars().all(|c| matches!(c, 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M' | 'i' | 'v' | 'x' | 'l' | 'c' | 'd' | 'm'))
+}
+
 fn chunk_text(text: &str, title: &str, author: &str) -> Vec<String> {
     let prefix = if !title.is_empty() || !author.is_empty() {
         format!("Title: {} Author: {}", title, author)
@@ -206,15 +311,88 @@ fn chunk_text(text: &str, title: &str, author: &str) -> Vec<String> {
         String::new()
     };
     
-    let paragraphs: Vec<&str> = text.split("\n\n")
+    // Smart paragraph splitting: \n\n is the primary delimiter, but also split on
+    // single \n when it separates distinct paragraphs (short header → long prose, etc.)
+    let raw_paras: Vec<&str> = text.split("\n\n")
         .map(|p| p.trim())
         .filter(|p| !p.is_empty())
         .collect();
     
+    // Further split large paragraphs on single newlines when they look like
+    // paragraph breaks (line ends with sentence punctuation, next line is substantial)
+    let mut paragraphs: Vec<String> = Vec::new();
+    for para in raw_paras {
+        if para.len() <= CHUNK_SIZE {
+            paragraphs.push(para.to_string());
+        } else {
+            // Large paragraph — try splitting on single newlines
+            let lines: Vec<&str> = para.lines().collect();
+            let mut sub_para = String::new();
+            for (_i, line) in lines.iter().enumerate() {
+                let line = line.trim();
+                if line.is_empty() {
+                    if !sub_para.is_empty() {
+                        paragraphs.push(sub_para.clone());
+                        sub_para.clear();
+                    }
+                    continue;
+                }
+                
+                // Check if this line starts a new paragraph:
+                // - Previous line ended with sentence punctuation
+                // - This line starts with capital letter or quote
+                // - Previous accumulated text is substantial
+                if !sub_para.is_empty() && sub_para.len() > 100 {
+                    let prev_ends = sub_para.trim_end().ends_with('.')
+                        || sub_para.trim_end().ends_with('!')
+                        || sub_para.trim_end().ends_with('?')
+                        || sub_para.trim_end().ends_with('"')
+                        || sub_para.trim_end().ends_with(')')
+                        || sub_para.trim_end().ends_with(':');
+                    let cur_starts = line.starts_with(|c: char| c.is_uppercase())
+                        || line.starts_with('"')
+                        || line.starts_with('\'')
+                        || line.starts_with('(');
+                    
+                    // Also split on chapter/section headers
+                    let is_header = line.starts_with("CHAPTER")
+                        || line.starts_with("Chapter")
+                        || line.starts_with("Letter ")
+                        || line.starts_with("VOLUME")
+                        || line.starts_with("Volume")
+                        || line.starts_with("Book ")
+                        || line.starts_with("Part ")
+                        || (line.len() < 80 && line.ends_with('.')
+                            && line.split_whitespace().next()
+                                .map(|w| is_roman_numeral(w.trim_end_matches('.')))
+                                .unwrap_or(false));
+                    
+                    if (prev_ends && cur_starts) || is_header {
+                        paragraphs.push(sub_para.clone());
+                        sub_para.clear();
+                    }
+                }
+                
+                if !sub_para.is_empty() {
+                    sub_para.push(' ');
+                }
+                sub_para.push_str(line);
+            }
+            if !sub_para.is_empty() {
+                paragraphs.push(sub_para);
+            }
+        }
+    }
+    
     let mut chunks = Vec::new();
     let mut current = String::new();
     
-    for para in paragraphs {
+    for para in &paragraphs {
+        // Skip table-of-contents paragraphs
+        if is_toc_paragraph(para) {
+            continue;
+        }
+        
         if para.len() < 50 && para.chars().filter(|c| c.is_uppercase()).count() > para.len() / 3 {
             continue;
         }
@@ -268,8 +446,9 @@ fn main() {
             
             for file in file_list {
                 if let Ok(content) = std::fs::read_to_string(file.path()) {
+                    // Extract metadata from ORIGINAL content (Title:/Author: lines are in Gutenberg header)
+                    let (title, author) = extract_metadata(&content);
                     let clean = strip_gutenberg_boilerplate(&content);
-                    let (title, author) = extract_metadata(&clean);
                     let chunks = chunk_text(&clean, &title, &author);
                     if !chunks.is_empty() {
                         if !title.is_empty() {

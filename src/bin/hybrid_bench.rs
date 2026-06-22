@@ -7,9 +7,28 @@ use std::time::Instant;
 type KeywordIndex = HashMap<String, Vec<(usize, u32)>>;
 
 fn tokenize(text: &str) -> Vec<String> {
+    // Common English stop words — filter these out to avoid noise in keyword matching
+    let stop_words: &[&str] = &[
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+        "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+        "this", "but", "his", "by", "from", "they", "we", "her", "she", "or",
+        "an", "will", "my", "one", "all", "would", "there", "their", "what",
+        "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+        "when", "make", "can", "like", "time", "no", "just", "him", "know",
+        "take", "people", "into", "year", "your", "good", "some", "could",
+        "them", "see", "other", "than", "then", "now", "look", "only",
+        "come", "its", "over", "think", "also", "back", "after", "use",
+        "two", "how", "our", "work", "first", "well", "way", "even", "new",
+        "want", "because", "any", "these", "give", "day", "most", "us",
+        "is", "was", "are", "been", "were", "has", "had", "did", "said",
+        "each", "every", "very", "own", "may", "much", "such", "many",
+        "more", "being", "does", "made", "used", "got", "went", "came",
+        "shall", "should", "might", "must", "need", "let", "put", "set",
+    ];
+    
     text.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.len() >= 2)
+        .filter(|w| w.len() >= 2 && !stop_words.contains(w))
         .map(|w| w.to_string())
         .collect()
 }
@@ -38,6 +57,7 @@ fn hybrid_query<'a>(
 ) -> Vec<(f32, &'a str)> {
     let query_tokens = tokenize(query_text);
     
+    // Step 1: Find all entry indices that contain at least one query keyword
     let mut candidate_indices: HashMap<usize, u32> = HashMap::new();
     for token in &query_tokens {
         if let Some(entries) = keyword_index.get(token) {
@@ -47,17 +67,12 @@ fn hybrid_query<'a>(
         }
     }
     
-    let hdc_results = store.query(query_embedding, 500.min(store.len()));
-    for (_score, text) in &hdc_results {
-        if let Some(idx) = store.entries.iter().position(|e| e.text.as_str() == *text) {
-            candidate_indices.entry(idx).or_insert(0);
-        }
-    }
-    
     if candidate_indices.is_empty() {
+        // Fallback: pure HDC if no keyword matches
         return store.query(query_embedding, k);
     }
     
+    // Step 2: Score candidates with HDC cosine similarity
     let query_mag: f32 = query_embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
     
     let mut scored: Vec<(f32, usize)> = Vec::with_capacity(candidate_indices.len());
@@ -71,13 +86,11 @@ fn hybrid_query<'a>(
             0.0
         };
         
-        let kw_boost = if kw_count > 0 {
-            (kw_count as f32 / query_tokens.len().max(1) as f32) * 0.3
-        } else {
-            0.0
-        };
+        // Keyword match score: how many query tokens matched, normalized
+        let kw_score = kw_count as f32 / query_tokens.len().max(1) as f32;
         
-        let fused = hdc_score + kw_boost;
+        // Fuse: keyword-dominant with HDC tie-breaking
+        let fused = kw_score * 0.7 + hdc_score * 0.3;
         scored.push((fused, idx));
     }
     
@@ -91,9 +104,17 @@ fn hybrid_query<'a>(
 
 /// Ask Ollama to synthesize an answer from retrieved passages
 fn synthesize_answer(client: &reqwest::blocking::Client, question: &str, passages: &[&str]) -> String {
-    let mut prompt = format!("Based on these passages from books, answer the question in one short sentence.\n\nPassages:\n");
+    let mut prompt = format!(
+        "You are answering questions about classic literature. \
+        Use the passages below when they help. If they don't contain the answer, \
+        use your own knowledge. Answer in one short sentence.\n\nPassages:\n"
+    );
     for (i, p) in passages.iter().enumerate() {
-        let truncated = if p.len() > 500 { &p[..500] } else { p };
+        let truncated = {
+            let mut cutoff = p.len().min(500);
+            while !p.is_char_boundary(cutoff) { cutoff -= 1; }
+            &p[..cutoff]
+        };
         prompt.push_str(&format!("{}. {}\n", i + 1, truncated));
     }
     prompt.push_str(&format!("\nQuestion: {}\nAnswer:", question));
@@ -200,10 +221,17 @@ fn main() {
                     println!("   Retrieval: {} | Synthesis: {}", 
                         if retrieval_found { "✓" } else { "✗" },
                         if synthesis_found { "✓" } else { "✗" });
-                    println!("   Answer: {}", &answer[..answer.len().min(150)]);
+                    println!("   Answer: {}", {
+                        let mut cutoff = answer.len().min(150);
+                        while !answer.is_char_boundary(cutoff) { cutoff -= 1; }
+                        &answer[..cutoff]
+                    });
                     println!("   Top passage: {}", 
-                        results.first().map(|(_, t)| &t[..t.len().min(100)])
-                            .unwrap_or("(none)"));
+                        results.first().map(|(_, t)| {
+                            let mut cutoff = t.len().min(100);
+                            while !t.is_char_boundary(cutoff) { cutoff -= 1; }
+                            &t[..cutoff]
+                        }).unwrap_or("(none)"));
                     println!("   Time: {}ms retrieval + {}ms synthesis\n", retrieval_ms, synthesis_ms);
                 }
             }
