@@ -54,7 +54,7 @@ for _ in range(200):
 
 # ─── Phase 2: Domain sentences from curricula ───
 domain_sentences = []
-curricula_dir = "/Users/cwolff/sage/curricula"
+curricula_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "curricula")
 for f in sorted(os.listdir(curricula_dir)):
     if f.endswith(".json"):
         with open(os.path.join(curricula_dir, f)) as fp:
@@ -95,7 +95,7 @@ all_text.extend(conversations)
 random.shuffle(all_text)
 
 corpus = "\n".join(all_text)
-with open("/tmp/sage_language_curriculum.txt", "w") as fp:
+with open("/tmp/react_corpus.txt", "w") as fp:
     fp.write(corpus)
 
 print(f"Language curriculum: {len(all_text)} lines, {len(corpus)} chars")

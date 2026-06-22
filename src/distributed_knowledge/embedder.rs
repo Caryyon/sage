@@ -72,6 +72,13 @@ pub fn embed_text_f64(text: &str) -> Option<Vec<f64>> {
     embed_text(text).map(|v| v.into_iter().map(|x| x as f64).collect())
 }
 
+/// Embed multiple texts in a batch and convert to f64
+pub fn embed_batch_f64(texts: &[&str]) -> Option<Vec<Vec<f64>>> {
+    embed_batch(texts).map(|embeddings| {
+        embeddings.into_iter().map(|emb| emb.into_iter().map(|x| x as f64).collect()).collect()
+    })
+}
+
 /// Get the embedding dimension
 pub fn dimension() -> usize {
     EMBED_DIM

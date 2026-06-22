@@ -66,7 +66,10 @@ impl EmbeddingEngine {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| format!("tokenizer load error: {}", e))?;
 
-        let device = Device::Cpu;
+        let device = Device::new_cuda(0).unwrap_or_else(|e| {
+            eprintln!("⚠️  CUDA unavailable ({}), falling back to CPU for embeddings", e);
+            Device::Cpu
+        });
         let vb =
             unsafe { VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &device)? };
         let model = BertModel::load(vb, &config)?;

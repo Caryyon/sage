@@ -23,9 +23,9 @@ dotenvy = "0.15"
 ctrlc = "3.4"
 
 # Candle ML framework for local inference
-candle-core = "0.8"
-candle-nn = "0.8"
-candle-transformers = "0.8"
+candle-core = { version = "0.8", features = ["cuda"] }
+candle-nn = { version = "0.8", features = ["cuda"] }
+candle-transformers = { version = "0.8", features = ["cuda"] }
 hf-hub = "0.4"
 tokenizers = "0.20"
 regex = "1.12.2"
@@ -115,6 +115,90 @@ name = "sage-specialist"
 path = "src/bin/sage_specialist.rs"
 
 [[bin]]
+name = "sage-discover"
+path = "src/bin/sage_discover.rs"
+
+[[bin]]
+name = "sage-autolearn"
+path = "src/bin/sage_autolearn.rs"
+
+[[bin]]
+name = "sage-offline-qa"
+path = "src/bin/sage_offline_qa.rs"
+
+[[bin]]
+name = "test-encoder"
+path = "src/bin/test_encoder.rs"
+
+[[bin]]
+name = "test-brain-cells"
+path = "src/bin/test_brain_cells.rs"
+
+[[bin]]
+name = "test-reencode"
+path = "src/bin/test_reencode.rs"
+
+[[bin]]
+name = "clear-brain"
+path = "src/bin/clear_brain.rs"
+
+[[bin]]
+name = "curated-brain"
+path = "src/bin/curated_brain.rs"
+
+[[bin]]
+name = "sage-hdc-brain"
+path = "src/bin/sage_hdc_brain.rs"
+
+[[bin]]
+name = "hybrid-bench"
+path = "src/bin/hybrid_bench.rs"
+
+[[bin]]
+name = "hdc-check"
+path = "src/bin/hdc_check.rs"
+
+[[bin]]
+name = "sage-rebuild-brain"
+path = "src/bin/sage_rebuild_brain.rs"
+
+[[bin]]
+name = "sage-dashboard"
+path = "src/bin/sage_dashboard.rs"
+
+[[bin]]
+name = "sage-diag"
+path = "src/bin/sage_diag.rs"
+
+[[bin]]
+name = "sage-learn"
+path = "src/bin/sage_learn.rs"
+
+[[bin]]
+name = "sage-predict"
+path = "src/bin/sage_predict.rs"
+
+[[bin]]
+name = "sage-brain-train"
+path = "src/bin/sage_brain_train.rs"
+
+[[bin]]
+name = "nca-binary-demo"
+path = "src/bin/nca_binary_demo.rs"
+
+[[bin]]
+name = "nca-lm-train"
+path = "src/bin/nca_lm_train.rs"
+
+[[bin]]
+name = "gpu-train"
+path = "src/bin/gpu_train.rs"
+
+[[bin]]
+name = "sage-tui"
+path = "src/bin/sage_tui.rs"
+
+[[bin]]
 name = "miniworld_server"
 path = "src/bin/miniworld_server.rs"
 
@@ -125,6 +209,9 @@ tempfile = "3.10"
 
 [[bench]]
 name = "knowledge_bench"
+
+[[bench]]
+name = "grid_vs_flat_bench"
 harness = false
 
 [[test]]
@@ -230,3 +317,23 @@ path = "src/bin/nca_prod.rs"
 [[bin]]
 name = "benchmark"
 path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "sage-debug-save"
+path = "src/bin/sage_debug_save.rs"
+
+[[bin]]
+name = "test-embed"
+path = "src/bin/test_embed.rs"
+
+[[bin]]
+name = "test-retrieve"
+path = "src/bin/test_retrieve.rs"
+
+[[bin]]
+name = "test-cosine"
+path = "src/bin/test_cosine.rs"
+
+[[bin]]
+name = "test-positions"
+path = "src/bin/test_positions.rs"

@@ -92,9 +92,11 @@ proptest! {
 
         // REGRESSION: freerun used to silently modify knowledge channels,
         // causing attend_with_delta to always return 0% hit rate
+        // snapshot_knowledge_channels captures 6 slots
+        let n_slots = 6;
         for y in 0..64 {
             for x in 0..64 {
-                for slot in 0..NUM_EMBED_SLOTS {
+                for slot in 0..n_slots {
                     prop_assert_eq!(
                         before[y][x][slot], after[y][x][slot],
                         "freerun modified knowledge channel {} at ({},{})", slot, x, y
@@ -138,12 +140,14 @@ proptest! {
         let _ = write_knowledge(&mut grid2, &features, 0.9, 0.5, &config);
 
         // Both grids should have identical knowledge channel state
+        // snapshot_knowledge_channels captures 6 slots (KNOWLEDGE_CHANNELS_START + 0..5)
         let snap1 = grid1.snapshot_knowledge_channels();
         let snap2 = grid2.snapshot_knowledge_channels();
+        let n_slots = 6; // snapshot captures 6 slots
 
         for y in 0..64 {
             for x in 0..64 {
-                for slot in 0..NUM_EMBED_SLOTS {
+                for slot in 0..n_slots {
                     prop_assert_eq!(snap1[y][x][slot], snap2[y][x][slot],
                         "encoding not deterministic at ({},{}) slot {}", x, y, slot);
                 }

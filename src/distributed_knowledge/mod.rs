@@ -13,6 +13,7 @@
 //! - Channels 36-37: Metadata (legacy timestamp + confidence)
 
 pub mod attention_decoder;
+pub mod brain_processor;
 pub mod decoder;
 pub mod embedder;
 pub mod encoder;
@@ -143,7 +144,7 @@ impl RetrievalStats {
 /// v1: raw grid, no header
 /// v2: BrainHeader + grid (basic versioning)
 /// v3: channel partitioning (24 shared + 8 private)
-pub const BRAIN_VERSION: u32 = 3;
+pub const BRAIN_VERSION: u32 = 4;
 /// Magic bytes identifying a SAGE brain file.
 pub const BRAIN_MAGIC: [u8; 4] = *b"SAGE";
 
@@ -274,8 +275,7 @@ pub struct GridDelta {
 pub struct CellDelta {
     pub x: usize,
     pub y: usize,
-    /// Values for knowledge channels (26-33) + comm channels (34-35) = 10 total
-    pub values: [f64; 10],
+    pub values: Vec<f64>,
 }
 
 /// NCA-based knowledge store implementation
@@ -421,8 +421,9 @@ impl KnowledgeStore for NCAKnowledge {
         let mut changes = Vec::new();
         let threshold = 0.01;
 
-        // channels: all NUM_KNOWLEDGE_CHANNELS knowledge + 2 comm = 10
-        let mut channels = [0usize; 10];
+        // channels: all NUM_KNOWLEDGE_CHANNELS knowledge + 2 comm
+        let total_ch = NUM_KNOWLEDGE_CHANNELS + 2;
+        let mut channels = vec![0usize; total_ch];
         for (i, ch) in channels.iter_mut().enumerate().take(NUM_KNOWLEDGE_CHANNELS) {
             *ch = KNOWLEDGE_CHANNELS_START + i;
         }
@@ -432,7 +433,7 @@ impl KnowledgeStore for NCAKnowledge {
         for y in 0..self.grid.height.min(other.height) {
             for x in 0..self.grid.width.min(other.width) {
                 let mut has_diff = false;
-                let mut values = [0.0f64; 10];
+                let mut values = vec![0.0f64; total_ch];
                 for (i, &ch) in channels.iter().enumerate() {
                     let diff = self.grid.cells[y][x][ch] - other.cells[y][x][ch];
                     if diff.abs() > threshold {
@@ -455,7 +456,8 @@ impl KnowledgeStore for NCAKnowledge {
     }
 
     fn apply_delta(&mut self, delta: &GridDelta) {
-        let mut channels = [0usize; 10];
+        let total_ch = NUM_KNOWLEDGE_CHANNELS + 2;
+        let mut channels = vec![0usize; total_ch];
         for (i, ch) in channels.iter_mut().enumerate().take(NUM_KNOWLEDGE_CHANNELS) {
             *ch = KNOWLEDGE_CHANNELS_START + i;
         }
@@ -508,13 +510,56 @@ impl KnowledgeStore for NCAKnowledge {
         let mut data = Vec::with_capacity(header_data.len() + grid_data.len());
         data.extend_from_slice(&header_data);
         data.extend_from_slice(&grid_data);
-        std::fs::write(path, &data).map_err(|e| format!("Write error: {}", e))?;
 
-        // Save text store alongside brain
+        // ── ATOMIC SAVE WITH VERIFICATION ──────────────────────────────
+        // Write to temp file, verify it loads correctly, then rename.
+        // This prevents the "load fails → creates empty brain → overwrites
+        // good file with garbage" cycle that has been corrupting the brain.
+        let tmp_path = format!("{}.tmp", path);
+        std::fs::write(&tmp_path, &data).map_err(|e| format!("Write error: {}", e))?;
+
+        // Verify: can we load what we just wrote?
+        let mut verify = NCAKnowledge::new();
+        match verify.load(&tmp_path) {
+            Ok(()) => {
+                let alive = verify.grid.alive_count();
+                let entries = verify.text_store.len();
+                let self_alive = self.grid.alive_count();
+                if alive == 0 && self_alive > 0 {
+                    // Temp file loaded but grid is empty — serialization is broken!
+                    // Do NOT overwrite the existing file.
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return Err(format!(
+                        "SAVE REFUSED: temp file loaded with 0 alive cells but in-memory grid has {} alive. Serialization is corrupting data.",
+                        self_alive
+                    ));
+                }
+                if alive != self_alive {
+                    // Grid didn't round-trip correctly
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return Err(format!(
+                        "SAVE REFUSED: temp file has {} alive cells but in-memory grid has {}. Round-trip mismatch.",
+                        alive, self_alive
+                    ));
+                }
+                // Verification passed — atomically rename temp to real path
+                std::fs::rename(&tmp_path, path)
+                    .map_err(|e| format!("Atomic rename error: {}", e))?;
+            }
+            Err(e) => {
+                // Temp file can't be loaded — don't overwrite existing
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(format!("SAVE REFUSED: temp file failed verification: {}", e));
+            }
+        }
+
+        // Save text store alongside brain (also atomic)
         let text_store_path = text_store_path_for(path);
+        let ts_tmp = format!("{}.tmp", text_store_path);
         self.text_store
-            .save(&text_store_path)
+            .save(&ts_tmp)
             .unwrap_or_else(|e| eprintln!("Warning: failed to save text store: {}", e));
+        let _ = std::fs::rename(&ts_tmp, &text_store_path);
 
         Ok(())
     }
@@ -539,10 +584,13 @@ impl KnowledgeStore for NCAKnowledge {
                     };
 
                     if grid_channels != NUM_CHANNELS {
-                        return Err(format!(
-                            "Channel count mismatch: brain has {} channels, expected {}",
+                        eprintln!(
+                            "⚠️ Channel count changed ({} → {}). Brain needs re-encoding. Old brain will be replaced.",
                             grid_channels, NUM_CHANNELS
-                        ));
+                        );
+                        // Don't error — just return Ok with the fresh (empty) brain
+                        // The caller will re-encode knowledge into it
+                        return Ok(());
                     }
 
                     if header.version < BRAIN_VERSION
@@ -585,10 +633,11 @@ impl KnowledgeStore for NCAKnowledge {
         };
 
         if grid_channels != NUM_CHANNELS {
-            return Err(format!(
-                "Channel count mismatch: brain has {} channels, expected {}",
+            eprintln!(
+                "⚠️ Legacy brain channel count changed ({} → {}). Brain needs re-encoding.",
                 grid_channels, NUM_CHANNELS
-            ));
+            );
+            return Ok(());
         }
 
         if grid.width != self.grid.width || grid.height != self.grid.height {

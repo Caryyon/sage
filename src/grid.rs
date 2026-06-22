@@ -116,7 +116,7 @@ pub const NUM_BASE_CHANNELS: usize = 16; // 4 RGBA + 12 hidden
 pub const NUM_PATTERN_CHANNELS: usize = 4; // One-hot encoding for 4 patterns
 pub const NUM_ENV_CHANNELS: usize = 2; // Food (attract) and Toxin (repel)
 pub const NUM_MEMORY_CHANNELS: usize = 4; // Memory-augmented cell channels
-pub const NUM_KNOWLEDGE_CHANNELS: usize = 8; // Knowledge storage channels (6 embedding + activation + confidence)
+pub const NUM_KNOWLEDGE_CHANNELS: usize = 50; // Knowledge storage channels (48 embedding + activation + confidence)
 pub const NUM_COMM_CHANNELS: usize = 2; // Cross-node communication channels
 pub const NUM_META_CHANNELS: usize = 2; // Metadata channels (timestamp, legacy confidence alias)
 pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS
@@ -125,7 +125,7 @@ pub const NUM_CHANNELS: usize = NUM_BASE_CHANNELS
     + NUM_MEMORY_CHANNELS
     + NUM_KNOWLEDGE_CHANNELS
     + NUM_COMM_CHANNELS
-    + NUM_META_CHANNELS; // 38 total
+    + NUM_META_CHANNELS; // 80 total (16 base + 4 pattern + 2 env + 4 mem + 50 knowledge + 2 comm + 2 meta)
 
 /// Get a human-readable label for a channel index.
 pub fn channel_label(ch: usize) -> &'static str {
@@ -163,10 +163,10 @@ pub fn channel_label(ch: usize) -> &'static str {
 
 // ── Channel Partitioning (shared vs private) ───────────────────────────────
 // For p2p knowledge sharing: shared channels sync via gossip, private stay local.
-// Layout: channels 0..35 are shared (synced across nodes), channels 36..37 are private.
-pub const NUM_SHARED_CHANNELS: usize = 36;
+// Layout: channels 0..77 are shared (synced across nodes), channels 78..79 are private (metadata).
+pub const NUM_SHARED_CHANNELS: usize = 78;
 pub const NUM_PRIVATE_CHANNELS: usize = 2;
-pub const PRIVATE_CHANNELS_START: usize = NUM_SHARED_CHANNELS; // Channel 36
+pub const PRIVATE_CHANNELS_START: usize = NUM_SHARED_CHANNELS; // Channel 78
 
 /// Returns true if the given channel index is shared (synced via gossip).
 #[inline]
@@ -195,19 +195,15 @@ pub const MEMORY_RECENCY: usize = MEMORY_CHANNELS_START + 3; // Recency/novelty 
 // Knowledge channel indices (channels 26-33)
 // Layout: 6 embedding slots + activation + confidence
 pub const KNOWLEDGE_CHANNELS_START: usize = MEMORY_CHANNELS_START + NUM_MEMORY_CHANNELS; // Channel 26
-pub const KNOWLEDGE_EMBEDDING_0: usize = KNOWLEDGE_CHANNELS_START; // Embedding slot 0
-pub const KNOWLEDGE_EMBEDDING_1: usize = KNOWLEDGE_CHANNELS_START + 1; // Embedding slot 1
-pub const KNOWLEDGE_EMBEDDING_2: usize = KNOWLEDGE_CHANNELS_START + 2; // Embedding slot 2
-pub const KNOWLEDGE_EMBEDDING_3: usize = KNOWLEDGE_CHANNELS_START + 3; // Embedding slot 3
-pub const KNOWLEDGE_EMBEDDING_4: usize = KNOWLEDGE_CHANNELS_START + 4; // Embedding slot 4
-pub const KNOWLEDGE_EMBEDDING_5: usize = KNOWLEDGE_CHANNELS_START + 5; // Embedding slot 5
-pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 6; // Knowledge activation strength
-pub const KNOWLEDGE_CONFIDENCE: usize = KNOWLEDGE_CHANNELS_START + 7; // Confidence score (0-1)
+// Embedding slots 0..47 (channels KNOWLEDGE_CHANNELS_START..KNOWLEDGE_CHANNELS_START+47)
+pub const KNOWLEDGE_ACTIVATION: usize = KNOWLEDGE_CHANNELS_START + 48; // Knowledge activation strength
+pub const KNOWLEDGE_CONFIDENCE: usize = KNOWLEDGE_CHANNELS_START + 49; // Confidence score (0-1)
 
-// Backward-compat aliases (KNOWLEDGE_EMBEDDING points to slot 0; META_* point into knowledge)
-pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_EMBEDDING_0;
+// Backward-compat aliases
+pub const KNOWLEDGE_EMBEDDING: usize = KNOWLEDGE_CHANNELS_START; // Slot 0
+pub const KNOWLEDGE_EMBEDDING_0: usize = KNOWLEDGE_CHANNELS_START;
 pub const META_CONFIDENCE: usize = KNOWLEDGE_CONFIDENCE;
-pub const META_TIMESTAMP: usize = KNOWLEDGE_EMBEDDING_5; // Slot 5 doubles as timestamp when not embedding
+pub const META_TIMESTAMP: usize = KNOWLEDGE_CHANNELS_START + 47; // Last slot doubles as timestamp
 
 // Communication channel indices (channels 34-35)
 pub const COMM_CHANNELS_START: usize = KNOWLEDGE_CHANNELS_START + NUM_KNOWLEDGE_CHANNELS; // Channel 34
@@ -324,12 +320,12 @@ impl Grid {
             .sum()
     }
 
-    /// Count alive cells
+    /// Count alive cells (base NCA or knowledge-active)
     pub fn alive_count(&self) -> usize {
         self.cells
             .iter()
             .flatten()
-            .filter(|cell| cell[3] > 0.1)
+            .filter(|cell| cell[3] > 0.1 || cell[KNOWLEDGE_ACTIVATION] > 0.1)
             .count()
     }
 
@@ -947,7 +943,7 @@ mod tests {
 
     #[test]
     fn test_channel_counts() {
-        assert_eq!(NUM_CHANNELS, 38, "Total channels should be 38");
+        assert_eq!(NUM_CHANNELS, 80, "Total channels should be 80 (16 base + 4 pattern + 2 env + 4 mem + 50 knowledge + 2 comm + 2 meta)");
         assert_eq!(
             NUM_SHARED_CHANNELS + NUM_PRIVATE_CHANNELS,
             NUM_CHANNELS,

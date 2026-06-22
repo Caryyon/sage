@@ -35,7 +35,12 @@ impl EmbeddedLLM {
     /// Create a new embedded LLM, downloading the model if needed.
     /// `model_path`: Optional path to a GGUF file. If None, downloads default.
     pub fn new(model_path: Option<PathBuf>) -> Result<Self, Box<dyn Error>> {
-        let device = Device::Cpu;
+        let device = Device::new_cuda(0).unwrap_or_else(|e| {
+            eprintln!("⚠️  CUDA unavailable ({}), falling back to CPU", e);
+            Device::Cpu
+        });
+
+        eprintln!("🖥️  Device: {:?}", device);
 
         let (model_file, tokenizer_file) = if let Some(path) = model_path {
             // User-provided model path — look for tokenizer.json next to it
