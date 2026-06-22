@@ -102,16 +102,50 @@ fn hybrid_query<'a>(
         .collect()
 }
 
-/// Ask Ollama to synthesize an answer from retrieved passages
+/// Ask Ollama to synthesize an answer from retrieved passages.
+/// Each passage is prefixed with "Title: <book> Author: <author>" — use this to
+/// identify which book the passage comes from. If a passage from the wrong book
+/// happens to mention the keyword (e.g. "Prince Andrew" in War and Peace when
+/// asked about The Prince), ignore it and use your own knowledge instead.
 fn synthesize_answer(client: &reqwest::blocking::Client, question: &str, passages: &[&str]) -> String {
-    let mut prompt = format!(
-        "You are answering questions about classic literature. \
-        Use the passages below when they help. If they don't contain the answer, \
-        use your own knowledge. Answer in one short sentence.\n\nPassages:\n"
+    let mut prompt = String::from(
+        "You are answering questions about classic literature.\n\n"
     );
+    prompt.push_str(
+        "IMPORTANT: Each passage starts with \"Title: <book> Author: <author>\".\n"
+    );
+    prompt.push_str(
+        "Check which BOOK the question is about. If a passage is from a DIFFERENT book\n"
+    );
+    prompt.push_str(
+        "(even if it mentions the same word), IGNORE that passage for this question.\n"
+    );
+    prompt.push_str(
+        "If no passage is from the right book, use your own knowledge.\n"
+    );
+    prompt.push_str(
+        "Answer in one short sentence. Be specific — name the person, book, or concept.\n\n"
+    );
+    prompt.push_str(
+        "Example:\n"
+    );
+    prompt.push_str(
+        "Question: What is the main theme of The Prince?\n"
+    );
+    prompt.push_str(
+        "Passage 1: Title: War and Peace Author: Leo Tolstoy — \"...Prince Andrew told him...\"\n"
+    );
+    prompt.push_str(
+        "Passage 2: Title: The Prince Author: Machiavelli — \"...it is safer to be feared...\"\n"
+    );
+    prompt.push_str(
+        "Answer: The main theme of The Prince is the acquisition and maintenance of political power.\n\n"
+    );
+    prompt.push_str("Now answer this question:\n\n");
+    prompt.push_str("Passages:\n");
     for (i, p) in passages.iter().enumerate() {
         let truncated = {
-            let mut cutoff = p.len().min(500);
+            let mut cutoff = p.len().min(400);
             while !p.is_char_boundary(cutoff) { cutoff -= 1; }
             &p[..cutoff]
         };
