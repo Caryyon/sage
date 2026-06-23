@@ -7,26 +7,30 @@ use serde::{Deserialize, Serialize};
 /// These can be trained via evolution strategy on retrieval quality.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConsolidationParams {
-    /// Per-step decay for inactive cells (default: 0.02)
+    /// Per-step decay for inactive cells (default: 0.01)
+    /// Lower = slower forgetting, better long-term retention.
     pub decay_rate: f64,
-    /// Boost for high-activation cells with active neighbors (default: 0.05)
+    /// Boost for high-activation cells with active neighbors (default: 0.08)
+    /// Higher = stronger Hebbian reinforcement of frequently-used knowledge.
     pub strengthen_rate: f64,
-    /// How much activation spreads to neighbors (default: 0.03)
+    /// How much activation spreads to neighbors (default: 0.04)
+    /// Slightly higher for better associative linking.
     pub spread_rate: f64,
-    /// Confidence increase for stable cells (default: 0.02)
+    /// Confidence increase for stable cells (default: 0.03)
     pub confidence_boost: f64,
-    /// Minimum activation to count as "active" (default: 0.3)
+    /// Minimum activation to count as "active" (default: 0.25)
+    /// Slightly lower to keep more knowledge accessible.
     pub activation_threshold: f64,
 }
 
 impl Default for ConsolidationParams {
     fn default() -> Self {
         Self {
-            decay_rate: 0.02,
-            strengthen_rate: 0.05,
-            spread_rate: 0.03,
-            confidence_boost: 0.02,
-            activation_threshold: 0.3,
+            decay_rate: 0.01,
+            strengthen_rate: 0.08,
+            spread_rate: 0.04,
+            confidence_boost: 0.03,
+            activation_threshold: 0.25,
         }
     }
 }
@@ -749,6 +753,31 @@ impl Grid {
         self.consolidate_knowledge_with_params(steps, &ConsolidationParams::default());
     }
 
+    /// Strengthen a specific knowledge cell after successful retrieval.
+    ///
+    /// This implements spaced repetition: each retrieval boosts activation
+    /// and confidence, making the memory more durable against future decay.
+    /// The boost is proportional to how confident we are the retrieval was
+    /// relevant (relevance score from the decoder).
+    ///
+    /// # Arguments
+    /// * `x`, `y` - Grid position of the retrieved cell
+    /// * `relevance` - How relevant the retrieval was (0.0-1.0)
+    pub fn strengthen_retrieved_cell(&mut self, x: usize, y: usize, relevance: f64) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let r = relevance.clamp(0.0, 1.0);
+        // Boost activation (spaced repetition)
+        let act = &mut self.cells[y][x][KNOWLEDGE_ACTIVATION];
+        *act = (*act + r * 0.15).clamp(0.0, 1.0);
+        // Boost confidence
+        let conf = &mut self.cells[y][x][KNOWLEDGE_CONFIDENCE];
+        *conf = (*conf + r * 0.05).clamp(0.0, 1.0);
+        // Refresh recency
+        self.cells[y][x][MEMORY_RECENCY] = 1.0;
+    }
+
     /// Consolidate knowledge with custom parameters (for ES training).
     ///
     /// Same as `consolidate_knowledge` but with configurable parameters.
@@ -811,9 +840,11 @@ impl Grid {
                     }
 
                     // Rule 1: Decay for inactive cells (not recently accessed)
-                    // High activation resists decay
+                    // Confidence-weighted: high-confidence knowledge decays slower.
+                    // This preserves important facts even when not frequently accessed.
                     if activation < activation_threshold {
-                        let decay = decay_rate * (1.0 - activation);
+                        let confidence_factor = 1.0 - confidence * 0.5; // 0.5x decay at conf=1.0
+                        let decay = decay_rate * (1.0 - activation) * confidence_factor;
                         activation_updates.push((x, y, -decay));
                     } else {
                         // Rule 2: Strengthen active cells with active neighbors (Hebbian)

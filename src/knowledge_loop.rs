@@ -230,6 +230,17 @@ impl KnowledgeLoop {
                 self.knowledge.retrieval_stats.record(&ka_results);
             }
 
+            // Strengthen retrieved cells (spaced repetition: retrieval boosts memory)
+            for r in &attention_results {
+                if r.attention_weight * readout_scale > self.relevance_threshold {
+                    self.knowledge.grid.strengthen_retrieved_cell(
+                        r.position.0,
+                        r.position.1,
+                        r.attention_weight * readout_scale,
+                    );
+                }
+            }
+
             attention_results
                 .into_iter()
                 .filter(|r| {
