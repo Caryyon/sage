@@ -300,7 +300,10 @@ pub fn decode_pattern(
             }
         }
         let score = if count > 0 { sum / count as f64 } else { 0.0 };
-        if score > 0.01 {
+        // Use a very low threshold to filter only truly inactive tokens.
+        // The previous 0.01 threshold was too aggressive — after NCA recall
+        // dynamics, activation values can be small but still meaningful.
+        if score.abs() > 1e-6 {
             token_scores.push((tid, score));
         }
     }

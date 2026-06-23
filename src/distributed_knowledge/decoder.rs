@@ -9,7 +9,7 @@ use super::encoder::{
     LinearProjection, NUM_EMBED_SLOTS,
 };
 use super::text_store::TextStore;
-use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE};
+use crate::grid::{Grid, KNOWLEDGE_ACTIVATION, KNOWLEDGE_CHANNELS_START, KNOWLEDGE_CONFIDENCE, MEMORY_RECENCY};
 use std::sync::OnceLock;
 
 /// Lazily-loaded projection matrix, shared across all decoder calls.
@@ -103,13 +103,10 @@ fn cosine_sim_query_cell(
         &query_features.values
     };
 
-    // Extract the first NUM_EMBED_SLOTS values from the (possibly projected) feature vector
-    let feat_len = values.len().max(1);
-    let mut query_slots = [0.0f64; NUM_EMBED_SLOTS];
-    for (i, slot) in query_slots.iter_mut().enumerate() {
-        let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
-        *slot = values[feat_idx];
-    }
+    // Project query features to slots using the same Johnson-Lindenstrauss
+    // random projection as the encoder. This replaces the old strided sampling
+    // which lost 87.5% of information for 384-dim fastembed embeddings.
+    let query_slots = super::encoder::project_to_slots(values);
 
     let dot: f64 = query_slots
         .iter()
@@ -260,18 +257,24 @@ pub fn query_knowledge_by_features_with_text(
             let cos_sim = cosine_sim_query_cell(query_features, &cell_embed, projection);
             let cos_sim_pos = cos_sim.max(0.0);
 
-            // Semantic retrieval: 80% cosine similarity, 10% activation, 10% confidence
-            let relevance = 0.8 * cos_sim_pos + 0.1 * activation + 0.1 * confidence;
+            // Recency boost: recently-encoded knowledge gets a small relevance boost.
+            // MEMORY_RECENCY is set to 1.0 on encode and decays over time.
+            let recency = cell.get(MEMORY_RECENCY).copied().unwrap_or(0.0);
+
+            // Semantic retrieval: 70% cosine similarity, 10% activation, 10% confidence, 10% recency
+            let relevance = 0.7 * cos_sim_pos + 0.1 * activation + 0.1 * confidence + 0.1 * recency;
 
             // Look up original text
             let text = text_store.and_then(|ts| ts.peek(x, y).map(|s| s.to_string()));
 
-            // Skip cells with no text — they're useless for retrieval
-            if text.is_none() {
+            // When a text_store is provided, skip cells with no text — they're
+            // useless for text-based retrieval. When no text_store is provided
+            // (e.g. raw grid queries), return all active cells with relevance.
+            if text_store.is_some() && text.is_none() {
                 continue;
             }
 
-            // Deduplicate by text content
+            // Deduplicate by text content (only when text is present)
             if let Some(ref t) = text {
                 if seen_texts.contains(t) {
                     continue;
@@ -327,14 +330,13 @@ pub fn decode_region(
             let dist = ((dx * dx + dy * dy) as f64).sqrt();
             let weight = activation / (1.0 + dist);
 
-            // Use the same strided projection as the encoder:
-            //   encoder: slot i → feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len
-            // The previous code used a spatial position offset and only read slot 0,
-            // breaking cosine similarity between encoded and decoded feature vectors.
-            for slot in 0..NUM_EMBED_SLOTS {
-                let feat_idx = (slot * num_features / NUM_EMBED_SLOTS) % num_features;
-                features.values[feat_idx] +=
-                    grid.cells[ny][nx][KNOWLEDGE_CHANNELS_START + slot] * weight;
+            // Use the transpose of the Johnson-Lindenstrauss projection
+            // to map slots back to feature space. This is the pseudo-inverse
+            // for a random matrix and gives the best linear estimate.
+            let cell_slots = cell_embedding_vec(grid, ny, nx);
+            let reconstructed = super::encoder::project_from_slots(&cell_slots, num_features);
+            for (j, val) in reconstructed.iter().enumerate() {
+                features.values[j] += val * weight;
             }
             total_weight += weight;
         }

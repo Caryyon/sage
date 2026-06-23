@@ -784,7 +784,8 @@ impl Grid {
 
                     // Count active neighbors (Hebbian: co-activated cells strengthen together)
                     let mut active_neighbors = 0usize;
-                    let mut neighbor_embedding_sum: [f64; 6] = [0.0; 6];
+                    // 48 embedding slots (channels KNOWLEDGE_CHANNELS_START..+48)
+                    let mut neighbor_embedding_sum: [f64; 48] = [0.0; 48];
                     let mut neighbor_count = 0usize;
 
                     for dy in -1i32..=1 {
@@ -1186,7 +1187,7 @@ mod tests {
     fn test_consolidation_survives_persistence() {
         use crate::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 
-        let path = "/tmp/sage_test_consolidation_persistence.bin";
+        let path = "/tmp/sage_test_consolidation_brain.bin";
         let _ = std::fs::remove_file(path);
 
         let mut knowledge = NCAKnowledge::new();
@@ -1203,10 +1204,19 @@ mod tests {
 
         // Load into fresh instance
         let mut loaded = NCAKnowledge::new();
+        loaded.config.ollama_url = None; // Match original config
         loaded.load(path).expect("Load should succeed");
 
         // Query should still find the knowledge
         let results = loaded.query("Rust ownership", 5);
+        eprintln!(
+            "test_consolidation: {} results, active_cells: {}",
+            results.len(),
+            loaded.grid.cells.iter().flatten().filter(|c| c[KNOWLEDGE_ACTIVATION] > 0.01).count()
+        );
+        if !results.is_empty() {
+            eprintln!("  top result: relevance={:.4} text={:?}", results[0].relevance, results[0].text);
+        }
         assert!(
             !results.is_empty(),
             "Knowledge should survive consolidation + save/load"

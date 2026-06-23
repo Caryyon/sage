@@ -683,6 +683,79 @@ pub const NUM_EMBED_SLOTS: usize = 48;
 /// When exceeded, `write_knowledge` probes secondary hash positions.
 const COLLISION_THRESHOLD: f64 = 0.5;
 
+// ── Johnson-Lindenstrauss Slot Projection ─────────────────────────────────
+/// A fixed random projection matrix for mapping full-dim feature vectors
+/// to NUM_EMBED_SLOTS dimensions. Based on the Johnson-Lindenstrauss lemma:
+/// a random projection to O(log n / ε²) dimensions preserves pairwise
+/// distances within (1±ε) with high probability.
+///
+/// This replaces the old strided sampling (`feat_idx = (slot * feat_len / SLOTS) % feat_len`)
+/// which only kept SLOTS/feat_len fraction of the information (12.5% for 384-dim fastembed).
+/// The random projection ensures every input feature contributes to every slot,
+/// preserving much more of the semantic structure.
+///
+/// The projection is deterministic (seeded by slot+feature index) so encoder
+/// and decoder use the same values without coordination.
+
+/// Compute a single Johnson-Lindenstrauss projection coefficient.
+/// Returns a deterministic Gaussian-like value scaled by 1/√feat_dim.
+#[inline]
+fn proj_coeff(slot: usize, j: usize, feat_dim: usize) -> f64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let scale = 1.0 / (feat_dim as f64).sqrt();
+    let mut hasher = DefaultHasher::new();
+    (slot, j).hash(&mut hasher);
+    let h1 = hasher.finish();
+    let mut hasher2 = DefaultHasher::new();
+    (j, slot, 0xDEADBEEFu64).hash(&mut hasher2);
+    let h2 = hasher2.finish();
+    // Box-Muller transform from two uniforms
+    let u1 = (h1 as f64 / u64::MAX as f64).max(1e-10);
+    let u2 = (h2 as f64 / u64::MAX as f64);
+    let r = (-2.0 * u1.ln()).sqrt();
+    let theta = 2.0 * std::f64::consts::PI * u2;
+    let gauss = r * theta.cos();
+    gauss * scale
+}
+
+/// Project a full-dim feature vector to NUM_EMBED_SLOTS using the random projection.
+/// This is used by both encoder and decoder to ensure consistency.
+pub(crate) fn project_to_slots(features: &[f64]) -> [f64; NUM_EMBED_SLOTS] {
+    let feat_dim = features.len().max(1);
+    let mut slots = [0.0f64; NUM_EMBED_SLOTS];
+    for (i, slot_val) in slots.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (j, &f) in features.iter().enumerate() {
+            sum += proj_coeff(i, j, feat_dim) * f;
+        }
+        *slot_val = sum;
+    }
+    // Normalize slots to unit length for cosine similarity
+    let mag: f64 = slots.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if mag > 1e-10 {
+        for v in &mut slots {
+            *v /= mag;
+        }
+    }
+    slots
+}
+
+/// Inverse-project from NUM_EMBED_SLOTS back to feat_dim (pseudo-inverse via transpose).
+/// This is the best linear estimate given the random projection.
+pub(crate) fn project_from_slots(slots: &[f64; NUM_EMBED_SLOTS], feat_dim: usize) -> Vec<f64> {
+    let mut features = vec![0.0f64; feat_dim];
+    for j in 0..feat_dim {
+        let mut sum = 0.0;
+        for (slot, &slot_val) in slots.iter().enumerate() {
+            sum += proj_coeff(slot, j, feat_dim) * slot_val;
+        }
+        features[j] = sum;
+    }
+    features
+}
+
 /// Write encoded knowledge into the NCA grid's knowledge channels.
 /// Distributes the feature vector across 6 embedding slots per cell.
 ///
@@ -742,14 +815,15 @@ pub fn write_knowledge(
 
             let decay = config.spatial_decay.powf(dist);
 
-            // Write 6 embedding slots: evenly spaced strides through the feature vec
-            for slot in 0..NUM_EMBED_SLOTS {
-                let feat_idx = (slot * feat_len / NUM_EMBED_SLOTS) % feat_len;
-                let embedding_val = features.values[feat_idx];
+            // Write embedding slots: use Johnson-Lindenstrauss random projection
+            // from full feature dim to NUM_EMBED_SLOTS. This preserves much more
+            // semantic information than the old strided sampling.
+            let slots = project_to_slots(&features.values);
+            for (slot, &slot_val) in slots.iter().enumerate() {
                 let ch = KNOWLEDGE_CHANNELS_START + slot;
                 let existing = grid.cells[ny][nx][ch];
                 grid.cells[ny][nx][ch] =
-                    (existing * (1.0 - decay * 0.5) + embedding_val * decay * 0.5).clamp(-1.0, 1.0);
+                    (existing * (1.0 - decay * 0.5) + slot_val * decay * 0.5).clamp(-1.0, 1.0);
             }
 
             // Write activation

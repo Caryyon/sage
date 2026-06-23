@@ -149,13 +149,8 @@ impl AttentionDecoder {
             &query_features.values
         };
 
-        let feat_len = values.len().max(1);
-        let mut slots = [0.0f64; NUM_EMBED_SLOTS];
-        for (i, slot) in slots.iter_mut().enumerate() {
-            let feat_idx = (i * feat_len / NUM_EMBED_SLOTS) % feat_len;
-            *slot = values[feat_idx];
-        }
-        slots
+        // Use Johnson-Lindenstrauss random projection (same as encoder)
+        super::encoder::project_to_slots(values)
     }
 
     /// Compute scaled dot-product attention score between query and a cell's key.

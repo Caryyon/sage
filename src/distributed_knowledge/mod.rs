@@ -373,6 +373,13 @@ impl KnowledgeStore for NCAKnowledge {
         let pos = write_knowledge(&mut self.grid, &features, confidence, ts, &self.config);
         // Store original text for later retrieval
         self.text_store.insert(pos.0, pos.1, text.to_string());
+        // Update recency channel: decay all existing + set new position to 1.0
+        for y in 0..self.grid.height {
+            for x in 0..self.grid.width {
+                self.grid.cells[y][x][crate::grid::MEMORY_RECENCY] *= 0.95;
+            }
+        }
+        self.grid.cells[pos.1][pos.0][crate::grid::MEMORY_RECENCY] = 1.0;
         // Update daily stats counter
         update_daily_stats();
         pos
