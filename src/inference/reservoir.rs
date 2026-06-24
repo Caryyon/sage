@@ -574,7 +574,7 @@ impl RetrievalFeedback {
         Self {
             events: Vec::new(),
             capacity: 500,
-            min_events: 100,
+            min_events: 30, // Lower threshold so feedback learning starts sooner
             finetune_epochs: 5,
             learning_rate: 1e-3,
             rounds_completed: 0,
@@ -900,6 +900,7 @@ mod tests {
     #[test]
     fn test_retrieval_feedback_accumulates_events() {
         let mut feedback = RetrievalFeedback::new(4);
+        feedback.min_events = 100; // Explicit threshold for test
         assert!(!feedback.should_train(), "Should not train with 0 events");
 
         for i in 0..99 {

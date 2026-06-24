@@ -1173,9 +1173,10 @@ mod tests {
         use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
 
         let mut feedback = RetrievalFeedback::new(64);
+        feedback.min_events = 100; // Explicit threshold for test
         let mut readout = BinaryRelevanceReadout::new(64);
 
-        // Record fewer than min_events (default 100)
+        // Record fewer than min_events
         for i in 0..50 {
             feedback.record(vec![i as f64 * 0.01; 64], format!("event {}", i), true);
         }
