@@ -114,11 +114,11 @@ pub struct ConsolidationConfig {
 impl Default for ConsolidationConfig {
     fn default() -> Self {
         Self {
-            num_centroids: 50,
-            neighbors_per_centroid: 20,
-            cluster_threshold: 0.75,
+            num_centroids: 200,
+            neighbors_per_centroid: 15,
+            cluster_threshold: 0.65,
             min_cluster_size: 5,
-            max_clusters: 50,
+            max_clusters: 200,
             consolidation_steps: 3,
             hdc_path: PathBuf::from(crate::hdc::default_hdc_path()),
             brain_path: PathBuf::from(default_brain_path()),
@@ -700,10 +700,10 @@ mod tests {
     #[test]
     fn test_consolidation_config_defaults() {
         let config = ConsolidationConfig::default();
-        assert_eq!(config.num_centroids, 50);
-        assert_eq!(config.cluster_threshold, 0.75);
+        assert_eq!(config.num_centroids, 200);
+        assert_eq!(config.cluster_threshold, 0.65);
         assert_eq!(config.min_cluster_size, 5);
-        assert_eq!(config.max_clusters, 50);
+        assert_eq!(config.max_clusters, 200);
     }
 
     #[test]
