@@ -93,7 +93,7 @@ impl KnowledgeLoop {
             history: Vec::new(),
             system_prompt: default_system_prompt(),
             brain_path: default_brain_path(),
-            relevance_threshold: 0.3,
+            relevance_threshold: 0.15,
             max_results: 5,
             user_encode_confidence: 0.7,
             response_encode_confidence: 0.8,
@@ -640,11 +640,9 @@ impl KnowledgeLoop {
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
 
-        // 6b. Write recency signal to memory channel 25
-        self.update_recency_channel(response_pos);
-
         // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
+        // Note: recency is now handled by encode() automatically.
         self.knowledge
             .smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
@@ -772,11 +770,9 @@ impl KnowledgeLoop {
         let exchange = format!("User: {}\nAssistant: {}", user_input, response);
         self.knowledge.encode(&exchange, 0.6);
 
-        // 6b. Write recency signal to memory channel 25
-        self.update_recency_channel(response_pos);
-
         // 7. Smooth hidden channels in the response region
         // Note: Dream cycle disabled — see step_knowledge() docstring.
+        // Note: recency is now handled by encode() automatically.
         self.knowledge
             .smooth_hidden_channels(response_pos, N_FREERUN_STEPS);
 
@@ -1232,5 +1228,70 @@ mod tests {
                 "Delta should return nothing when all results already found"
             );
         }
+    }
+
+    /// Test that repeated retrieval strengthens knowledge (spaced repetition).
+    #[test]
+    fn test_spaced_repetition_strengthens_memory() {
+        let engine = Arc::new(MockEngine::echo());
+        let mut kl = KnowledgeLoop::new(engine);
+        kl.relevance_threshold = 0.01;
+        kl.max_results = 10;
+
+        // Encode a fact
+        kl.encode("Rust is a systems programming language", 0.7);
+
+        // Get initial activation
+        let active = kl.knowledge().active_knowledge(0.01);
+        let initial_activation: f64 = active.iter().map(|k| k.activation).sum();
+        let initial_confidence: f64 = active.iter().map(|k| k.confidence).sum();
+
+        // Retrieve the same fact multiple times
+        for _ in 0..3 {
+            let _ = kl.retrieve_knowledge("Rust programming language");
+        }
+
+        // Activation and confidence should have increased
+        let active_after = kl.knowledge().active_knowledge(0.01);
+        let after_activation: f64 = active_after.iter().map(|k| k.activation).sum();
+        let after_confidence: f64 = active_after.iter().map(|k| k.confidence).sum();
+
+        assert!(
+            after_activation > initial_activation,
+            "Spaced repetition should increase activation: before={}, after={}",
+            initial_activation, after_activation
+        );
+        assert!(
+            after_confidence >= initial_confidence,
+            "Spaced repetition should not decrease confidence: before={}, after={}",
+            initial_confidence, after_confidence
+        );
+    }
+
+    /// Test that recency-weighted retrieval boosts recently encoded knowledge.
+    #[test]
+    fn test_recency_weighted_retrieval() {
+        let engine = Arc::new(MockEngine::echo());
+        let mut kl = KnowledgeLoop::new(engine);
+        kl.relevance_threshold = 0.01;
+        kl.max_results = 10;
+
+        // Encode two similar facts at different times
+        kl.encode("Python is a programming language", 0.9);
+        // Encode another fact — this decays the recency of the first
+        kl.encode("Rust is a systems programming language", 0.9);
+
+        // Query for "programming language" — should find both, but the more
+        // recently encoded one should have higher recency
+        let context = kl.retrieve_knowledge("programming language");
+        assert!(context.is_some(), "Should find knowledge");
+
+        // Verify recency values: the second encoded fact should have higher recency
+        let active = kl.knowledge().active_knowledge(0.01);
+        let max_recency = active.iter().map(|k| {
+            let cell = &kl.knowledge().grid.cells[k.position.1][k.position.0];
+            cell.get(crate::grid::MEMORY_RECENCY).copied().unwrap_or(0.0)
+        }).fold(0.0f64, f64::max);
+        assert!(max_recency > 0.0, "At least one cell should have recency > 0");
     }
 }

@@ -369,8 +369,8 @@ impl AttentionDecoder {
                 let recency_bonus = self.recency_weight * recency;
 
                 // Gated score: combine raw attention with quadrant relevance
-                // 70% attention, 30% spatial gate
-                let gated_score = 0.7 * (raw_score + recency_bonus) + 0.3 * gate_weight;
+                // 85% attention, 15% spatial gate — gate is a gentle nudge, not a hard filter
+                let gated_score = 0.85 * (raw_score + recency_bonus) + 0.15 * gate_weight;
                 candidates.push((x, y, gated_score, cell_embed, activation));
             }
         }
