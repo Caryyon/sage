@@ -242,6 +242,11 @@ pub fn query_knowledge_by_features_with_text(
     // Track which text snippets we've already seen to deduplicate
     let mut seen_texts = std::collections::HashSet::new();
 
+    // Precompute query hash position for position match boost.
+    // Uses the ORIGINAL (unprojected) query features, since encoding uses
+    // the original features for position hashing, not the projected ones.
+    let (query_pos_x, query_pos_y) = feature_to_position(query_features, grid.width, grid.height);
+
     for y in 0..grid.height {
         for x in 0..grid.width {
             let cell = &grid.cells[y][x];
@@ -257,12 +262,31 @@ pub fn query_knowledge_by_features_with_text(
             let cos_sim = cosine_sim_query_cell(query_features, &cell_embed, projection);
             let cos_sim_pos = cos_sim.max(0.0);
 
+            // Position match boost: if the query's hash position matches this cell's
+            // position, that's a strong signal — the same hash function placed
+            // both here. This is especially important for hash-based (non-semantic)
+            // encoding, where cosine similarity alone isn't discriminative enough
+            // for similar strings (e.g. "item number 9" vs "item number 11").
+            let (qx, qy) = (query_pos_x, query_pos_y);
+            let pos_match = if (x, y) == (qx, qy) { 1.0 } else { 0.0 };
+
             // Recency boost: recently-encoded knowledge gets a small relevance boost.
             // MEMORY_RECENCY is set to 1.0 on encode and decays over time.
             let recency = cell.get(MEMORY_RECENCY).copied().unwrap_or(0.0);
 
-            // Semantic retrieval: 70% cosine similarity, 10% activation, 10% confidence, 10% recency
-            let relevance = 0.7 * cos_sim_pos + 0.1 * activation + 0.1 * confidence + 0.1 * recency;
+            // Retrieval scoring:
+            // - Position match boost applies to ALL modes (semantic + hash).
+            //   The hash position is a fingerprint of the exact input text — if
+            //   the query hashes to the same cell, that's a strong signal.
+            //   This helps discriminate similar strings ("item 9" vs "item 11")
+            //   where cosine similarity alone is too close to distinguish.
+            // - Semantic mode: 55% cosine, 15% position, 10% activation, 10% confidence, 10% recency
+            // - Hash mode: 45% cosine, 25% position, 10% activation, 10% confidence, 10% recency
+            let relevance = if query_features.is_semantic {
+                0.55 * cos_sim_pos + 0.15 * pos_match + 0.1 * activation + 0.1 * confidence + 0.1 * recency
+            } else {
+                0.45 * cos_sim_pos + 0.25 * pos_match + 0.1 * activation + 0.1 * confidence + 0.1 * recency
+            };
 
             // Look up original text
             let text = text_store.and_then(|ts| ts.peek(x, y).map(|s| s.to_string()));
