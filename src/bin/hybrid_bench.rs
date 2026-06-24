@@ -1,4 +1,5 @@
 //! Hybrid Q&A with LLM Synthesis — loads HDC store, retrieves passages, asks Ollama to answer
+use sage::distributed_knowledge::embedder;
 use sage::hdc::{default_hdc_path, HdcStore};
 use std::collections::HashMap;
 use std::path::Path;
@@ -302,70 +303,61 @@ fn main() {
     for (question, expected_keyword) in &questions {
         let q_start = Instant::now();
         
-        // Embed the question
-        let res = client.post("http://localhost:11434/api/embeddings")
-            .json(&serde_json::json!({"model":"nomic-embed-text","prompt":question}))
-            .send();
+        // Embed the question using fastembed (384-dim, no Ollama needed)
+        let q_emb = embedder::embed_text(question);
         
-        match res {
-            Ok(r) if r.status().is_success() => {
-                let resp: serde_json::Value = r.json().unwrap_or_default();
-                if let Some(emb) = resp["embedding"].as_array() {
-                    let q_emb: Vec<f32> = emb.iter()
-                        .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-                        .collect();
-                    
-                    // Hybrid retrieval
-                    let results = hybrid_query(&store, &keyword_index, &q_emb, question, 5);
-                    let retrieval_ms = q_start.elapsed().as_millis();
-                    total_retrieval_ms += retrieval_ms;
-                    
-                    // Check if keyword is in retrieved passages OR if top passage is from the right book
-                    let retrieval_found = results.iter().any(|(_, text): &(f32, &str)| {
-                        text.to_lowercase().contains(&expected_keyword.to_lowercase())
-                    }) || {
-                        // Also count as retrieval hit if the top-ranked passage is from the book the question asks about
-                        if let Some(book_title) = extract_book_from_question(question) {
-                            results.first().map_or(false, |(_, t)| passage_matches_book(t, &book_title))
-                        } else {
-                            false
-                        }
-                    };
-                    
-                    // LLM synthesis
-                    let syn_start = Instant::now();
-                    let passages: Vec<&str> = results.iter().map(|(_, t)| *t).collect();
-                    let answer = synthesize_answer(&client, question, &passages);
-                    let synthesis_ms = syn_start.elapsed().as_millis();
-                    total_synthesis_ms += synthesis_ms;
-                    
-                    // Check if keyword is in synthesized answer
-                    let synthesis_found = answer.to_lowercase().contains(&expected_keyword.to_lowercase());
-                    
-                    if retrieval_found { retrieval_hits += 1; }
-                    if synthesis_found { synthesis_hits += 1; }
-                    
-                    let icon = if synthesis_found { "✅" } else if retrieval_found { "⚠️" } else { "❌" };
-                    println!("{} Q: {}", icon, question);
-                    println!("   Expected: '{}'", expected_keyword);
-                    println!("   Retrieval: {} | Synthesis: {}", 
-                        if retrieval_found { "✓" } else { "✗" },
-                        if synthesis_found { "✓" } else { "✗" });
-                    println!("   Answer: {}", {
-                        let mut cutoff = answer.len().min(150);
-                        while !answer.is_char_boundary(cutoff) { cutoff -= 1; }
-                        &answer[..cutoff]
-                    });
-                    println!("   Top passage: {}", 
-                        results.first().map(|(_, t)| {
-                            let mut cutoff = t.len().min(100);
-                            while !t.is_char_boundary(cutoff) { cutoff -= 1; }
-                            &t[..cutoff]
-                        }).unwrap_or("(none)"));
-                    println!("   Time: {}ms retrieval + {}ms synthesis\n", retrieval_ms, synthesis_ms);
-                }
+        match q_emb {
+            Some(q_emb) => {
+                // Hybrid retrieval
+                let results = hybrid_query(&store, &keyword_index, &q_emb, question, 5);
+                let retrieval_ms = q_start.elapsed().as_millis();
+                total_retrieval_ms += retrieval_ms;
+
+                // Check if keyword is in retrieved passages OR if top passage is from the right book
+                let retrieval_found = results.iter().any(|(_, text): &(f32, &str)| {
+                    text.to_lowercase().contains(&expected_keyword.to_lowercase())
+                }) || {
+                    // Also count as retrieval hit if the top-ranked passage is from the book the question asks about
+                    if let Some(book_title) = extract_book_from_question(question) {
+                        results.first().map_or(false, |(_, t)| passage_matches_book(t, &book_title))
+                    } else {
+                        false
+                    }
+                };
+
+                // LLM synthesis
+                let syn_start = Instant::now();
+                let passages: Vec<&str> = results.iter().map(|(_, t)| *t).collect();
+                let answer = synthesize_answer(&client, question, &passages);
+                let synthesis_ms = syn_start.elapsed().as_millis();
+                total_synthesis_ms += synthesis_ms;
+
+                // Check if keyword is in synthesized answer
+                let synthesis_found = answer.to_lowercase().contains(&expected_keyword.to_lowercase());
+
+                if retrieval_found { retrieval_hits += 1; }
+                if synthesis_found { synthesis_hits += 1; }
+
+                let icon = if synthesis_found { "✅" } else if retrieval_found { "⚠️" } else { "❌" };
+                println!("{} Q: {}", icon, question);
+                println!("   Expected: '{}'", expected_keyword);
+                println!("   Retrieval: {} | Synthesis: {}", 
+                    if retrieval_found { "✓" } else { "✗" },
+                    if synthesis_found { "✓" } else { "✗" });
+                println!("   Answer: {}", {
+                    let mut cutoff = answer.len().min(150);
+                    while !answer.is_char_boundary(cutoff) { cutoff -= 1; }
+                    &answer[..cutoff]
+                });
+                println!("   Top passage: {}", 
+                    results.first().map(|(_, t)| {
+                        let mut cutoff = t.len().min(100);
+                        while !t.is_char_boundary(cutoff) { cutoff -= 1; }
+                        &t[..cutoff]
+                    }).unwrap_or("(none)"));
+                println!("   Time: {}ms retrieval + {}ms synthesis\n", retrieval_ms, synthesis_ms);
             }
-            _ => { println!("❌ Q: {} (embedding failed)\n", question); }
+            None => { println!("❌ Q: {} (embedding failed)\n", question); }
         }
     }
     
@@ -376,5 +368,5 @@ fn main() {
     println!("Synthesis hits: {}/{} ({:.1}%)", synthesis_hits, questions.len(), synthesis_hits as f64 / n * 100.0);
     println!("Mean retrieval time: {:.0}ms", total_retrieval_ms as f64 / n);
     println!("Mean synthesis time: {:.0}ms", total_synthesis_ms as f64 / n);
-    println!("\nThis is SAGE v0.6.0 — HDC retrieval + LLM synthesis. No API keys. Local only.");
+    println!("\nThis is SAGE v0.6.0 — fastembed (384-dim) + HDC retrieval + LLM synthesis. No API keys. Local only.");
 }

@@ -3,13 +3,14 @@
 //! Hybrid retrieval: HDC semantic search + keyword filtering.
 //! The answer IS in the store — we just need the right retrieval mechanism.
 
+use sage::distributed_knowledge::embedder;
 use sage::hdc::{default_hdc_path, HdcStore};
 use std::collections::HashMap;
 use std::time::Instant;
 
 const CHUNK_SIZE: usize = 800;
 const OVERLAP: usize = 200;
-const BATCH_SIZE: usize = 50;
+const BATCH_SIZE: usize = 200;
 const MIN_CHUNK_LEN: usize = 200;
 
 // ── Keyword Index ──
@@ -472,13 +473,9 @@ fn main() {
     let unique_words = keyword_index.len();
     println!("  {} unique words indexed in {:.1}s", unique_words, kw_start.elapsed().as_secs_f64());
 
-    // Create HDC store
-    let mut store = HdcStore::new(768);
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap();
+    // Create HDC store using fastembed (384-dim, no Ollama needed)
+    let mut store = HdcStore::new(embedder::EMBED_DIM);
+    println!("Using {} ({}-dim) for embeddings", embedder::model_name(), embedder::dimension());
 
     let start = Instant::now();
     let mut encoded = 0;
@@ -487,27 +484,17 @@ fn main() {
         let batch_end = (batch_start + BATCH_SIZE).min(total);
         let batch: Vec<&str> = all_texts[batch_start..batch_end].iter().map(|s| s.as_str()).collect();
 
-        let res = client.post("http://localhost:11434/api/embed")
-            .json(&serde_json::json!({"model":"nomic-embed-text","input":batch}))
-            .send();
+        let embeddings = embedder::embed_batch(&batch);
 
-        match res {
-            Ok(r) if r.status().is_success() => {
-                let resp: serde_json::Value = r.json().unwrap_or_default();
-                if let Some(embeddings) = resp["embeddings"].as_array() {
-                    for (i, emb) in embeddings.iter().enumerate() {
-                        if let Some(emb_arr) = emb.as_array() {
-                            let emb_f32: Vec<f32> = emb_arr.iter()
-                                .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-                                .collect();
-                            let text_idx = batch_start + i;
-                            store.insert(&emb_f32, &all_texts[text_idx], 0.9);
-                            encoded += 1;
-                        }
-                    }
+        match embeddings {
+            Some(embeddings) => {
+                for (i, emb) in embeddings.iter().enumerate() {
+                    let text_idx = batch_start + i;
+                    store.insert(emb, &all_texts[text_idx], 0.9);
+                    encoded += 1;
                 }
             }
-            _ => { eprintln!("Batch error at {}", batch_start); }
+            None => { eprintln!("Batch error at {}", batch_start); }
         }
 
         if (batch_start / BATCH_SIZE) % 20 == 0 {
