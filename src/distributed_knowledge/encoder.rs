@@ -206,6 +206,43 @@ pub fn get_ollama_embedding(text: &str, config: &EncoderConfig) -> Option<Vec<f6
     }
 }
 
+/// Get Ollama embedding as f32 (for HDC store compatibility).
+/// Uses the new /api/embed endpoint (batch format).
+pub fn get_ollama_embedding_f32(text: &str, config: &EncoderConfig) -> Option<Vec<f32>> {
+    let url = config.ollama_url.as_ref()?;
+    let endpoint = format!("{}/api/embed", url);
+
+    let body = serde_json::json!({
+        "model": config.embedding_model,
+        "input": [text],
+    });
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .ok()?;
+
+    let resp = client.post(&endpoint).json(&body).send().ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let json: serde_json::Value = resp.json().ok()?;
+    let embeddings = json.get("embeddings")?.as_array()?;
+    let first = embeddings.first()?.as_array()?;
+
+    let result: Vec<f32> = first.iter()
+        .filter_map(|v| v.as_f64().map(|f| f as f32))
+        .collect();
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
 /// Reduce a high-dimensional embedding to the target size by averaging chunks
 pub fn reduce_embedding(full: &[f64], target_size: usize) -> Vec<f64> {
     if full.len() <= target_size {

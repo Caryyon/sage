@@ -6,8 +6,9 @@
 //! The TUI, API server, and CLI all use this to interact with the NCA brain.
 
 use crate::distributed_knowledge::attention_decoder::AttentionDecoder;
-use crate::distributed_knowledge::encoder::{encode_text, EncoderConfig};
+use crate::distributed_knowledge::encoder::{encode_text, get_ollama_embedding_f32, EncoderConfig};
 use crate::distributed_knowledge::{default_brain_path, KnowledgeStore, NCAKnowledge};
+use crate::hdc::{default_hdc_path, HdcStore};
 use crate::feedback::FeedbackCollector;
 use crate::grid::{ConsolidationParams, GRID_SIZE, MEMORY_RECENCY};
 // NcaPredictor removed from KnowledgeLoop (see 2026-06-03 diagnosis)
@@ -79,6 +80,9 @@ pub struct KnowledgeLoop {
     feedback_collector: FeedbackCollector,
     /// Consolidation parameters — loaded from ~/.sage/consolidation_params.json or defaults.
     consolidation_params: ConsolidationParams,
+    /// HDC store — episodic memory for high-precision retrieval fallback.
+    /// Loaded lazily when HDC store file exists.
+    hdc_store: Option<HdcStore>,
 }
 
 impl KnowledgeLoop {
@@ -107,6 +111,7 @@ impl KnowledgeLoop {
             nca_available: true,
             feedback_collector: FeedbackCollector::new(),
             consolidation_params,
+            hdc_store: HdcStore::load(std::path::Path::new(&default_hdc_path())).ok(),
         }
     }
 
@@ -255,12 +260,41 @@ impl KnowledgeLoop {
         self.last_retrieval_features = Some(query_features.values.clone());
         self.last_retrieved_text = relevant_texts.first().cloned();
 
-        if relevant_texts.is_empty() {
+        // HDC fallback: if NCA returned no results, try HDC store (episodic memory)
+        // which has full 768-dim embeddings and much better precision.
+        let mut all_texts = relevant_texts.clone();
+        if all_texts.is_empty() {
+            if let Some(ref hdc) = self.hdc_store {
+                if let Some(query_emb) = crate::distributed_knowledge::embedder::embed_text(query) {
+                    if hdc.dim == query_emb.len() {
+                        let hdc_results = hdc.query(&query_emb, self.max_results);
+                        for (rel, text) in hdc_results {
+                            if rel > 0.5 {
+                                all_texts.push(text.to_string());
+                            }
+                        }
+                    } else if hdc.dim == 768 {
+                        // HDC store uses Ollama embeddings (768-dim), fastembed is 384-dim
+                        // Try Ollama embedding for the query
+                        if let Some(ollama_emb) = get_ollama_embedding_f32(query, &self.encoder_config) {
+                            let hdc_results = hdc.query(&ollama_emb, self.max_results);
+                            for (rel, text) in hdc_results {
+                                if rel > 0.5 {
+                                    all_texts.push(text.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if all_texts.is_empty() {
             return None;
         }
 
         // Record retrieval event with optimistic relevance (we'll correct later if needed)
-        let combined_text = relevant_texts.join(" | ");
+        let combined_text = all_texts.join(" | ");
         self.retrieval_feedback.record(
             query_features.values.clone(),
             combined_text.clone(),
@@ -283,7 +317,7 @@ impl KnowledgeLoop {
         let mut context = String::from(
             "## Recalled Knowledge\nThe following context from previous conversations may be relevant:\n\n",
         );
-        for text in &relevant_texts {
+        for text in &all_texts {
             context.push_str(&format!("- {}\n", text));
         }
         context.push_str(
