@@ -394,41 +394,76 @@ impl KnowledgeLoop {
         top_k: usize,
     ) -> Option<String> {
         use crate::distributed_knowledge::decoder::query_knowledge_by_features_with_text;
+        use crate::distributed_knowledge::encoder::feature_to_position;
 
-        // Encode query — this is the only NCA-coherent way to find relevant cells.
+        // Encode query
         let query_features = encode_text(query, &self.encoder_config);
+        let _ = n_steps; // kept for API compat; spatial scan replaces NCA freerun
 
-        // Previous implementation: cloned the grid, seeded the query, ran smooth_hidden_channels,
-        // then sorted by KNOWLEDGE_ACTIVATION. This was query-independent because
-        // smooth_hidden_channels only updates hidden channels 4..15 — not KNOWLEDGE_ACTIVATION.
-        // Fix: rank cells by cosine similarity to the query's feature vector directly.
-        // This makes the "thought" genuinely query-dependent without requiring NCA dynamics
-        // to propagate into knowledge channels (which would require energy constraints).
-        //
-        // The n_steps parameter is unused for now but kept in signature for future
-        // NCA-based knowledge propagation once that path is properly designed.
-        let _ = n_steps;
+        // Strategy: combine two retrieval modes for the COCONUT layer:
+        // 1. Spatial neighbors: find knowledge encoded near the query's hash
+        //    position in the grid. These are semantically related because the
+        //    encoder uses content-based hashing — similar content maps nearby.
+        // 2. Global cosine similarity: find the most semantically similar cells
+        //    anywhere in the grid.
+        // This dual approach catches both spatially-clustered and semantically-
+        // similar knowledge that might be in different grid regions.
 
-        // Use the main grid (not a scratch copy) — query_knowledge scans cosine sim
-        // and returns the top matching cells with their text from the text_store.
-        let results = query_knowledge_by_features_with_text(
-            &self.knowledge.grid,
+        // Mode 1: Spatial neighborhood scan around query's hash position
+        let (qx, qy) = feature_to_position(
             &query_features,
-            &self.encoder_config,
-            top_k * 2, // fetch more than needed; filter below
-            Some(&self.knowledge.text_store),
+            self.knowledge.grid.width,
+            self.knowledge.grid.height,
         );
+        let radius: i32 = 20;
+        let mut spatial_results: Vec<(String, f64)> = Vec::new();
+        let mut seen_texts = std::collections::HashSet::new();
 
-        // Decode top-K cells to text
-        let mut top_texts: Vec<String> = Vec::new();
-        for ka in results.iter() {
-            if let Some(ref text) = ka.text {
-                top_texts.push(text.clone());
-                if top_texts.len() >= top_k {
-                    break;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let nx = ((qx as i32 + dx).rem_euclid(self.knowledge.grid.width as i32)) as usize;
+                let ny = ((qy as i32 + dy).rem_euclid(self.knowledge.grid.height as i32)) as usize;
+                let cell = &self.knowledge.grid.cells[ny][nx];
+                let activation = cell.get(crate::grid::KNOWLEDGE_ACTIVATION).copied().unwrap_or(0.0);
+                if activation < 0.05 {
+                    continue;
+                }
+                if let Some(text) = self.knowledge.text_store.peek(nx, ny) {
+                    if seen_texts.contains(text) {
+                        continue;
+                    }
+                    let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                    let proximity = 1.0 / (1.0 + dist);
+                    spatial_results.push((text.to_string(), proximity * activation));
+                    seen_texts.insert(text.to_string());
                 }
             }
         }
+        spatial_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        spatial_results.truncate(top_k);
+
+        // Mode 2: Global cosine similarity
+        let global_results = query_knowledge_by_features_with_text(
+            &self.knowledge.grid,
+            &query_features,
+            &self.encoder_config,
+            top_k * 2,
+            Some(&self.knowledge.text_store),
+        );
+        let mut global_texts: Vec<String> = Vec::new();
+        for ka in global_results.iter() {
+            if let Some(ref text) = ka.text {
+                if !seen_texts.contains(&**text) && global_texts.len() < top_k {
+                    global_texts.push(text.clone());
+                    seen_texts.insert(text.to_string());
+                }
+            }
+        }
+
+        // Merge: spatial results first, then global
+        let mut top_texts: Vec<String> = spatial_results.into_iter().map(|(t, _)| t).collect();
+        top_texts.extend(global_texts);
+        top_texts.truncate(top_k);
 
         if top_texts.is_empty() {
             return None;
@@ -436,8 +471,7 @@ impl KnowledgeLoop {
 
         // Format as COCONUT-style activation summary
         let mut summary = String::from("## NCA Activation Summary\n");
-        summary
-            .push_str("(Dense summary of neural grid state after query-seeded NCA dynamics):\n\n");
+        summary.push_str("(Dense summary of neural grid state — spatial neighbors + semantic matches):\n\n");
         for (i, text) in top_texts.iter().enumerate() {
             // Truncate long texts to first 120 chars for prompt efficiency
             let snippet = if text.len() > 120 {
