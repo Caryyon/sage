@@ -28,7 +28,7 @@ impl BpeTokenizer {
         std::fs::write(&tmp_path, corpus)
             .map_err(|e| format!("Failed to write temp corpus: {}", e))?;
 
-        // Configure BPE trainer using builder pattern
+        // Configure BPE trainer
         let mut trainer = tokenizers::models::bpe::BpeTrainerBuilder::new()
             .vocab_size(vocab_size)
             .min_frequency(1)
@@ -39,15 +39,25 @@ impl BpeTokenizer {
             ])
             .build();
 
-        // Create tokenizer with BPE model
-        let mut tokenizer = tokenizers::Tokenizer::new(
+        // Create a TokenizerImpl with BPE model. We need to specify the type parameters
+        // since they can't be inferred from `new()` (all are None).
+        let mut tokenizer_impl: tokenizers::TokenizerImpl<
+            tokenizers::models::bpe::BPE,
+            tokenizers::normalizers::NormalizerWrapper,
+            tokenizers::pre_tokenizers::PreTokenizerWrapper,
+            tokenizers::processors::PostProcessorWrapper,
+            tokenizers::decoders::DecoderWrapper,
+        > = tokenizers::TokenizerImpl::new(
             tokenizers::models::bpe::BPE::default(),
         );
 
-        // Train on the corpus file
-        tokenizer
+        // Train on the corpus file (must happen before conversion to Tokenizer)
+        tokenizer_impl
             .train_from_files(&mut trainer, vec![tmp_path.to_string_lossy().to_string()])
             .map_err(|e| format!("BPE training failed: {}", e))?;
+
+        // Convert to the generic Tokenizer type
+        let tokenizer: tokenizers::Tokenizer = tokenizer_impl.into();
 
         // Clean up temp file
         let _ = std::fs::remove_file(&tmp_path);

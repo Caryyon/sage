@@ -11,12 +11,52 @@
 //!   5. Evaluate top-5 accuracy, save checkpoint
 //!   6. Repeat for N epochs
 
-use super::nca_lm::{NcaLanguageModel, NcaLmTrainingConfig};
+use super::bpe_tokenizer::BpeTokenizer;
+use super::nca_lm::{NcaLanguageModel, NcaLmConfig, NcaLmTrainingConfig};
 use super::nca_predictor::{NcaWeights, SimpleTokenizer, NCA_CHANNELS};
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+// ── Tokenizer Trait ────────────────────────────────────────────────────────
+
+/// Trait for tokenizers used in NCA LM training.
+/// Both SimpleTokenizer and BpeTokenizer implement this.
+pub trait NcaTokenizer: Send + Sync {
+    fn encode(&self, text: &str) -> Vec<usize>;
+    fn decode(&self, ids: &[usize]) -> String;
+    fn vocab_size(&self) -> usize;
+    /// Downcast to SimpleTokenizer if this is one (for model assignment).
+    fn as_simple(&self) -> Option<&SimpleTokenizer> { None }
+}
+
+impl NcaTokenizer for SimpleTokenizer {
+    fn encode(&self, text: &str) -> Vec<usize> {
+        self.encode(text)
+    }
+    fn decode(&self, ids: &[usize]) -> String {
+        self.decode(ids)
+    }
+    fn vocab_size(&self) -> usize {
+        self.vocab_size()
+    }
+    fn as_simple(&self) -> Option<&SimpleTokenizer> {
+        Some(self)
+    }
+}
+
+impl NcaTokenizer for BpeTokenizer {
+    fn encode(&self, text: &str) -> Vec<usize> {
+        self.encode(text)
+    }
+    fn decode(&self, ids: &[usize]) -> String {
+        self.decode(ids)
+    }
+    fn vocab_size(&self) -> usize {
+        self.vocab_size()
+    }
+}
 
 // ── Architecture Constants (same as nca_predictor) ─────────────────────────
 
@@ -301,6 +341,25 @@ fn generate_conversations(name: &str, domain: &str, facts: &[String]) -> Vec<Str
 pub fn build_training_examples(
     corpus: &str,
     tokenizer: &SimpleTokenizer,
+    context_window: usize,
+    max_examples: usize,
+) -> Vec<(Vec<usize>, usize)> {
+    build_training_examples_impl(corpus, tokenizer, context_window, max_examples)
+}
+
+/// Build training examples using any tokenizer (BPE or Simple).
+pub fn build_training_examples_generic(
+    corpus: &str,
+    tokenizer: &dyn NcaTokenizer,
+    context_window: usize,
+    max_examples: usize,
+) -> Vec<(Vec<usize>, usize)> {
+    build_training_examples_impl(corpus, tokenizer, context_window, max_examples)
+}
+
+fn build_training_examples_impl(
+    corpus: &str,
+    tokenizer: &dyn NcaTokenizer,
     context_window: usize,
     max_examples: usize,
 ) -> Vec<(Vec<usize>, usize)> {
@@ -797,7 +856,49 @@ fn evaluate_top5(
     correct as f64 / examples.len() as f64
 }
 
-// ── Main Training Function ─────────────────────────────────────────────────
+// ── Corpus Loading ────────────────────────────────────────────────────────
+
+/// Load text from a directory of .txt files (e.g., ~/.sage/corpus/).
+/// Concatenates all files with double newlines between them.
+/// Optionally limit to `max_files` files (0 = all).
+pub fn load_corpus_text(dir: &Path, max_files: usize) -> Result<String, Box<dyn Error>> {
+    let mut corpus = String::new();
+    let mut count = 0;
+
+    let mut entries: Vec<_> = fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "txt").unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        if max_files > 0 && count >= max_files {
+            break;
+        }
+        let path = entry.path();
+        if let Ok(text) = fs::read_to_string(&path) {
+            corpus.push_str(&text);
+            corpus.push_str("\n\n");
+            count += 1;
+        }
+    }
+
+    if corpus.is_empty() {
+        return Err(format!("No .txt files found in {}", dir.display()).into());
+    }
+
+    eprintln!("   Loaded {} files, {} chars, {} words", count, corpus.len(), corpus.split_whitespace().count());
+    Ok(corpus)
+}
+
+/// Load text from a single file.
+pub fn load_text_file(path: &Path) -> Result<String, Box<dyn Error>> {
+    let text = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    Ok(text)
+}
+
+// ── Main Training Function (Curriculum-based) ─────────────────────────────
 
 /// Train the NCA language model on a curriculum.
 ///
@@ -1013,6 +1114,258 @@ pub fn train_nca_lm(
     }
 
     // Restore best weights
+    *model.weights_mut() = best_weights;
+    model.mark_trained();
+
+    let total_time = start_time.elapsed();
+    let stats = TrainingStats {
+        final_accuracy: best_accuracy,
+        random_baseline,
+        epochs: training_config.epochs,
+        vocab_size: actual_vocab,
+        examples: examples.len(),
+        epoch_losses,
+        epoch_accuracies,
+        training_time_secs: total_time.as_secs_f64(),
+        param_count: n_params,
+        grid_size,
+        nca_steps,
+    };
+
+    eprintln!("\n✅ Training complete in {:.1}s", total_time.as_secs_f64());
+    eprintln!("   Final accuracy: {:.2}% (random: {:.4}%)", best_accuracy * 100.0, random_baseline * 100.0);
+    eprintln!("   Improvement over random: {:.1}x", best_accuracy / random_baseline.max(1e-10));
+
+    Ok((model, stats))
+}
+
+// ── Text-based Training Function ───────────────────────────────────────────
+
+/// Train the NCA language model on raw text (e.g., Project Gutenberg corpus).
+///
+/// This is Step 8 of the v0.6.0 plan: train on real book text instead of
+/// curriculum JSON. Uses BPE tokenization for subword coverage, eliminating
+/// <unk> tokens on unseen words.
+///
+/// # Arguments
+/// * `corpus_text` - Raw text to train on (can be multiple books concatenated)
+/// * `use_bpe` - If true, train a BPE tokenizer; if false, use SimpleTokenizer
+/// * `training_config` - Training configuration
+///
+/// Returns the trained model and training statistics.
+pub fn train_on_text(
+    corpus_text: &str,
+    use_bpe: bool,
+    training_config: &NcaLmTrainingConfig,
+) -> Result<(NcaLanguageModel, TrainingStats), Box<dyn Error>> {
+    let start_time = Instant::now();
+    let model_config = &training_config.model;
+
+    eprintln!("═══ NCA Language Model Training (Text Corpus) ═══");
+    eprintln!("Grid: {}×{} ({} cells)", model_config.grid_size, model_config.grid_size, model_config.total_cells());
+    eprintln!("NCA steps: {}, Vocab target: {}, BPE: {}",
+        model_config.nca_steps, model_config.vocab_size, use_bpe);
+    eprintln!("Params: {}K, Epochs: {}, LR: {}",
+        NcaWeights::random().param_count() / 1000,
+        training_config.epochs, training_config.learning_rate);
+
+    // Step 1: Tokenize corpus
+    eprintln!("\n📚 Corpus: {} chars, {} words", corpus_text.len(), corpus_text.split_whitespace().count());
+
+    let actual_vocab: usize;
+    let tokenizer: Box<dyn NcaTokenizer>;
+
+    if use_bpe {
+        eprintln!("\n🔤 Training BPE tokenizer (vocab={})...", model_config.vocab_size);
+        let bpe_save_path: Option<PathBuf> = Some(
+            dirs::home_dir()
+                .unwrap_or_default()
+                .join(".sage")
+                .join("nca_bpe_tokenizer.json"),
+        );
+        let bpe = BpeTokenizer::train(corpus_text, model_config.vocab_size, bpe_save_path.as_deref())?;
+        actual_vocab = bpe.vocab_size();
+        eprintln!("   BPE vocabulary: {} tokens", actual_vocab);
+        tokenizer = Box::new(bpe);
+    } else {
+        eprintln!("\n🔤 Building SimpleTokenizer (vocab={})...", model_config.vocab_size);
+        let simple = SimpleTokenizer::from_corpus(corpus_text, model_config.vocab_size);
+        actual_vocab = simple.vocab_size();
+        eprintln!("   Vocabulary: {} tokens", actual_vocab);
+        tokenizer = Box::new(simple);
+    }
+
+    // Check for excessive <unk> tokens
+    let sample_tokens = tokenizer.encode(&corpus_text[..corpus_text.len().min(10000)]);
+    let unk_count = sample_tokens.iter().filter(|t| **t == 0).count();
+    let unk_rate = unk_count as f64 / sample_tokens.len().max(1) as f64;
+    eprintln!("   <unk> rate on sample: {:.2}% ({} / {})", unk_rate * 100.0, unk_count, sample_tokens.len());
+    if unk_rate > 0.15 {
+        eprintln!("   ⚠️  High <unk> rate — consider using BPE (--bpe) for subword coverage");
+    }
+
+    // Step 2: Build training examples
+    eprintln!("\n📊 Building training examples...");
+    let examples = build_training_examples_generic(
+        corpus_text,
+        tokenizer.as_ref(),
+        model_config.context_window,
+        training_config.max_examples,
+    );
+    eprintln!("   Examples: {} (context window: {})", examples.len(), model_config.context_window);
+
+    if examples.len() < 10 {
+        return Err(format!("Too few training examples ({}). Need at least 10.", examples.len()).into());
+    }
+
+    // Step 3: Split into train/eval sets
+    let split_idx = (examples.len() as f64 * 0.9) as usize;
+    let train_examples = &examples[..split_idx];
+    let eval_examples = &examples[split_idx..];
+    eprintln!("   Train: {}, Eval: {}", train_examples.len(), eval_examples.len());
+
+    let random_baseline = 1.0 / actual_vocab as f64;
+    eprintln!("   Random baseline: {:.4}%", random_baseline * 100.0);
+
+    // Step 4: Initialize model
+    let mut model = NcaLanguageModel::new(model_config.clone());
+    // For SimpleTokenizer, we set it directly on the model.
+    // For BPE, the model keeps its default SimpleTokenizer (weights still train correctly
+    // since tokenization is external to the NCA grid — the grid only sees token IDs).
+    if !use_bpe {
+        if let Some(s) = tokenizer.as_simple() {
+            model.tokenizer = s.clone();
+        }
+    }
+    let n_params = model.weights().param_count();
+    let mut adam = AdamState::new(n_params, training_config.learning_rate);
+
+    let grid_size = model_config.grid_size;
+    let nca_steps = model_config.nca_steps;
+    let batch_size = training_config.batch_size;
+
+    let mut best_accuracy = 0.0;
+    let mut best_weights = model.weights().clone();
+    let mut epoch_losses: Vec<f64> = Vec::new();
+    let mut epoch_accuracies: Vec<f64> = Vec::new();
+
+    // Checkpoint directory
+    let checkpoint_dir = training_config.checkpoint_dir.clone()
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_default()
+                .join(".sage")
+                .join("checkpoints")
+        });
+    fs::create_dir_all(&checkpoint_dir)?;
+
+    // Step 5: Training loop (same as train_nca_lm)
+    eprintln!("\n🚀 Starting training...");
+    for epoch in 0..training_config.epochs {
+        let epoch_start = Instant::now();
+
+        // Cosine LR decay
+        if training_config.lr_decay {
+            let progress = epoch as f64 / training_config.epochs as f64;
+            let lr = training_config.learning_rate * 0.5 * (1.0 + (std::f64::consts::PI * progress).cos());
+            adam.set_lr(lr);
+        }
+
+        let mut epoch_loss = 0.0;
+        let mut epoch_grads = NcaGradients::zeros();
+        let mut examples_processed = 0;
+
+        for batch_start in (0..train_examples.len()).step_by(batch_size) {
+            let batch_end = (batch_start + batch_size).min(train_examples.len());
+            let mut batch_grads = NcaGradients::zeros();
+            let mut batch_loss = 0.0;
+
+            for (ctx, target) in &train_examples[batch_start..batch_end] {
+                let mut grid = vec![vec![[0.0f64; NCA_CHANNELS]; grid_size]; grid_size];
+
+                for (pos, &tid) in ctx.iter().enumerate() {
+                    let (r, c) = token_to_coord(tid, grid_size);
+                    let recency = if ctx.len() > 1 {
+                        1.0 - (ctx.len() - 1 - pos) as f64 / ctx.len() as f64 * 0.5
+                    } else {
+                        1.0
+                    };
+                    grid[r][c][ACTIVATION_CH] = (grid[r][c][ACTIVATION_CH] + recency).min(5.0);
+                    grid[r][c][1] = if ctx.len() > 1 { pos as f64 / (ctx.len() - 1) as f64 } else { 0.5 };
+                    grid[r][c][2] = recency;
+                }
+
+                let traces = forward_with_trace(model.weights(), &mut grid, grid_size, nca_steps);
+
+                let mut activations = vec![0.0; actual_vocab];
+                for tid in 0..actual_vocab {
+                    let (r, c) = token_to_coord(tid, grid_size);
+                    activations[tid] = grid[r][c][ACTIVATION_CH];
+                }
+
+                let (loss, d_activations) = cross_entropy_loss(&activations, *target);
+                batch_loss += loss;
+
+                let mut d_grid = vec![vec![[0.0; NCA_CHANNELS]; grid_size]; grid_size];
+                for (tid, &d_act) in d_activations.iter().enumerate() {
+                    let (r, c) = token_to_coord(tid, grid_size);
+                    d_grid[r][c][ACTIVATION_CH] += d_act;
+                }
+
+                let grads = backward_through_steps(model.weights(), &traces, d_grid, grid_size);
+                batch_grads.accumulate(&grads);
+            }
+
+            let batch_count = (batch_end - batch_start) as f64;
+            batch_loss /= batch_count;
+            batch_grads.scale(1.0 / batch_count);
+            batch_grads.clip_norm(training_config.grad_clip);
+
+            epoch_grads.accumulate(&batch_grads);
+            epoch_loss += batch_loss * batch_count;
+            examples_processed += batch_end - batch_start;
+        }
+
+        epoch_loss /= examples_processed as f64;
+        epoch_grads.scale(1.0 / (train_examples.len() as f64 / batch_size as f64));
+        epoch_grads.clip_norm(training_config.grad_clip);
+
+        let mut params = model.weights().to_vec();
+        let grad_vec = epoch_grads.to_vec();
+        adam.step(&mut params, &grad_vec);
+        *model.weights_mut() = NcaWeights::from_vec(&params);
+
+        let accuracy = if epoch % training_config.eval_interval == 0 || epoch == training_config.epochs - 1 {
+            evaluate_top5(model.weights(), eval_examples, grid_size, nca_steps, actual_vocab)
+        } else {
+            epoch_accuracies.last().copied().unwrap_or(0.0)
+        };
+
+        epoch_losses.push(epoch_loss);
+        epoch_accuracies.push(accuracy);
+
+        if accuracy > best_accuracy {
+            best_accuracy = accuracy;
+            best_weights = model.weights().clone();
+        }
+
+        let elapsed = epoch_start.elapsed();
+        eprintln!(
+            "  Epoch {}/{}: loss={:.4}, top-5={:.2}% (best={:.2}%, random={:.4}%) [{:.1}s]",
+            epoch + 1, training_config.epochs, epoch_loss,
+            accuracy * 100.0, best_accuracy * 100.0,
+            random_baseline * 100.0, elapsed.as_secs_f64()
+        );
+
+        if training_config.checkpoint_interval > 0
+            && (epoch + 1) % training_config.checkpoint_interval == 0
+        {
+            let cp_path = checkpoint_dir.join(format!("text_epoch_{:04}.bin", epoch + 1));
+            model.weights().save(&cp_path)?;
+            eprintln!("   💾 Checkpoint saved: {}", cp_path.display());
+        }
+    }
+
     *model.weights_mut() = best_weights;
     model.mark_trained();
 
