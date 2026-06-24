@@ -12,7 +12,7 @@
 //!   6. Repeat for N epochs
 
 use super::bpe_tokenizer::BpeTokenizer;
-use super::nca_lm::{NcaLanguageModel, NcaLmConfig, NcaLmTrainingConfig};
+use super::nca_lm::{NcaLanguageModel, NcaLmTrainingConfig};
 use super::nca_predictor::{NcaWeights, SimpleTokenizer, NCA_CHANNELS};
 use std::error::Error;
 use std::fs;

@@ -375,29 +375,74 @@ impl NCAKnowledge {
     /// Uses collision-aware placement: when both cells are occupied, the
     /// incoming knowledge is placed at a nearby empty cell instead of
     /// blending (which destroys both entries).
-    pub fn merge_with_text(&mut self, other: &NCAKnowledge, merge_strength: f64) {
+ pub fn merge_with_text(&mut self, other: &NCAKnowledge, merge_strength: f64) {
+        // Snapshot self's active cells before merge, so we can detect relocated knowledge.
+        let mut self_active_before: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::new();
+        for y in 0..self.grid.height {
+            for x in 0..self.grid.width {
+                if self.grid.cells[y][x][KNOWLEDGE_ACTIVATION] >= 0.05 {
+                    self_active_before.insert((x, y));
+                }
+            }
+        }
+
         // First, merge the grid (handles embedding placement + collision avoidance)
         self.merge(&other.grid, merge_strength);
 
-        // Then, merge the text store — copy all entries from other into self
-        // at the same positions. If self already has text at that position,
-        // skip (self's text wins for existing cells).
-        for y in 0..other.text_store.len() {
-            // TextStore doesn't expose iteration, so we scan the grid for active cells
-            // in other and copy their text.
-            // This is O(grid_size²) but only for active cells in other.
-            break; // Will be handled below via grid scan
-        }
-
-        // Scan other's grid for active cells and copy their text entries
+        // Then, merge the text store. Two cases:
+        // 1. Cells that were active in other and are now active in self at the same
+        //    position — copy text directly.
+        // 2. Cells that are newly active in self but NOT in the original self —
+        //    these are deferred/relocated items from collision-aware merge.
+        //    Find their source by matching against other's nearest active cell.
         for y in 0..other.grid.height {
             for x in 0..other.grid.width {
                 let other_act = other.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
                 if other_act >= 0.05 {
-                    // Only copy text if self doesn't already have text at this position
+                    // Case 1: text at same position
                     if self.text_store.peek(x, y).is_none() {
                         if let Some(text) = other.text_store.peek(x, y) {
                             self.text_store.insert(x, y, text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Case 2: For newly active cells in self that weren't active before merge,
+        // try to find their text from other's nearest active cell.
+        // This handles deferred/relocated items from collision-aware merge.
+        for y in 0..self.grid.height {
+            for x in 0..self.grid.width {
+                let self_act_now = self.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                if self_act_now >= 0.05 && !self_active_before.contains(&(x, y)) {
+                    // This cell was activated by the merge — try to find text.
+                    if self.text_store.peek(x, y).is_none() {
+                        // Search for the nearest active cell in other that has text
+                        let search_radius = 25;
+                        let mut best: Option<(usize, usize, f64)> = None;
+                        for dy in -search_radius..=search_radius {
+                            for dx in -search_radius..=search_radius {
+                                let ox = ((x as i32 + dx).rem_euclid(other.grid.width as i32)) as usize;
+                                let oy = ((y as i32 + dy).rem_euclid(other.grid.height as i32)) as usize;
+                                let other_act = other.grid.cells[oy][ox][KNOWLEDGE_ACTIVATION];
+                                if other_act >= 0.05 {
+                                    if let Some(text) = other.text_store.peek(ox, oy) {
+                                        if !text.is_empty() {
+                                            let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                                            if best.is_none() || dist < best.unwrap().2 {
+                                                best = Some((ox, oy, dist));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if let Some((ox, oy, _)) = best {
+                            if let Some(text) = other.text_store.peek(ox, oy) {
+                                self.text_store.insert(x, y, text.to_string());
+                            }
                         }
                     }
                 }

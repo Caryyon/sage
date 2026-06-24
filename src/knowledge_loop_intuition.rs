@@ -15,7 +15,7 @@ fn is_stop_word(w: &str) -> bool {
         "that", "this", "with", "from", "have", "they", "were", "been", "which",
         "their", "there", "what", "about", "would", "could", "should", "between",
         "into", "through", "during", "before", "after", "above", "below",
-        "been", "more", "most", "some", "such", "only", "very", "than", "then",
+        "more", "most", "some", "such", "only", "very", "than", "then",
         "also", "will", "just", "does", "made", "used", "each", "every",
         "both", "few", "other", "same", "like", "make", "well",
     ];
@@ -47,7 +47,8 @@ pub fn generate_intuition(
     let (qx, qy) = feature_to_position(&query_features, scratch.width, scratch.height);
 
     let radius = 15;
-    let mut activated: Vec<(usize, usize)> = Vec::new();
+    let mut activated: HashSet<(usize, usize)> = HashSet::new();
+    let mut newly_activated: Vec<(usize, usize)> = Vec::new();
 
     for dy in -radius..=radius {
         for dx in -radius..=radius {
@@ -56,7 +57,8 @@ pub fn generate_intuition(
             let act = scratch.cells[ny][nx].get(KNOWLEDGE_ACTIVATION).copied().unwrap_or(0.0);
             if act >= 0.05 {
                 scratch.cells[ny][nx][KNOWLEDGE_ACTIVATION] = (act + 0.15).min(1.0);
-                activated.push((nx, ny));
+                activated.insert((nx, ny));
+                newly_activated.push((nx, ny));
             }
         }
     }
@@ -66,13 +68,18 @@ pub fn generate_intuition(
     }
 
     // 2. Run activation spread (Hebbian-like propagation)
+    // Only spread from newly-activated cells each step, not the entire set.
+    // This prevents O(n²) blowup and simulates wave propagation more naturally.
     let spread_steps = 3;
     let spread_radius = 3;
     let spread_strength = 0.12;
+    let activation_threshold = 0.12;
 
     for _step in 0..spread_steps {
         let mut updates: Vec<(usize, usize, f64)> = Vec::new();
-        for &(cx, cy) in &activated {
+        let mut next_newly: Vec<(usize, usize)> = Vec::new();
+
+        for &(cx, cy) in &newly_activated {
             for dy in -spread_radius..=spread_radius {
                 for dx in -spread_radius..=spread_radius {
                     if dx == 0 && dy == 0 { continue; }
@@ -88,20 +95,22 @@ pub fn generate_intuition(
                 }
             }
         }
+
         for (nx, ny, boost) in &updates {
             scratch.cells[*ny][*nx][KNOWLEDGE_ACTIVATION] =
                 (scratch.cells[*ny][*nx][KNOWLEDGE_ACTIVATION] + boost).min(1.0);
-        }
-        // Add newly activated cells
-        let threshold = 0.12;
-        for (nx, ny, _) in &updates {
-            let act = scratch.cells[*ny][*nx]
-                .get(KNOWLEDGE_ACTIVATION)
-                .copied()
-                .unwrap_or(0.0);
-            if act >= threshold && !activated.contains(&(*nx, *ny)) {
-                activated.push((*nx, *ny));
+            // Track newly activated cells (not already in the active set)
+            if scratch.cells[*ny][*nx].get(KNOWLEDGE_ACTIVATION).copied().unwrap_or(0.0) >= activation_threshold
+                && !activated.contains(&(*nx, *ny))
+            {
+                activated.insert((*nx, *ny));
+                next_newly.push((*nx, *ny));
             }
+        }
+
+        newly_activated = next_newly;
+        if newly_activated.is_empty() {
+            break; // No new activations — propagation has converged
         }
     }
 
@@ -118,11 +127,15 @@ pub fn generate_intuition(
             if seen.contains(text) { continue; }
             seen.insert(text.to_string());
 
-            // Truncate for display
+            // Truncate for display — find a safe char boundary
             let snippet = if text.len() > 80 {
                 let mut cutoff = 80;
-                while !text.is_char_boundary(cutoff) { cutoff -= 1; }
-                format!("{}…", &text[..cutoff])
+                while cutoff > 0 && !text.is_char_boundary(cutoff) { cutoff -= 1; }
+                if cutoff > 0 {
+                    format!("{}…", &text[..cutoff])
+                } else {
+                    text.to_string()
+                }
             } else {
                 text.to_string()
             };
