@@ -364,6 +364,46 @@ impl NCAKnowledge {
         self.grid
             .smooth_hidden_channels(center.0, center.1, DEFAULT_RADIUS, steps);
     }
+
+    /// Merge another knowledge store's grid AND text store into this one.
+    ///
+    /// This is the full merge — unlike `merge()` (which only merges grid
+    /// channels), this also transfers text store entries from the other store.
+    /// Without text store transfer, merged knowledge is unretrievable because
+    /// the grid has embeddings but no text to return.
+    ///
+    /// Uses collision-aware placement: when both cells are occupied, the
+    /// incoming knowledge is placed at a nearby empty cell instead of
+    /// blending (which destroys both entries).
+    pub fn merge_with_text(&mut self, other: &NCAKnowledge, merge_strength: f64) {
+        // First, merge the grid (handles embedding placement + collision avoidance)
+        self.merge(&other.grid, merge_strength);
+
+        // Then, merge the text store — copy all entries from other into self
+        // at the same positions. If self already has text at that position,
+        // skip (self's text wins for existing cells).
+        for y in 0..other.text_store.len() {
+            // TextStore doesn't expose iteration, so we scan the grid for active cells
+            // in other and copy their text.
+            // This is O(grid_size²) but only for active cells in other.
+            break; // Will be handled below via grid scan
+        }
+
+        // Scan other's grid for active cells and copy their text entries
+        for y in 0..other.grid.height {
+            for x in 0..other.grid.width {
+                let other_act = other.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
+                if other_act >= 0.05 {
+                    // Only copy text if self doesn't already have text at this position
+                    if self.text_store.peek(x, y).is_none() {
+                        if let Some(text) = other.text_store.peek(x, y) {
+                            self.text_store.insert(x, y, text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl KnowledgeStore for NCAKnowledge {
@@ -399,26 +439,92 @@ impl KnowledgeStore for NCAKnowledge {
 
     fn merge(&mut self, other: &Grid, merge_strength: f64) {
         let s = merge_strength.clamp(0.0, 1.0);
+        let collision_threshold = 0.3;
+        let mut deferred: Vec<(usize, usize, [f64; NUM_KNOWLEDGE_CHANNELS])> = Vec::new();
+
         for y in 0..self.grid.height.min(other.height) {
             for x in 0..self.grid.width.min(other.width) {
-                // For knowledge channels: take the max activation (union merge)
                 let other_act = other.cells[y][x][KNOWLEDGE_ACTIVATION];
                 let self_act = self.grid.cells[y][x][KNOWLEDGE_ACTIVATION];
 
-                if other_act > self_act {
-                    // Blend all embedding slots
+                // Skip if other cell is empty
+                if other_act < 0.05 {
+                    continue;
+                }
+
+                if self_act < 0.05 {
+                    // Self cell is empty — copy directly from other
+                    for slot in 0..NUM_KNOWLEDGE_CHANNELS {
+                        let ch = KNOWLEDGE_CHANNELS_START + slot;
+                        self.grid.cells[y][x][ch] = other.cells[y][x][ch];
+                    }
+                } else if other_act > self_act + collision_threshold {
+                    // Both cells occupied and other has significantly higher activation.
+                    // This is a collision — blending would destroy both pieces of knowledge.
+                    // Defer: place at a secondary position later.
+                    let mut embed = [0.0f64; NUM_KNOWLEDGE_CHANNELS];
+                    for slot in 0..NUM_KNOWLEDGE_CHANNELS {
+                        let ch = KNOWLEDGE_CHANNELS_START + slot;
+                        embed[slot] = other.cells[y][x][ch];
+                    }
+                    deferred.push((x, y, embed));
+                } else {
+                    // Both occupied, similar activation — blend cautiously.
+                    // Only blend embedding slots, preserving self's text store mapping.
                     for slot in 0..NUM_KNOWLEDGE_CHANNELS {
                         let ch = KNOWLEDGE_CHANNELS_START + slot;
                         self.grid.cells[y][x][ch] =
-                            self.grid.cells[y][x][ch] * (1.0 - s) + other.cells[y][x][ch] * s;
+                            self.grid.cells[y][x][ch] * (1.0 - s * 0.5) + other.cells[y][x][ch] * s * 0.5;
                     }
-                    // Activation
+                    // Take max activation and confidence
                     self.grid.cells[y][x][KNOWLEDGE_ACTIVATION] =
-                        self_act * (1.0 - s) + other_act * s;
-                    // Confidence
+                        self_act.max(other_act * s);
                     self.grid.cells[y][x][KNOWLEDGE_CONFIDENCE] = self.grid.cells[y][x]
                         [KNOWLEDGE_CONFIDENCE]
                         .max(other.cells[y][x][KNOWLEDGE_CONFIDENCE] * s);
+                }
+            }
+        }
+
+        // Place deferred collision items at secondary positions
+        for (ox, oy, embed) in &deferred {
+            let ox = *ox;
+            let oy = *oy;
+            // Try nearby cells in a spiral pattern
+            let mut placed = false;
+            for radius in 1..=20 {
+                for dy in -(radius as i32)..=(radius as i32) {
+                    for dx in -(radius as i32)..=(radius as i32) {
+                        if dx.abs() + dy.abs() != radius {
+                            continue; // only check ring at this radius
+                        }
+                        let nx = ((ox as i32 + dx).rem_euclid(self.grid.width as i32)) as usize;
+                        let ny = ((oy as i32 + dy).rem_euclid(self.grid.height as i32)) as usize;
+                        let target_act = self.grid.cells[ny][nx][KNOWLEDGE_ACTIVATION];
+                        if target_act < 0.05 {
+                            // Found an empty cell — place the deferred knowledge here
+                            for (slot, val) in embed.iter().enumerate() {
+                                let ch = KNOWLEDGE_CHANNELS_START + slot;
+                                self.grid.cells[ny][nx][ch] = *val;
+                            }
+                            // Copy text store entry from other if available
+                            if let Some(text) = self.text_store.peek(ox, oy) {
+                                self.text_store.insert(nx, ny, text.to_string());
+                            }
+                            placed = true;
+                            break;
+                        }
+                    }
+                    if placed { break; }
+                }
+                if placed { break; }
+            }
+            // If no empty cell found, fall back to blending at original position
+            if !placed {
+                for (slot, val) in embed.iter().enumerate() {
+                    let ch = KNOWLEDGE_CHANNELS_START + slot;
+                    self.grid.cells[oy][ox][ch] =
+                        self.grid.cells[oy][ox][ch] * 0.5 + val * 0.5;
                 }
             }
         }

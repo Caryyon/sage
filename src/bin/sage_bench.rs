@@ -615,8 +615,8 @@ fn bench_merge_quality() -> MergeQualityResult {
         b_facts.push(fact_b);
     }
 
-    // Merge B into A
-    store_a.merge(&store_b.grid, 0.8);
+    // Merge B into A (with text store!)
+    store_a.merge_with_text(&store_b, 0.8);
 
     // Check retrievability
     let a_retrievable = a_facts
