@@ -581,6 +581,17 @@ impl KnowledgeLoop {
         // This is a dense summary of grid state, not just delta-unique cells.
         let nca_thought = self.build_nca_thought_summary(user_input, 3, 5);
 
+        // 3d. NCA Intuition: keyword associations and topic clusters from
+        // activation propagation on the NCA grid (Step 7 generation engine).
+        // This is distinct from COCONUT — it does Hebbian-like spreading and
+        // extracts keyword associations, not just semantic matches.
+        let nca_intuition = crate::knowledge_loop_intuition::generate_intuition(
+            &self.knowledge.grid,
+            &self.knowledge.text_store,
+            &self.encoder_config,
+            user_input,
+        );
+
         // 4. Build message history with knowledge-augmented system prompt
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
@@ -595,6 +606,10 @@ impl KnowledgeLoop {
         if let Some(ref thought) = nca_thought {
             system.push_str("\n\n");
             system.push_str(thought);
+        }
+        if let Some(ref intuition) = nca_intuition {
+            system.push_str("\n\n");
+            system.push_str(intuition);
         }
 
         let mut messages = vec![ChatMessage {
@@ -726,6 +741,14 @@ impl KnowledgeLoop {
         // 3c. Continuous thought layer
         let nca_thought = self.build_nca_thought_summary(user_input, 3, 5);
 
+        // 3d. NCA Intuition (Step 7 generation engine)
+        let nca_intuition = crate::knowledge_loop_intuition::generate_intuition(
+            &self.knowledge.grid,
+            &self.knowledge.text_store,
+            &self.encoder_config,
+            user_input,
+        );
+
         // 4. Build messages
         let mut system = self.system_prompt.clone();
         if let Some(ref ctx) = knowledge_context {
@@ -740,6 +763,10 @@ impl KnowledgeLoop {
         if let Some(ref thought) = nca_thought {
             system.push_str("\n\n");
             system.push_str(thought);
+        }
+        if let Some(ref intuition) = nca_intuition {
+            system.push_str("\n\n");
+            system.push_str(intuition);
         }
 
         let mut messages = vec![ChatMessage {

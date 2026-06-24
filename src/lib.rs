@@ -10,6 +10,7 @@ pub mod grid;
 pub mod hdc;
 pub mod inference;
 pub mod knowledge_loop;
+pub mod knowledge_loop_intuition;
 pub mod brain_activity;
 pub mod brain_templates;
 pub mod curriculum;
