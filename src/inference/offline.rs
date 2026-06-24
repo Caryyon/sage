@@ -31,21 +31,13 @@ impl OfflineEngine {
             "Running in offline mode. Knowledge retrieval active, LLM unavailable.\n\n",
         );
 
-        if let Some(ctx) = context {
-            // Extract knowledge snippets from the context
-            let snippets: Vec<&str> = ctx
-                .lines()
-                .filter(|l| l.starts_with("- "))
-                .map(|l| l.trim_start_matches("- "))
-                .collect();
-
-            if !snippets.is_empty() {
-                response.push_str("Retrieved knowledge:\n");
-                for snippet in snippets {
-                    response.push_str(&format!("  - {}\n", snippet));
-                }
-            } else {
+        if let Some(context) = context {
+            if context.is_empty() {
                 response.push_str("No relevant knowledge found in NCA brain.\n");
+            } else {
+                response.push_str("Retrieved knowledge from NCA brain:\n\n");
+                response.push_str(context);
+                response.push('\n');
             }
         } else {
             response.push_str("No relevant knowledge found in NCA brain.\n");
@@ -55,32 +47,63 @@ impl OfflineEngine {
         response
     }
 
-    /// Extract recalled knowledge from the system message
+    /// Extract ALL knowledge sections from the system message.
+    ///
+    /// The KnowledgeLoop augments the system prompt with multiple sections:
+    /// - ## Recalled Knowledge (semantic retrieval)
+    /// - ## Associatively Recalled Concepts (delta retrieval)
+    /// - ## NCA Activation Summary (COCONUT thought layer)
+    /// - ## NCA Intuition (keyword associations from Hebbian propagation)
+    ///
+    /// In offline mode, we extract all of these and present them to the user
+    /// as raw knowledge — no LLM synthesis, but the information is there.
     fn extract_knowledge_context(messages: &[ChatMessage]) -> Option<String> {
+        let mut sections: Vec<String> = Vec::new();
+
         for msg in messages {
-            if msg.role == ChatRole::System {
-                // Look for the "Recalled Knowledge" section
-                if let Some(start) = msg.content.find("## Recalled Knowledge") {
-                    let section = &msg.content[start..];
-                    // Find the end of the section (next ## or end of string)
-                    let end = section[3..]
-                        .find("\n\n##")
-                        .map(|i| i + 3)
-                        .unwrap_or(section.len());
-                    return Some(section[..end].to_string());
+            if msg.role != ChatRole::System {
+                continue;
+            }
+
+            // Find all ## sections that contain knowledge
+            let content = &msg.content;
+            let mut search_from = 0;
+            while let Some(start) = content[search_from..].find("## ") {
+                let abs_start = search_from + start;
+                // Get the section header
+                let rest = &content[abs_start..];
+                let header_end = rest.find('\n').unwrap_or(rest.len());
+                let header = &rest[..header_end];
+
+                // Find the end of this section (next ## at same level or end)
+                let after_header = &rest[header_end..];
+                let section_end = after_header
+                    .find("\n\n## ")
+                    .map(|i| header_end + i)
+                    .unwrap_or(rest.len());
+                let section_content = &rest[..section_end];
+
+                // Only extract knowledge-related sections
+                if header.contains("Recalled Knowledge")
+                    || header.contains("Associatively Recalled")
+                    || header.contains("NCA Activation")
+                    || header.contains("NCA Intuition")
+                {
+                    sections.push(section_content.to_string());
                 }
-                // Also check for NCA Activation Summary
-                if let Some(start) = msg.content.find("## NCA Activation Summary") {
-                    let section = &msg.content[start..];
-                    let end = section[3..]
-                        .find("\n\n##")
-                        .map(|i| i + 3)
-                        .unwrap_or(section.len());
-                    return Some(section[..end].to_string());
+
+                search_from = abs_start + section_end;
+                if search_from >= content.len() {
+                    break;
                 }
             }
         }
-        None
+
+        if sections.is_empty() {
+            None
+        } else {
+            Some(sections.join("\n\n"))
+        }
     }
 }
 
@@ -178,6 +201,47 @@ mod tests {
 
         let response = engine.chat(&messages, 100).unwrap();
         assert!(response.contains("Retrieved knowledge"));
+        assert!(response.contains("capital of France is Paris"));
+    }
+
+    #[test]
+    fn test_extract_nca_intuition_section() {
+        let engine = OfflineEngine::new();
+        let messages = vec![
+            ChatMessage {
+                role: ChatRole::System,
+                content: "You are SAGE.\n\n## NCA Intuition\n**Associated concepts:** philosophy (3), power (2)\n\n**Activated knowledge clusters:**\n1. Republic by Plato...\n\n## Other stuff".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "Tell me about philosophy".to_string(),
+            },
+        ];
+
+        let response = engine.chat(&messages, 100).unwrap();
+        assert!(response.contains("NCA Intuition"));
+        assert!(response.contains("philosophy"));
+    }
+
+    #[test]
+    fn test_extract_multiple_sections() {
+        let engine = OfflineEngine::new();
+        let messages = vec![
+            ChatMessage {
+                role: ChatRole::System,
+                content: "You are SAGE.\n\n## Recalled Knowledge\n- Paris is the capital of France\n\n## Associatively Recalled Concepts\n- French Revolution\n\n## NCA Intuition\n**Associated concepts:** france (2)\n\n## NCA Activation Summary\n- Cell (100,200): 0.8 activation\n".to_string(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "What is the capital of France?".to_string(),
+            },
+        ];
+
+        let response = engine.chat(&messages, 100).unwrap();
+        assert!(response.contains("Recalled Knowledge"));
+        assert!(response.contains("Associatively Recalled"));
+        assert!(response.contains("NCA Intuition"));
+        assert!(response.contains("NCA Activation"));
     }
 
     #[test]
