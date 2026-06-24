@@ -3,6 +3,7 @@
 #[allow(unused_assignments, dead_code, unused_imports)]
 pub mod chat_tui;
 pub mod config;
+pub mod consolidation;
 pub mod distributed_knowledge;
 pub mod feedback;
 pub mod grid;
