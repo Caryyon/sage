@@ -20,17 +20,17 @@ fn main() {
     let mut corpus_dir: Option<String> = None;
     let mut text_file: Option<String> = None;
     let mut use_bpe = false;
-    let mut epochs = 50;
-    let mut grid_size = 32;
-    let mut nca_steps = 5;
-    let mut vocab_size = 4096;
+    let mut epochs = 10;
+    let mut grid_size = 16;
+    let mut nca_steps = 3;
+    let mut vocab_size = 1024;
     let mut learning_rate = 0.001;
-    let mut max_examples = 0;
-    let mut max_files = 0;
+    let mut max_examples = 500;
+    let mut max_files = 3;
     let mut batch_size = 8;
-    let mut eval_interval = 5;
+    let mut eval_interval = 1;
     let mut checkpoint_interval = 0;
-    let mut context_window = 64;
+    let mut context_window = 32;
 
     let mut i = 1;
     while i < args.len() {
@@ -186,17 +186,17 @@ fn print_help() {
          sage-nca-train-text --text-file <file> [options]\n\n\
          Options:\n  \
          --bpe / -b           Use BPE subword tokenizer (eliminates <unk> tokens)\n  \
-         --epochs / -e <n>    Number of training epochs (default: 50)\n  \
-         --grid / -g <n>      Grid size (default: 32)\n  \
-         --steps / -s <n>     NCA update steps (default: 5)\n  \
-         --vocab / -v <n>     Vocabulary size (default: 4096)\n  \
+         --epochs / -e <n>    Number of training epochs (default: 10)\n  \
+         --grid / -g <n>      Grid size (default: 16)\n  \
+         --steps / -s <n>     NCA update steps (default: 3)\n  \
+         --vocab / -v <n>     Vocabulary size (default: 1024)\n  \
          --lr <f>             Learning rate (default: 0.001)\n  \
-         --max-examples / -m <n>  Max training examples (0 = all)\n  \
-         --max-files <n>      Max corpus files to load (0 = all)\n  \
+         --max-examples / -m <n>  Max training examples (default: 500)\n  \
+         --max-files <n>      Max corpus files to load (default: 3)\n  \
          --batch-size <n>     Batch size (default: 8)\n  \
-         --eval-interval <n>  Epochs between eval (default: 5)\n  \
+         --eval-interval <n>  Epochs between eval (default: 1)\n  \
          --checkpoint-interval <n>  Epochs between checkpoints (default: 0 = off)\n  \
-         --context-window / -w <n>  Context window size (default: 64)\n  \
+         --context-window / -w <n>  Context window size (default: 32)\n  \
          --help / -h          Show this help\n"
     );
 }
