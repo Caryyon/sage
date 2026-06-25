@@ -169,9 +169,11 @@ fn hybrid_query<'a>(
         let kw_score = kw_count as f32 / query_tokens.len().max(1) as f32;
         
         // Book-name boost: if question mentions a book title and this passage is from that book,
-        // multiply the score to ensure it ranks above keyword-heavy passages from wrong books
+        // multiply the score to ensure it ranks above keyword-heavy passages from wrong books.
+        // 10.0x multiplier needed for 384-dim embeddings (was 3.0 for 768-dim) because lower
+        // embedding precision means keyword noise from common words can dominate.
         let book_mult: f32 = if let Some(ref bt) = book_title {
-            if passage_matches_book(&entry.text, bt) { 3.0 } else { 1.0 }
+            if passage_matches_book(&entry.text, bt) { 10.0 } else { 1.0 }
         } else {
             1.0
         };
