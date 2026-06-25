@@ -1,11 +1,31 @@
 //! Hybrid Q&A with LLM Synthesis — loads HDC store, retrieves passages, asks Ollama to answer
-use sage::distributed_knowledge::embedder;
 use sage::hdc::{default_hdc_path, HdcStore};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
 type KeywordIndex = HashMap<String, Vec<(usize, u32)>>;
+
+/// Embed text using Ollama nomic-embed-text (768-dim)
+fn ollama_embed(text: &str) -> Option<Vec<f32>> {
+    let client = reqwest::blocking::Client::new();
+    let body = serde_json::json!({
+        "model": "nomic-embed-text:latest",
+        "input": text
+    });
+    let resp = client
+        .post("http://localhost:11434/api/embed")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .ok()?;
+    let json: serde_json::Value = resp.json().ok()?;
+    json["embeddings"][0]
+        .as_array()?
+        .iter()
+        .map(|v| v.as_f64().map(|f| f as f32))
+        .collect()
+}
 
 fn tokenize(text: &str) -> Vec<String> {
     // Common English stop words — filter these out to avoid noise in keyword matching
@@ -170,10 +190,8 @@ fn hybrid_query<'a>(
         
         // Book-name boost: if question mentions a book title and this passage is from that book,
         // multiply the score to ensure it ranks above keyword-heavy passages from wrong books.
-        // 10.0x multiplier needed for 384-dim embeddings (was 3.0 for 768-dim) because lower
-        // embedding precision means keyword noise from common words can dominate.
         let book_mult: f32 = if let Some(ref bt) = book_title {
-            if passage_matches_book(&entry.text, bt) { 10.0 } else { 1.0 }
+            if passage_matches_book(&entry.text, bt) { 3.0 } else { 1.0 }
         } else {
             1.0
         };
@@ -305,8 +323,8 @@ fn main() {
     for (question, expected_keyword) in &questions {
         let q_start = Instant::now();
         
-        // Embed the question using fastembed (384-dim, no Ollama needed)
-        let q_emb = embedder::embed_text(question);
+        // Embed the question using Ollama nomic-embed-text (768-dim)
+        let q_emb = ollama_embed(question);
         
         match q_emb {
             Some(q_emb) => {
@@ -370,5 +388,5 @@ fn main() {
     println!("Synthesis hits: {}/{} ({:.1}%)", synthesis_hits, questions.len(), synthesis_hits as f64 / n * 100.0);
     println!("Mean retrieval time: {:.0}ms", total_retrieval_ms as f64 / n);
     println!("Mean synthesis time: {:.0}ms", total_synthesis_ms as f64 / n);
-    println!("\nThis is SAGE v0.6.0 — fastembed (384-dim) + HDC retrieval + LLM synthesis. No API keys. Local only.");
+    println!("\nThis is SAGE v0.6.0 — Ollama nomic-embed-text (768-dim) + HDC retrieval + LLM synthesis. Local only.");
 }
