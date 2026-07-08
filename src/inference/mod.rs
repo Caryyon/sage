@@ -22,6 +22,7 @@ pub mod nca_lm;
 pub mod nca_lm_gpu;
 pub mod nca_lm_trainer;
 pub mod nca_predictor;
+pub mod local_synthesis;
 pub mod offline;
 pub mod ollama;
 pub mod reservoir;
@@ -30,6 +31,7 @@ pub mod reservoir;
 pub use nca_language_head::NcaLanguageHead;
 pub use offline::OfflineEngine;
 pub use ollama::OllamaEngine;
+pub use local_synthesis::LocalSynthesizer;
 
 use std::error::Error;
 

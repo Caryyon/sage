@@ -15,7 +15,7 @@ use crate::grid::{ConsolidationParams, GRID_SIZE, MEMORY_RECENCY};
 // The token-prediction grid is disconnected from knowledge retrieval.
 // Use crate::inference::nca_predictor directly in research binaries if needed.
 use crate::inference::reservoir::{BinaryRelevanceReadout, RetrievalFeedback};
-use crate::inference::{ChatMessage, ChatRole, InferenceEngine};
+use crate::inference::{ChatMessage, ChatRole, InferenceEngine, LocalSynthesizer};
 use crate::query_router_intelligent::IntelligentRouter;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -660,8 +660,8 @@ impl KnowledgeLoop {
         self.intelligent_router.sync_with_feedback();
 
         // 5. Generate response using intelligent query router
-        // Note: NCA predictor is disconnected from knowledge retrieval (see 2026-06-02 diagnosis)
-        // The router still tracks patterns/complexity but we always use LLM for now.
+        // Strategy: Try local synthesis first for simple queries (no Ollama needed).
+        // Fall back to full LLM for complex queries or when local synthesis has no answer.
         let (backend, pattern, confidence) = self
             .intelligent_router
             .route(user_input, self.nca_available);
@@ -671,7 +671,7 @@ impl KnowledgeLoop {
         self.feedback_collector.start_query(
             user_input.to_string(),
             pattern,
-            false, // NCA was not used (disconnected)
+            false,
         );
 
         tracing::debug!(
@@ -681,37 +681,58 @@ impl KnowledgeLoop {
             confidence
         );
 
-        // Always use LLM since NCA predictor is disconnected from knowledge retrieval
-        let response: String = {
-            // Record the routing decision (always LLM)
-            self.intelligent_router.record_outcome(
-                pattern,
-                crate::query_router_intelligent::RoutingOutcome {
-                    backend: crate::query_router_intelligent::Backend::Llm,
-                    success: true,
-                    response_time_ms: 0,
-                    user_satisfaction: None,
-                },
-            );
-            self.feedback_collector.mark_llm_fallback();
+        // Try local synthesis for simple queries with retrieved knowledge.
+        // This avoids an Ollama round-trip for factual questions the brain already knows.
+        let mut used_local = false;
+        let response: String = if backend == crate::query_router_intelligent::Backend::Nca {
+            // Attempt local extractive QA from retrieved passages
+            let synth = LocalSynthesizer::new();
+            match synth.chat(&messages, 500) {
+                Ok(local_answer) => {
+                    used_local = true;
+                    tracing::info!(
+                        "Local synthesis answered query (pattern={:?}, confidence={:.3}) — no LLM call needed",
+                        pattern,
+                        confidence
+                    );
+                    local_answer
+                }
+                Err(_) => {
+                    // Local synthesis couldn't answer — fall back to LLM
+                    tracing::debug!(
+                        "Local synthesis failed for pattern {:?} — falling back to LLM",
+                        pattern
+                    );
+                    self.engine.chat(&messages, 1000)?
+                }
+            }
+        } else {
+            // Complex query — use full LLM
             self.engine.chat(&messages, 1000)?
         };
 
-        // Track timing and complete feedback
         let response_time_ms = query_start.elapsed().as_millis() as u64;
 
-        // Determine if NCA satisfied user based on routing decision
-        match backend {
-            crate::query_router_intelligent::Backend::Nca => {
-                // NCA was used and returned an answer - mark success
-                self.feedback_collector.mark_nca_success();
-            }
-            crate::query_router_intelligent::Backend::Llm => {
-                // LLM was used - NCA didn't satisfy
-                self.feedback_collector.mark_llm_fallback();
-            }
+        // Record the routing outcome
+        let used_backend = if used_local {
+            crate::query_router_intelligent::Backend::Nca
+        } else {
+            crate::query_router_intelligent::Backend::Llm
+        };
+        self.intelligent_router.record_outcome(
+            pattern,
+            crate::query_router_intelligent::RoutingOutcome {
+                backend: used_backend,
+                success: true,
+                response_time_ms,
+                user_satisfaction: None,
+            },
+        );
+        if used_local {
+            self.feedback_collector.mark_nca_success();
+        } else {
+            self.feedback_collector.mark_llm_fallback();
         }
-
         self.feedback_collector.complete(response_time_ms);
 
         // 6. Encode response into NCA grid
