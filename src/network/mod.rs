@@ -639,6 +639,23 @@ impl NetworkManager {
                     self.merge_full_state(grid, confidence, local_grid);
                 }
             },
+            GossipMessage::HdcSync(batch) => {
+                println!(
+                    "[network] HDC sync batch from {} ({} entries, dim={})",
+                    batch.source_node,
+                    batch.entries.len(),
+                    batch.dim
+                );
+                // HDC merge is handled by the caller (sage_node) which has access
+                // to the HDC store. Here we just log it.
+            }
+            GossipMessage::HdcSyncRequest(req) => {
+                println!(
+                    "[network] HDC sync request from {} (since ts={}, max={})",
+                    req.requesting_node, req.since_timestamp, req.max_entries
+                );
+                // HDC request handling is done by the caller (sage_node).
+            }
         }
     }
 

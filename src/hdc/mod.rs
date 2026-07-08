@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Instant;
 
+// Re-export HDC sync types from network module
+pub use crate::network::gossip::{HdcSyncBatch, HdcSyncEntry, HdcSyncRequest};
+
 /// A single HDC entry: an embedding vector and its associated text.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HdcEntry {
@@ -207,6 +210,110 @@ impl HdcStore {
         }
         merged
     }
+
+    /// Create a batch of HDC entries for network sync.
+    ///
+    /// Returns up to `max_entries` entries starting from `since_index`.
+    /// Only includes entries with the correct dimension.
+    pub fn create_sync_batch(
+        &self,
+        source_node: &str,
+        since_index: usize,
+        max_entries: usize,
+        sequence: u64,
+    ) -> HdcSyncBatch {
+        let entries: Vec<HdcSyncEntry> = self
+            .entries
+            .iter()
+            .skip(since_index)
+            .take(max_entries)
+            .map(|e| HdcSyncEntry {
+                embedding: e.embedding.clone(),
+                text: e.text.clone(),
+                confidence: e.confidence,
+                timestamp: e.timestamp,
+            })
+            .collect();
+
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        HdcSyncBatch {
+            source_node: source_node.to_string(),
+            dim: self.dim,
+            entries,
+            sequence,
+            timestamp_ms,
+        }
+    }
+
+    /// Create a sync batch of entries newer than the given timestamp.
+    pub fn create_sync_batch_since(
+        &self,
+        source_node: &str,
+        since_timestamp: u64,
+        max_entries: usize,
+        sequence: u64,
+    ) -> HdcSyncBatch {
+        let entries: Vec<HdcSyncEntry> = self
+            .entries
+            .iter()
+            .filter(|e| e.timestamp > since_timestamp)
+            .take(max_entries)
+            .map(|e| HdcSyncEntry {
+                embedding: e.embedding.clone(),
+                text: e.text.clone(),
+                confidence: e.confidence,
+                timestamp: e.timestamp,
+            })
+            .collect();
+
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        HdcSyncBatch {
+            source_node: source_node.to_string(),
+            dim: self.dim,
+            entries,
+            sequence,
+            timestamp_ms,
+        }
+    }
+
+    /// Merge a received HDC sync batch into this store.
+    ///
+    /// Uses deduplication to avoid storing duplicate entries.
+    /// Returns the number of new entries actually merged.
+    pub fn merge_sync_batch(&mut self, batch: &HdcSyncBatch, dedup_threshold: f32) -> usize {
+        // Dimension must match (or store must be empty for first sync)
+        if self.entries.is_empty() && self.dim == 0 {
+            self.dim = batch.dim;
+        }
+        if batch.dim != self.dim {
+            return 0;
+        }
+
+        let mut merged = 0;
+        for entry in &batch.entries {
+            if self.insert_dedup(&entry.embedding, &entry.text, entry.confidence, dedup_threshold) {
+                merged += 1;
+            }
+        }
+        merged
+    }
+
+    /// Get the latest timestamp in the store (for incremental sync).
+    pub fn latest_timestamp(&self) -> u64 {
+        self.entries
+            .iter()
+            .map(|e| e.timestamp)
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// A query result with full metadata
@@ -247,6 +354,7 @@ pub fn default_hdc_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::gossip::{HdcSyncBatch, HdcSyncEntry};
 
     #[test]
     fn test_insert_and_query() {
@@ -340,5 +448,143 @@ mod tests {
         let merged = store_a.merge(&store_b, 0.98);
         assert_eq!(merged, 1); // Only green was new
         assert_eq!(store_a.len(), 2);
+    }
+
+    #[test]
+    fn test_create_sync_batch() {
+        let mut store = HdcStore::new(3);
+        store.insert(&[1.0, 0.0, 0.0], "red", 1.0);
+        store.insert(&[0.0, 1.0, 0.0], "green", 0.9);
+        store.insert(&[0.0, 0.0, 1.0], "blue", 0.8);
+
+        let batch = store.create_sync_batch("node-alice", 0, 10, 1);
+        assert_eq!(batch.source_node, "node-alice");
+        assert_eq!(batch.dim, 3);
+        assert_eq!(batch.entries.len(), 3);
+        assert_eq!(batch.sequence, 1);
+        assert!(batch.timestamp_ms > 0);
+    }
+
+    #[test]
+    fn test_create_sync_batch_limit() {
+        let mut store = HdcStore::new(3);
+        for i in 0..10 {
+            let mut emb = vec![0.0f32; 3];
+            emb[i % 3] = 1.0;
+            store.insert(&emb, &format!("entry_{}", i), 1.0);
+        }
+
+        let batch = store.create_sync_batch("node-alice", 0, 5, 0);
+        assert_eq!(batch.entries.len(), 5);
+    }
+
+    #[test]
+    fn test_create_sync_batch_since() {
+        let mut store = HdcStore::new(3);
+        store.insert(&[1.0, 0.0, 0.0], "old", 1.0);
+        // Manually set a high timestamp for the next entry
+        store.insert(&[0.0, 1.0, 0.0], "new", 1.0);
+        // Set the first entry's timestamp to 0 (simulate old entry)
+        store.entries[0].timestamp = 100;
+        store.entries[1].timestamp = 200;
+
+        let batch = store.create_sync_batch_since("node-alice", 150, 10, 0);
+        assert_eq!(batch.entries.len(), 1);
+        assert_eq!(batch.entries[0].text, "new");
+    }
+
+    #[test]
+    fn test_merge_sync_batch() {
+        let mut store_a = HdcStore::new(3);
+        store_a.insert(&[1.0, 0.0, 0.0], "red", 1.0);
+
+        let batch = HdcSyncBatch {
+            source_node: "node-bob".to_string(),
+            dim: 3,
+            entries: vec![
+                HdcSyncEntry {
+                    embedding: vec![0.0, 1.0, 0.0],
+                    text: "green".to_string(),
+                    confidence: 1.0,
+                    timestamp: 100,
+                },
+                HdcSyncEntry {
+                    embedding: vec![1.0, 0.0, 0.0],
+                    text: "red duplicate".to_string(),
+                    confidence: 1.0,
+                    timestamp: 100,
+                },
+            ],
+            sequence: 1,
+            timestamp_ms: 1000,
+        };
+
+        let merged = store_a.merge_sync_batch(&batch, 0.95);
+        assert_eq!(merged, 1); // Only "green" was new
+        assert_eq!(store_a.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_sync_batch_dim_mismatch() {
+        let mut store = HdcStore::new(3);
+        store.insert(&[1.0, 0.0, 0.0], "red", 1.0);
+
+        let batch = HdcSyncBatch {
+            source_node: "node-bob".to_string(),
+            dim: 768,
+            entries: vec![HdcSyncEntry {
+                embedding: vec![0.0; 768],
+                text: "wrong dim".to_string(),
+                confidence: 1.0,
+                timestamp: 100,
+            }],
+            sequence: 1,
+            timestamp_ms: 1000,
+        };
+
+        let merged = store.merge_sync_batch(&batch, 0.95);
+        assert_eq!(merged, 0); // Dimension mismatch — nothing merged
+    }
+
+    #[test]
+    fn test_merge_sync_batch_empty_store() {
+        let mut store = HdcStore::new(0);
+
+        let batch = HdcSyncBatch {
+            source_node: "node-bob".to_string(),
+            dim: 3,
+            entries: vec![
+                HdcSyncEntry {
+                    embedding: vec![1.0, 0.0, 0.0],
+                    text: "red".to_string(),
+                    confidence: 1.0,
+                    timestamp: 100,
+                },
+            ],
+            sequence: 1,
+            timestamp_ms: 1000,
+        };
+
+        let merged = store.merge_sync_batch(&batch, 0.95);
+        assert_eq!(merged, 1); // First entry into empty store
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.dim, 3); // Auto-set from batch
+    }
+
+    #[test]
+    fn test_latest_timestamp() {
+        let mut store = HdcStore::new(3);
+        store.insert(&[1.0, 0.0, 0.0], "old", 1.0);
+        store.entries[0].timestamp = 100;
+        store.insert(&[0.0, 1.0, 0.0], "new", 1.0);
+        store.entries[1].timestamp = 200;
+
+        assert_eq!(store.latest_timestamp(), 200);
+    }
+
+    #[test]
+    fn test_latest_timestamp_empty() {
+        let store = HdcStore::new(3);
+        assert_eq!(store.latest_timestamp(), 0);
     }
 }

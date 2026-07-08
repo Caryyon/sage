@@ -27,9 +27,10 @@
 use clap::Parser;
 use sage::distributed_knowledge::{KnowledgeStore, NCAKnowledge};
 use sage::grid::GRID_SIZE;
+use sage::hdc::{default_hdc_path, HdcStore};
 use sage::inference::distributed::{handle_knowledge_query, DistributedInference, InferenceStats};
 use sage::inference::{self, ChatMessage as InfChatMessage, ChatRole, InferenceEngine};
-use sage::network::gossip::{GossipMessage, GossipTransport};
+use sage::network::gossip::{GossipMessage, GossipTransport, HdcSyncBatch};
 use sage::network::identity::NodeIdentity;
 use sage::network::libp2p_transport::{Libp2pConfig, Libp2pTransport};
 use sage::network::{NetworkConfig, NetworkManager};
@@ -106,6 +107,9 @@ struct ClientSession {
 struct NodeState {
     knowledge: NCAKnowledge,
     brain_path: String,
+    hdc_store: Option<HdcStore>,
+    hdc_path: String,
+    hdc_sync_seq: u64,
     engine: Arc<dyn InferenceEngine>,
     node_id: String,
     transport: Arc<Libp2pTransport>,
@@ -183,6 +187,7 @@ async fn handle_client(
                 "distributed_peers": dist_peers,
                 "distributed": dist_peers > 0,
                 "retrieval": retrieval,
+                "hdc_entries": s.hdc_store.as_ref().map(|h| h.len()).unwrap_or(0),
             });
             let _ = writer.write_all(format!("{}\n", status).as_bytes()).await;
             let _ = writer.write_all(b"DONE\n").await;
@@ -656,9 +661,30 @@ async fn main() {
 
     let distributed = Arc::new(DistributedInference::new());
 
+    // Load HDC store (episodic memory with full-dimensional embeddings)
+    let hdc_path = default_hdc_path();
+    let hdc_store = if Path::new(&hdc_path).exists() {
+        match HdcStore::load(Path::new(&hdc_path)) {
+            Ok(store) => {
+                println!("   HDC store: {} entries, {:.1} MB", store.len(), store.memory_bytes() as f64 / 1_048_576.0);
+                Some(store)
+            }
+            Err(e) => {
+                eprintln!("Warning: could not load HDC store: {e}");
+                None
+            }
+        }
+    } else {
+        println!("   HDC store: not found (will create on first learn)");
+        None
+    };
+
     let state = Arc::new(Mutex::new(NodeState {
         knowledge,
         brain_path: bp.clone(),
+        hdc_store,
+        hdc_path: hdc_path.clone(),
+        hdc_sync_seq: 0,
         engine,
         node_id: node_id.clone(),
         transport: Arc::clone(&transport),
@@ -685,7 +711,51 @@ async fn main() {
                     let _ = s.knowledge.save(&s.brain_path);
                 }
                 GossipMessage::PeerAnnounce(announce) => {
-                    println!("[gossip] Peer announce: {}", announce.node_id);
+                    println!("[gossip] Peer announce: {} ({})", announce.node_id, announce.human_name);
+                }
+                GossipMessage::HdcSync(batch) => {
+                    let mut s = state_for_gossip.lock().await;
+                    let entry_count = batch.entries.len();
+                    let source = batch.source_node.clone();
+
+                    // Initialize HDC store if needed
+                    if s.hdc_store.is_none() {
+                        s.hdc_store = Some(HdcStore::new(batch.dim));
+                    }
+
+                    let hdc_path = s.hdc_path.clone();
+                    if let Some(ref mut hdc) = s.hdc_store {
+                        let merged = hdc.merge_sync_batch(&batch, 0.95);
+                        println!(
+                            "[gossip] HDC sync from {}: {}/{} entries merged (dim={})",
+                            source, merged, entry_count, batch.dim
+                        );
+                        // Save HDC store after receiving peer knowledge
+                        let _ = hdc.save(Path::new(&hdc_path));
+                    }
+                }
+                GossipMessage::HdcSyncRequest(req) => {
+                    // Peer wants our HDC entries — respond with a batch
+                    let s = state_for_gossip.lock().await;
+                    if let Some(ref hdc) = s.hdc_store {
+                        let batch = hdc.create_sync_batch_since(
+                            &s.node_id,
+                            req.since_timestamp,
+                            req.max_entries.min(500), // Cap at 500 entries per response
+                            s.hdc_sync_seq,
+                        );
+                        if !batch.entries.is_empty() {
+                            println!(
+                                "[gossip] Sending {} HDC entries to {} (since ts={})",
+                                batch.entries.len(), req.requesting_node, req.since_timestamp
+                            );
+                            let _ = s.transport.broadcast(GossipMessage::HdcSync(batch)).await;
+                        } else {
+                            println!("[gossip] No new HDC entries to send to {}", req.requesting_node);
+                        }
+                    } else {
+                        println!("[gossip] HDC sync request from {} but we have no HDC store", req.requesting_node);
+                    }
                 }
                 _ => {}
             }
@@ -725,8 +795,34 @@ async fn main() {
                 let _ = network_for_sync
                     .broadcast(GossipMessage::KnowledgeDiff(diff))
                     .await;
-                network_for_sync.reset_aggregation().await;
             }
+
+            // HDC sync: broadcast new HDC entries to peers
+            // Share up to 100 new entries per sync round (bandwidth-friendly)
+            {
+                let mut s = state_for_sync.lock().await;
+                if let Some(ref hdc) = s.hdc_store {
+                    let peers = s.transport.connected_peers().await;
+                    if !peers.is_empty() && hdc.len() > 0 {
+                        let batch = hdc.create_sync_batch(
+                            &s.node_id,
+                            0, // Start from beginning for now (full sync)
+                            100, // Max 100 entries per batch
+                            s.hdc_sync_seq,
+                        );
+                        if !batch.entries.is_empty() {
+                            s.hdc_sync_seq += 1;
+                            println!(
+                                "[sync] Broadcasting {} HDC entries to {} peers (dim={})",
+                                batch.entries.len(), peers.len(), batch.dim
+                            );
+                            let _ = s.transport.broadcast(GossipMessage::HdcSync(batch)).await;
+                        }
+                    }
+                }
+            }
+
+            network_for_sync.reset_aggregation().await;
         }
     });
 
@@ -771,6 +867,14 @@ async fn main() {
         } else {
             let count = s.knowledge.active_knowledge(0.01).len();
             println!("Brain saved ({} active cells)", count);
+        }
+        // Save HDC store
+        if let Some(ref hdc) = s.hdc_store {
+            if let Err(e) = hdc.save(Path::new(&s.hdc_path)) {
+                eprintln!("Warning: could not save HDC store: {e}");
+            } else {
+                println!("HDC store saved ({} entries)", hdc.len());
+            }
         }
     }
 

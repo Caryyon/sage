@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub const TOPIC_KNOWLEDGE: &str = "/sage/knowledge/1.0";
 pub const TOPIC_ANNOUNCE: &str = "/sage/announce/1.0";
 pub const TOPIC_GRID_SYNC: &str = "/sage/grid-sync/1.0";
+pub const TOPIC_HDC_SYNC: &str = "/sage/hdc-sync/1.0";
 
 /// All message types that can be sent between SAGE nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +26,15 @@ pub enum GossipMessage {
 
     /// Response with grid state information.
     GridStateResponse(GridStateResponse),
+
+    /// HDC knowledge sync — share episodic memory entries with peers.
+    /// Each entry is an embedding + text + metadata. The receiver merges
+    /// with dedup. This is the "BitTorrent for intelligence" — nodes share
+    /// what they've learned without sharing raw source documents.
+    HdcSync(HdcSyncBatch),
+
+    /// Request HDC entries from a peer (for initial sync or catch-up).
+    HdcSyncRequest(HdcSyncRequest),
 }
 
 /// Peer announcement — broadcast when a node joins or periodically.
@@ -51,6 +61,52 @@ pub struct PeerAnnounce {
 
 impl PeerAnnounce {
     pub const CURRENT_PROTOCOL_VERSION: u32 = 1;
+}
+
+/// A batch of HDC entries to share with peers.
+///
+/// Each entry contains the full embedding vector, the source text, and metadata.
+/// The receiver merges these into its own HDC store with deduplication.
+///
+/// **Privacy note:** Only the embedding (math) and text excerpt are shared —
+/// not the original source document. This is federated learning: nodes share
+/// what they've learned, not what they've read.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HdcSyncBatch {
+    /// Source node ID
+    pub source_node: String,
+    /// Embedding dimension
+    pub dim: usize,
+    /// The entries to share (embedding + text + metadata)
+    pub entries: Vec<HdcSyncEntry>,
+    /// Sequence number for ordering
+    pub sequence: u64,
+    /// Timestamp (Unix epoch ms)
+    pub timestamp_ms: u64,
+}
+
+/// A single HDC entry for network sync.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HdcSyncEntry {
+    /// Full-dimensional embedding vector
+    pub embedding: Vec<f32>,
+    /// Source text excerpt
+    pub text: String,
+    /// Confidence score (0.0-1.0)
+    pub confidence: f32,
+    /// Timestamp (Unix epoch seconds)
+    pub timestamp: u64,
+}
+
+/// Request HDC entries from a peer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HdcSyncRequest {
+    /// Requesting node ID
+    pub requesting_node: String,
+    /// Optional: only send entries newer than this timestamp
+    pub since_timestamp: u64,
+    /// Maximum number of entries to send
+    pub max_entries: usize,
 }
 
 /// Request for grid state — used for initial sync or after detecting hash mismatch.
@@ -97,6 +153,8 @@ impl GossipMessage {
             Self::PeerAnnounce(_) => "PeerAnnounce",
             Self::GridStateRequest(_) => "GridStateRequest",
             Self::GridStateResponse(_) => "GridStateResponse",
+            Self::HdcSync(_) => "HdcSync",
+            Self::HdcSyncRequest(_) => "HdcSyncRequest",
         }
     }
 }
