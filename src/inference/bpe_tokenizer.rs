@@ -153,7 +153,9 @@ mod tests {
     #[test]
     fn test_bpe_train_and_encode() {
         let corpus = "react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation";
-        let tokenizer = BpeTokenizer::train(corpus, 100, None).expect("training should succeed");
+        let tmp = std::env::temp_dir().join(format!("sage_bpe_test_{}.txt", std::process::id()));
+        let tokenizer = BpeTokenizer::train(corpus, 100, Some(&tmp)).expect("training should succeed");
+        let _ = std::fs::remove_file(&tmp);
 
         assert!(tokenizer.vocab_size() >= 10);
         assert!(tokenizer.vocab_size() <= 100);
@@ -169,7 +171,9 @@ mod tests {
     #[test]
     fn test_bpe_handles_unknown_words() {
         let corpus = "react component state props hook useState useEffect render jsx form input button submit validation react component state props hook useState useEffect render jsx form input button submit validation";
-        let tokenizer = BpeTokenizer::train(corpus, 100, None).unwrap();
+        let tmp = std::env::temp_dir().join(format!("sage_bpe_test2_{}.txt", std::process::id()));
+        let tokenizer = BpeTokenizer::train(corpus, 100, Some(&tmp)).unwrap();
+        let _ = std::fs::remove_file(&tmp);
 
         // "xylophone" is not in the corpus — BPE should break it into subwords
         let ids = tokenizer.encode("react xylophone");
