@@ -127,6 +127,17 @@ enum Commands {
         #[command(subcommand)]
         command: ConsolidationCommands,
     },
+    /// Learn from a text file — feed knowledge into your local SAGE
+    Learn {
+        /// Path to text file to learn from
+        file: String,
+        /// Chunk size in characters (default 500)
+        #[arg(short, long, default_value_t = 500)]
+        chunk_size: usize,
+        /// Use fastembed instead of Ollama for embeddings (384-dim, no Ollama needed)
+        #[arg(long)]
+        fastembed: bool,
+    },
     /// Train the NCA-native language head on a corpus
     Train {
         #[command(subcommand)]
@@ -389,6 +400,9 @@ fn main() {
         },
         Some(Commands::Prune { threshold, dry_run }) => {
             run_prune(threshold, dry_run);
+        }
+        Some(Commands::Learn { file, chunk_size, fastembed }) => {
+            run_learn(&file, chunk_size, fastembed);
         }
         Some(Commands::Consolidation { command }) => match command {
             ConsolidationCommands::Train {
@@ -3613,4 +3627,170 @@ fn run_train_language_head(
             std::process::exit(1);
         }
     }
+}
+
+/// `sage learn <file>` — feed a text file into the HDC knowledge store.
+fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
+    use sage::hdc::{HdcStore, default_hdc_path};
+
+    // Read the file
+    let content = match std::fs::read_to_string(file) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("❌ Could not read {}: {}", file, e);
+            std::process::exit(1);
+        }
+    };
+
+    if content.is_empty() {
+        eprintln!("❌ File is empty: {}", file);
+        std::process::exit(1);
+    }
+
+    // Chunk the text
+    let chunks: Vec<String> = content
+        .split(". ")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .chunks(chunk_size / 10) // roughly chunk_size chars per chunk
+        .map(|chunk| chunk.join(". "))
+        .filter(|c| c.len() >= 20) // skip tiny chunks
+        .collect();
+
+    if chunks.is_empty() {
+        eprintln!("❌ No chunks could be extracted from the file (minimum 20 chars per chunk).");
+        std::process::exit(1);
+    }
+
+    println!("📖 Learning from {} ({} chars, {} chunks)", file, content.len(), chunks.len());
+
+    // Load existing HDC store or create new
+    let hdc_path_str = default_hdc_path();
+    let hdc_path = std::path::Path::new(&hdc_path_str);
+    let mut hdc = if hdc_path.exists() {
+        match HdcStore::load(hdc_path) {
+            Ok(h) => {
+                println!("   Loaded existing brain: {} entries", h.len());
+                h
+            }
+            Err(e) => {
+                eprintln!("⚠️  Could not load existing brain ({}), starting fresh", e);
+                HdcStore::new(768)
+            }
+        }
+    } else {
+        println!("   No existing brain, starting fresh");
+        HdcStore::new(768)
+    };
+
+    // Get embeddings for each chunk
+    // Try Ollama first (768-dim nomic-embed-text), unless --fastembed flag
+    let mut inserted = 0;
+    let mut skipped = 0;
+
+    if use_fastembed {
+        // Use fastembed (384-dim) — no Ollama needed
+        // If the existing store is 768-dim, we can't mix dimensions
+        if hdc.dim == 768 && !hdc.entries.is_empty() {
+            eprintln!("❌ Existing brain uses 768-dim embeddings (Ollama).");
+            eprintln!("   Cannot mix with 384-dim fastembed embeddings.");
+            eprintln!("   Delete the existing brain at {} to start fresh with fastembed.", hdc_path.display());
+            std::process::exit(1);
+        }
+        // Use the embedded fastembed encoder
+        let embedder = sage::inference::embeddings::EmbeddingEngine::new();
+        if hdc.entries.is_empty() {
+            hdc = HdcStore::new(384);
+        }
+        for (i, chunk) in chunks.iter().enumerate() {
+            match embedder.embed(chunk) {
+                Ok(emb_vec) => {
+                    let emb: Vec<f32> = emb_vec.iter().map(|v: &f64| *v as f32).collect();
+                    if hdc.insert_dedup(&emb, chunk, 0.8, 0.95) {
+                        inserted += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Embedding failed for chunk {}: {}", i, e);
+                    skipped += 1;
+                }
+            }
+            if (i + 1) % 50 == 0 {
+                println!("   Processed {}/{} chunks ({} inserted, {} skipped)", i + 1, chunks.len(), inserted, skipped);
+            }
+        }
+    } else {
+        // Use Ollama nomic-embed-text (768-dim)
+        let ollama_url = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+        // Check if Ollama is running
+        let health_check = client.get(format!("{}/api/tags", ollama_url)).send();
+        match health_check {
+            Ok(resp) if resp.status().is_success() => {}
+            _ => {
+                eprintln!("❌ Ollama is not running at {}", ollama_url);
+                eprintln!("   Start it with: ollama serve");
+                eprintln!("   Or use fastembed: sage learn {} --fastembed", file);
+                std::process::exit(1);
+            }
+        }
+
+        if hdc.entries.is_empty() {
+            hdc = HdcStore::new(768);
+        }
+
+        for (i, chunk) in chunks.iter().enumerate() {
+            // Call Ollama embeddings API
+            let payload = serde_json::json!({
+                "model": "nomic-embed-text",
+                "prompt": chunk
+            });
+            let url = format!("{}/api/embeddings", ollama_url);
+            match client.post(&url).json(&payload).send() {
+                Ok(resp) => {
+                    if let Ok(json) = resp.json::<serde_json::Value>() {
+                        if let Some(emb) = json["embedding"].as_array() {
+                            let embedding: Vec<f32> = emb.iter()
+                                .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+                                .collect();
+                            if hdc.insert_dedup(&embedding, chunk, 0.8, 0.95) {
+                                inserted += 1;
+                            } else {
+                                skipped += 1;
+                            }
+                        } else {
+                            skipped += 1;
+                        }
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                Err(_) => {
+                    skipped += 1;
+                }
+            }
+            if (i + 1) % 50 == 0 {
+                println!("   Processed {}/{} chunks ({} inserted, {} skipped)", i + 1, chunks.len(), inserted, skipped);
+            }
+        }
+    }
+
+    // Save the HDC store
+    if let Err(e) = hdc.save(hdc_path) {
+        eprintln!("❌ Failed to save brain: {}", e);
+        std::process::exit(1);
+    }
+
+    println!();
+    println!("✅ Learned {} chunks from {} ({} skipped as duplicates)", inserted, file, skipped);
+    println!("   Brain now has {} entries at {}", hdc.len(), hdc_path.display());
+    println!();
+    println!("Try it: sage search \"{}\"", chunks.first().map(|c| c.split_whitespace().take(5).collect::<Vec<_>>().join(" ")).unwrap_or_else(|| "your query".to_string()));
 }
