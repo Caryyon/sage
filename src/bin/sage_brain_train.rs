@@ -344,9 +344,6 @@ fn main() {
 
         // Gradient estimate
         let mut new_params = base_params.clone();
-        for param in new_params.iter_mut() {
-            *param = *param; // just referencing
-        }
         for (i, param) in new_params.iter_mut().enumerate() {
             let mut grad = 0.0;
             for j in 0..POPULATION {
