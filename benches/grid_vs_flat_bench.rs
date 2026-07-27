@@ -24,13 +24,13 @@ impl FlatStore {
     }
 
     fn encode(&mut self, text: &str, config: &EncoderConfig) {
-        let features = encode_text(text, config).expect("encode failed");
+        let features = encode_text(text, config);
         self.embeddings.push(features.values);
         self.texts.push(text.to_string());
     }
 
     fn query(&self, query: &str, config: &EncoderConfig, top_k: usize) -> Vec<(String, f64)> {
-        let q = encode_text(query, config).expect("encode failed");
+        let q = encode_text(query, config);
         let mut scores: Vec<(usize, f64)> = self.embeddings.iter().enumerate().map(|(i, emb)| {
             let dot: f64 = q.values.iter().zip(emb.iter()).map(|(a, b)| a * b).sum();
             let mag_q: f64 = q.values.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -39,7 +39,7 @@ impl FlatStore {
         }).collect();
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scores.truncate(top_k);
-        scores.into_iter().map(|(i, s)| (self.texts[i].clone(), s)).collect()
+        scores.into_iter().map(|(i, s)| (self.texts[i].clone(), s as f64)).collect()
     }
 }
 
@@ -163,7 +163,7 @@ fn bench_retrieval_quality(c: &mut Criterion) {
             |b, q| {
                 b.iter(|| {
                     let results = flat.query(black_box(q), &config, 5);
-                    results.first().map(|(_, s)| s).unwrap_or(0.0)
+                    results.first().map(|(_, s)| *s).unwrap_or(0.0)
                 });
             },
         );
