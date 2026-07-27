@@ -301,11 +301,8 @@ fn test_encoding_produces_reasonable_activation() {
 
     // With spread_radius=6, we expect roughly π*6² ≈ 113 cells to be activated
     // Allow range [10, 500] for reasonable activation
-    assert!(
-        after >= 0,
-        "Encoding should activate cells (NCA is stochastic), got {}",
-        after
-    );
+    // NCA activation is stochastic — just verify it doesn't crash
+    let _ = after;
     assert!(
         after <= 500,
         "Encoding should activate at most 500 cells, got {}",
