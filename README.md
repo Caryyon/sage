@@ -2,19 +2,9 @@
 
 <img src="https://raw.githubusercontent.com/Caryyon/sage/main/sage-logo.svg" alt="SAGE Logo" width="200" height="200">
 
-**Decentralized AI that runs on your machine. No API keys. No cloud. No gatekeepers.**
+**Free, local AI that reads your documents and answers questions. No API keys. No cloud. No subscription.**
 
-SAGE is a Neural Cellular Automata intelligence system that learns, grows, and connects — all on your hardware. Your knowledge stays on your machine. Your conversations are private. Your AI is yours.
-
-## Why SAGE?
-
-| | Centralized AI | SAGE |
-|---|---|---|
-| **Privacy** | ❌ Your data trains their models | ✅ Everything stays local |
-| **Cost** | ❌ $20/month subscription | ✅ Free forever |
-| **Offline** | ❌ Requires internet | ✅ Works without connection |
-| **Ownership** | ❌ They can shut it down | ✅ You own the software |
-| **Decentralized** | ❌ Single point of failure | ✅ Peer-to-peer mesh |
+SAGE runs entirely on your machine. Feed it PDFs, text files, or web pages, and it remembers what it read. Ask questions in plain English and get answers grounded in your documents. Your data never leaves your computer.
 
 ## Quick Start
 
@@ -22,85 +12,129 @@ SAGE is a Neural Cellular Automata intelligence system that learns, grows, and c
 # Install
 curl -fsSL https://whatssage.ai/install.sh | bash
 
-# Chat with your personal AI
+# Feed it a document
+sage learn ~/Documents/notes.txt
+
+# Ask a question
+sage search "What did I write about project timelines?"
+
+# Interactive chat
 sage chat
-> What is SAGE?
-SAGE is a decentralized AI system...
-
-# See how well it's learning from you
-sage feedback stats
-
-# Join the mesh to sync across devices
-sage node start
 ```
+
+That's it. No API keys to set up. No account to create. No monthly bill.
 
 ## What SAGE Does
 
-**1. Remembers Everything You Tell It**
-Chat with SAGE about anything — your projects, ideas, preferences, notes. It stores knowledge in a 256×256 neural grid, retrieving relevant context when you need it later.
+**1. Learns from your documents**
+Feed SAGE text files, markdown, or any plain text. It chunks the content, embeds it, and stores it locally in a knowledge base that persists across sessions.
 
-**2. Learns From Your Feedback**  
-SAGE tracks which responses satisfy you and which fall back to LLM. Over time, it gets better at serving you faster with local inference for queries it handles well.
-
-**3. Grows Smarter With NCA Dynamics**
-Knowledge channels in the grid undergo real cellular automata updates: Hebbian reinforcement strengthens frequently used memories, decay fades inactive ones, spreading activation forms associations, and embedding diffusion clusters related concepts.
-
-**4. Syncs Across Your Devices**
-Run SAGE on multiple machines. Your knowledge automatically syncs peer-to-peer via libp2p gossip — no cloud required, your data stays yours.
-
-**Try the Demo**
 ```bash
-./demo.sh  # See SAGE in action
+sage learn ~/Documents/report.txt
+sage learn ~/notes.md --fastembed   # No Ollama needed (384-dim mode)
 ```
 
-## Features
+**2. Answers questions about what it's read**
+Ask questions in plain English. SAGE retrieves relevant passages from its knowledge base and synthesizes answers using a local LLM.
 
-- **Grid-Based Knowledge Store** — 256×256 grid stores semantic embeddings with attention-based retrieval
-- **Real NCA Dynamics** — Hebbian reinforcement, decay, spreading activation, and embedding diffusion on knowledge channels (v0.5.0)
-- **Intelligent Query Router** — Learning-based routing (v0.3.7): detects 12 query patterns, tracks NCA vs LLM accuracy, adapts over time
-- **Attention-Based Retrieval** — Cross-attention decoder finds relevant knowledge with delta attention spreading
-- **Peer-to-Peer Mesh** — Nodes share knowledge diffs via libp2p gossip protocols
-- **Retrieval Feedback Learning** — System improves from relevance signals using Adam optimizer
-- **Bootstrap Peer Config** — Configure WAN bootstrap peers via `~/.sage/config.toml` (v0.3.8)
-- **Raspberry Pi Ready** — Runs on a $35 board
-- **Zero API Keys** — No OpenAI, no monthly fees
+```bash
+sage search "What are the key findings in the Q3 report?"
+sage chat   # Interactive mode with brain visualization
+```
 
-## Architecture
+**3. Works completely offline**
+No API keys. No cloud calls. No telemetry. The LLM (SmolLM2 1.7B) runs in-process, or you can use Ollama with any local model.
 
-- **Rust** — Memory-safe, fast, no Python dependency hell
-- **Grid Store** — Knowledge stored as semantic embeddings in 256×256 grid with real NCA dynamics
-- **libp2p** — Decentralized peer-to-peer networking
-- **Ollama** — LLM fallback for complex reasoning
-- **Ed25519** — Cryptographic identity and signed updates
-- **Semantic Hashing** — 0% collision feature-to-position mapping
+**4. Shares knowledge peer-to-peer**
+Run SAGE on multiple machines. Knowledge syncs over libp2p — no central server, no cloud. Your data stays yours.
+
+```bash
+sage node start    # Join the P2P network
+```
+
+## How It Works
+
+SAGE has three layers:
+
+1. **HDC Knowledge Store** — Every chunk of text you feed it gets embedded (768-dim via Ollama, or 384-dim via fastembed) and stored in a Hyperdimensional Computing store. Retrieval is cosine similarity + keyword fusion. This is the memory.
+
+2. **LLM Synthesis** — When you ask a question, SAGE retrieves the top relevant passages and a local LLM (SmolLM2 1.7B bundled, or any Ollama model) reads them and generates an answer. This is the reasoning.
+
+3. **NCA Grid** — A Neural Cellular Automata grid learns patterns from the knowledge store during "sleep" cycles. This is experimental — it provides intuition and association, not generation. (Work in progress.)
 
 ## Platforms
 
 - ✅ Linux (x86_64, ARM64)
 - ✅ macOS (Intel, Apple Silicon)
-- ✅ Windows
-- ✅ Raspberry Pi 4
-- 🔄 Browser (WASM — in progress)
-- ✅ Docker
+- 🚧 Windows (build from source)
 
-## Documentation
+## Requirements
 
-- [Install Guide](docs/getting-started/install.md)
-- [Offline Mode](docs/getting-started/offline.md)
-- [Architecture](docs/architecture/nca-brain.md)
-- [Contributing](CONTRIBUTING.md)
-- [Roadmap](ROADMAP.md)
+- **Minimal mode:** 500MB RAM, no GPU, no Ollama (fastembed + embedded SmolLM2)
+- **Full mode:** 2GB RAM, Ollama installed (for larger models and 768-dim embeddings)
+- **Disk:** ~250MB for SAGE + ~1GB for SmolLM2 model (auto-downloaded on first chat)
 
-## Community
+## Commands
 
-- [Discord](https://discord.gg/U999zZUuUV)
-- [GitHub Issues](https://github.com/Caryyon/sage/issues)
-- [Network Dashboard](https://whatssage.ai/network)
+| Command | Description |
+|---------|-------------|
+| `sage chat` | Interactive chat with brain visualization |
+| `sage learn <file>` | Feed a text file into the knowledge base |
+| `sage search "query"` | Search the knowledge base (non-interactive) |
+| `sage status` | Show brain stats (entries, memory usage, grid state) |
+| `sage node start` | Start P2P networking and sync with other nodes |
+| `sage export <file>` | Export knowledge to a .sage file (for sneakernet sharing) |
+| `sage import <file>` | Import knowledge from a .sage file |
+| `sage insights` | Show knowledge statistics and insights |
+| `sage feedback stats` | Show learning statistics |
+| `sage dream` | Run a consolidation cycle (NCA sleep) |
+| `sage update` | Update SAGE to the latest version |
+| `sage version` | Print version info |
+
+## OpenAI-Compatible API
+
+SAGE includes an API server that's compatible with the OpenAI chat completions endpoint:
+
+```bash
+sage-api --port 19175 --api-port 19176
+
+# Use with any OpenAI client
+OPENAI_API_BASE=http://localhost:19176/v1 python3 your_script.py
+```
+
+Endpoints:
+- `POST /v1/chat/completions` — Chat completions (streaming supported)
+- `POST /v1/embeddings` — Text embeddings
+- `GET /v1/sage/status` — Brain stats
+- `GET /v1/sage/brain` — NCA grid state
+- `GET /health` — Health check
+
+## Build from Source
+
+```bash
+git clone https://github.com/Caryyon/sage.git
+cd sage
+cargo build --release
+
+# With CUDA support (for GPU inference)
+cargo build --release --features cuda
+
+# With local LLM (llama.cpp)
+cargo build --release --features local-llm
+```
+
+## Project Status
+
+SAGE is in active development. The core RAG pipeline (HDC retrieval + LLM synthesis) is stable and working. The NCA grid is experimental research. See [docs/v0.6.0-the-actual-plan.md](docs/v0.6.0-the-actual-plan.md) for the roadmap.
+
+**Current version:** v0.5.11
 
 ## License
 
-MIT — use it, modify it, share it.
+MIT
 
----
+## Community
 
-**SAGE is the future of AI — distributed, owned by its users, and getting smarter together.**
+- Discord: https://discord.gg/U999zZUuUV
+- Website: https://whatssage.ai
+- GitHub: https://github.com/Caryyon/sage
