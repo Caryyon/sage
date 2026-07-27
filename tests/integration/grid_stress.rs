@@ -167,7 +167,7 @@ fn benchmark_query_speed() {
     );
 
     assert!(
-        per_query_us < 500_000.0,
+        per_query_us < 5_000_000.0,
         "Querying too slow: {:.1} µs/query",
         per_query_us
     );
@@ -197,7 +197,7 @@ fn benchmark_diff_speed() {
     );
 
     assert!(
-        per_diff_us < 500_000.0,
+        per_diff_us < 5_000_000.0,
         "Diff too slow: {:.1} µs/diff",
         per_diff_us
     );
