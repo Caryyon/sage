@@ -22,10 +22,10 @@ clap = { version = "4.5", features = ["derive", "env"] }
 dotenvy = "0.15"
 ctrlc = "3.4"
 
-# Candle ML framework for local inference
-candle-core = { version = "0.8", features = ["cuda"] }
-candle-nn = { version = "0.8", features = ["cuda"] }
-candle-transformers = { version = "0.8", features = ["cuda"] }
+# Candle ML framework for local inference (CUDA optional via `cuda` feature)
+candle-core = { version = "0.8" }
+candle-nn = { version = "0.8" }
+candle-transformers = { version = "0.8" }
 hf-hub = "0.4"
 tokenizers = "0.20"
 regex = "1.12.2"
@@ -59,7 +59,7 @@ default = ["embedded-llm"]
 embedded-llm = []
 ollama = []
 local-llm = ["llama_cpp"]
-cuda = ["llama_cpp/cuda"]
+cuda = ["llama_cpp/cuda", "candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 metal = ["llama_cpp/metal"]
 
 [[bin]]
@@ -125,6 +125,10 @@ path = "src/bin/sage_autolearn.rs"
 [[bin]]
 name = "sage-offline-qa"
 path = "src/bin/sage_offline_qa.rs"
+
+[[bin]]
+name = "sage-specialist-qa"
+path = "src/bin/sage_specialist_qa.rs"
 
 [[bin]]
 name = "test-encoder"
