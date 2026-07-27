@@ -143,6 +143,40 @@ enum Commands {
         #[command(subcommand)]
         command: TrainCommands,
     },
+    /// Hire and query trained AI specialists
+    Specialist {
+        #[command(subcommand)]
+        command: SpecialistCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SpecialistCommands {
+    /// List available trained specialists
+    List,
+    /// Download (hire) a trained specialist brain from the SAGE hub
+    Hire {
+        /// Specialist name (e.g. accounting-specialist)
+        name: String,
+    },
+    /// Show details about a hired specialist
+    Info {
+        /// Specialist name
+        name: String,
+    },
+    /// Ask a trained specialist a question
+    Ask {
+        /// Specialist name (e.g. accounting-specialist)
+        name: String,
+        /// Your question
+        query: String,
+        /// Force local synthesis only (no LLM)
+        #[arg(long)]
+        no_llm: bool,
+        /// Ollama model to use for synthesis
+        #[arg(short, long, default_value = "qwen2.5:14b")]
+        model: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -425,6 +459,20 @@ fn main() {
                 population,
             } => {
                 run_train_language_head(corpus, text, max_vocab, epochs, population);
+            }
+        },
+        Some(Commands::Specialist { command }) => match command {
+            SpecialistCommands::List => {
+                run_specialist_list();
+            }
+            SpecialistCommands::Hire { name } => {
+                run_specialist_hire(&name);
+            }
+            SpecialistCommands::Info { name } => {
+                run_specialist_info(&name);
+            }
+            SpecialistCommands::Ask { name, query, no_llm, model } => {
+                run_specialist_ask(&name, &query, no_llm, &model);
             }
         },
         Some(Commands::Node { command }) => match command {
@@ -3793,4 +3841,308 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
     println!("   Brain now has {} entries at {}", hdc.len(), hdc_path.display());
     println!();
     println!("Try it: sage search \"{}\"", chunks.first().map(|c| c.split_whitespace().take(5).collect::<Vec<_>>().join(" ")).unwrap_or_else(|| "your query".to_string()));
+}
+
+// ─── Specialist Commands ─────────────────────────────────────────────────────
+
+/// `sage specialist list` — show available trained specialists
+fn run_specialist_list() {
+    use sage::brain_templates::{default_templates_dir, BrainTemplateBundle};
+
+    let templates_dir = default_templates_dir();
+    let specialists_dir = sage::specialist::default_specialists_dir();
+
+    // List local templates
+    let mut local: Vec<String> = Vec::new();
+    if templates_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&templates_dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".template") {
+                        local.push(name.trim_end_matches(".template").to_string());
+                    }
+                }
+            }
+        }
+    }
+    local.sort();
+
+    // List specialist profiles
+    let mut profiles: Vec<String> = Vec::new();
+    if specialists_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&specialists_dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".specialist") {
+                        profiles.push(name.trim_end_matches(".specialist").to_string());
+                    }
+                }
+            }
+        }
+    }
+    profiles.sort();
+
+    if local.is_empty() && profiles.is_empty() {
+        println!("No specialists hired yet.");
+        println!();
+        println!("Available to hire from the SAGE hub:");
+        println!("  accounting-specialist");
+        println!("  customer-support-specialist");
+        println!("  data-analyst-specialist");
+        println!("  high-school-graduate");
+        println!("  marketing-specialist");
+        println!("  paralegal-specialist");
+        println!("  software-engineer-specialist");
+        println!();
+        println!("Hire one with: sage specialist hire <name>");
+        return;
+    }
+
+    println!("🧠 Hired Specialists:");
+    println!();
+    for name in &local {
+        // Try to load template metadata
+        let path = templates_dir.join(format!("{}.template", name));
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        let size_mb = size / (1024 * 1024);
+
+        // Try to load the template header for active cells count
+        let cells = std::fs::read(&path).ok()
+            .and_then(|data| {
+                bincode::deserialize::<BrainTemplateBundle>(&data).ok()
+            })
+            .map(|b| b.meta.active_cells)
+            .unwrap_or(0);
+
+        let has_profile = profiles.contains(name);
+
+        println!("  {} {} ({}MB, {} cells){}",
+            if has_profile { "✅" } else { "📦" },
+            name,
+            size_mb,
+            cells,
+            if has_profile { " [profile]" } else { "" },
+        );
+    }
+    println!();
+    println!("Ask a specialist: sage specialist ask <name> \"your question\"");
+}
+
+/// `sage specialist hire <name>` — download a trained brain from GitHub releases
+fn run_specialist_hire(name: &str) {
+    use sage::brain_templates::default_templates_dir;
+
+    let templates_dir = default_templates_dir();
+    let template_path = templates_dir.join(format!("{}.template", name));
+
+    // Already hired?
+    if template_path.exists() {
+        println!("✅ {} is already hired (template exists at {})", name, template_path.display());
+        println!();
+        println!("Ask a question: sage specialist ask {} \"your question\"", name);
+        return;
+    }
+
+    // Download from GitHub releases
+    let repo = "Caryyon/sage";
+    let version = "v0.6.0"; // TODO: get latest release dynamically
+    let filename = format!("{}.template", name);
+    let url = format!("https://github.com/{}/releases/download/{}/{}", repo, version, filename);
+
+    println!(" Hiring {} from SAGE hub...", name);
+    println!("   Downloading from: {}", url);
+
+    // Create templates dir if needed
+    if let Err(e) = std::fs::create_dir_all(&templates_dir) {
+        eprintln!("❌ Could not create templates directory: {}", e);
+        std::process::exit(1);
+    }
+
+    // Download with curl
+    let result = std::process::Command::new("curl")
+        .args(&["-fSL", "-o", template_path.to_str().unwrap(), &url])
+        .status();
+
+    match result {
+        Ok(status) if status.success() => {
+            let size = std::fs::metadata(&template_path).map(|m| m.len()).unwrap_or(0);
+            println!();
+            println!("✅ {} hired! ({}MB)", name, size / (1024 * 1024));
+            println!();
+            println!("Ask a question: sage specialist ask {} \"your question\"", name);
+        }
+        _ => {
+            // Clean up partial download
+            let _ = std::fs::remove_file(&template_path);
+            eprintln!("❌ Could not download {} from {}", name, url);
+            eprintln!();
+            eprintln!("Available specialists:");
+            eprintln!("  accounting-specialist");
+            eprintln!("  customer-support-specialist");
+            eprintln!("  data-analyst-specialist");
+            eprintln!("  high-school-graduate");
+            eprintln!("  marketing-specialist");
+            eprintln!("  paralegal-specialist");
+            eprintln!("  software-engineer-specialist");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `sage specialist info <name>` — show details about a hired specialist
+fn run_specialist_info(name: &str) {
+    use sage::brain_templates::{default_templates_dir, BrainTemplateBundle};
+    use sage::specialist::{default_specialists_dir, find_specialist};
+
+    let templates_dir = default_templates_dir();
+    let template_path = templates_dir.join(format!("{}.template", name));
+
+    if !template_path.exists() {
+        eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
+        std::process::exit(1);
+    }
+
+    // Load template
+    let data = match std::fs::read(&template_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("❌ Could not read template: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let bundle: BrainTemplateBundle = match bincode::deserialize(&data) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("❌ Could not parse template: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("🧠 Specialist: {}", bundle.meta.name);
+    println!("   Description: {}", bundle.meta.description);
+    println!("   Domain: {}", bundle.meta.domain.as_deref().unwrap_or("general"));
+    println!("   Tags: {}", bundle.meta.tags.join(", "));
+    println!("   Grid: {}×{} ({} channels)", bundle.meta.grid_size, bundle.meta.grid_size, bundle.meta.channels);
+    println!("   Active cells: {}", bundle.meta.active_cells);
+    println!("   Version: {}", bundle.meta.version);
+    println!("   Created: {}", bundle.meta.created_at);
+
+    // Check for specialist profile
+    let specialists_dir = default_specialists_dir();
+    if let Ok(profile) = find_specialist(name, &specialists_dir) {
+        println!();
+        println!("   Role: {} {}", profile.role.level.label(), profile.role.title);
+        println!("   Capabilities: {}", profile.capabilities.len());
+        for cap in profile.capabilities.iter().take(5) {
+            println!("     • {} — {}", cap.name, cap.description);
+        }
+        if profile.capabilities.len() > 5 {
+            println!("     ...and {} more", profile.capabilities.len() - 5);
+        }
+        println!("   Rate: ${}/hr", profile.hiring.suggested_rate_usd);
+    }
+}
+
+/// `sage specialist ask <name> "query"` — ask a trained specialist a question
+fn run_specialist_ask(name: &str, query: &str, no_llm: bool, model: &str) {
+    use sage::brain_templates::{default_templates_dir, BrainTemplateBundle};
+    use sage::distributed_knowledge::KnowledgeStore;
+    use sage::inference::{InferenceEngine, OllamaEngine, LocalSynthesizer};
+    use sage::knowledge_loop::KnowledgeLoop;
+    use std::sync::Arc;
+
+    let templates_dir = default_templates_dir();
+    let template_path = templates_dir.join(format!("{}.template", name));
+
+    if !template_path.exists() {
+        eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
+        std::process::exit(1);
+    }
+
+    println!("🧠 Loading specialist: {}...", name);
+    let data = match std::fs::read(&template_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("❌ Could not read template: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let bundle: BrainTemplateBundle = match bincode::deserialize(&data) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("❌ Could not parse template: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut knowledge = bundle.to_knowledge();
+    let active = knowledge.active_knowledge(0.01).len();
+    println!("   {} active cells, {} text entries", active, knowledge.text_store.len());
+    println!();
+
+    // Query the specialist's brain
+    let results = knowledge.query(query, 5);
+    let passages: Vec<String> = results.iter()
+        .filter_map(|r| r.text.clone())
+        .collect();
+
+    if passages.is_empty() {
+        // No results — fall back to LLM if available
+        if no_llm {
+            println!("❓ No relevant knowledge found in {}'s brain.", name);
+            println!("   This specialist may not have been trained on this topic.");
+            return;
+        }
+        println!("❓ No local knowledge found. Trying LLM...");
+    } else {
+        // Show retrieved passages
+        println!("📚 Retrieved {} passages:", passages.len());
+        for (i, p) in passages.iter().enumerate().take(3) {
+            let preview: String = p.chars().take(120).collect();
+            println!("   {}. {}...", i + 1, preview);
+        }
+        println!();
+
+        // Try local synthesis
+        if let Some(answer) = LocalSynthesizer::synthesize(query, &passages.iter().map(|p| p.clone()).collect::<Vec<_>>()) {
+            println!("💬 {} says:", bundle.meta.name);
+            println!("   {}", answer);
+            println!();
+            println!("   (Answer from local synthesis — no LLM needed)");
+            return;
+        }
+    }
+
+    // Fall back to LLM
+    if no_llm {
+        println!("❓ Could not synthesize an answer from local knowledge.");
+        println!("   Try without --no-llm to use an LLM for synthesis.");
+        return;
+    }
+
+    let ollama_url = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let engine = OllamaEngine::new(Some(model.to_string()), Some(ollama_url.to_string()));
+    let engine = Arc::new(engine);
+
+    // Build a knowledge loop with the specialist's brain
+    let mut kl = KnowledgeLoop::new(engine.clone());
+
+    // Encode the query into the specialist's brain
+    // and use the full chat pipeline for synthesis
+    let result = match kl.chat(query) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("❌ Query failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("💬 {} says:", bundle.meta.name);
+    println!("   {}", result);
+    println!();
+
+    println!();
+    println!("   (Answer synthesized with {})", model);
 }
