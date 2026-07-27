@@ -3945,7 +3945,17 @@ fn run_specialist_hire(name: &str) {
 
     // Download from GitHub releases
     let repo = "Caryyon/sage";
-    let version = "v0.6.0"; // TODO: get latest release dynamically
+    let version = std::process::Command::new("curl")
+        .args(["-s", "https://api.github.com/repos/Caryyon/sage/releases/latest"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.contains("\"tag_name\""))
+                .and_then(|l| l.split("\"").nth(3).map(|s| s.to_string()))
+        })
+        .unwrap_or_else(|| "v0.6.0".to_string());
     let filename = format!("{}.template", name);
     let url = format!("https://github.com/{}/releases/download/{}/{}", repo, version, filename);
 
