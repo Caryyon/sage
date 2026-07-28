@@ -3845,6 +3845,18 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
 
 // ─── Specialist Commands ─────────────────────────────────────────────────────
 
+/// Resolve a specialist name to its actual template filename, trying both
+/// `{name}.template` and `{name}-specialist.template`.
+fn resolve_specialist_path(templates_dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    for filename in &[format!("{}.template", name), format!("{}-specialist.template", name)] {
+        let path = templates_dir.join(filename);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// `sage specialist list` — show available trained specialists
 fn run_specialist_list() {
     use sage::brain_templates::{default_templates_dir, BrainTemplateBundle};
@@ -3933,17 +3945,6 @@ fn run_specialist_hire(name: &str) {
     use sage::brain_templates::default_templates_dir;
 
     let templates_dir = default_templates_dir();
-    let template_path = templates_dir.join(format!("{}.template", name));
-
-    // Already hired?
-    if template_path.exists() {
-        println!("✅ {} is already hired (template exists at {})", name, template_path.display());
-        println!();
-        println!("Ask a question: sage specialist ask {} \"your question\"", name);
-        return;
-    }
-
-    // Download from GitHub releases
     let repo = "Caryyon/sage";
     let version = std::process::Command::new("curl")
         .args(["-s", "https://api.github.com/repos/Caryyon/sage/releases/latest"])
@@ -3956,11 +3957,20 @@ fn run_specialist_hire(name: &str) {
                 .and_then(|l| l.split("\"").nth(3).map(|s| s.to_string()))
         })
         .unwrap_or_else(|| "v0.6.0".to_string());
-    let filename = format!("{}.template", name);
-    let url = format!("https://github.com/{}/releases/download/{}/{}", repo, version, filename);
+    // Try both {name}.template and {name}-specialist.template
+    let filenames = [format!("{}.template", name), format!("{}-specialist.template", name)];
 
-    println!(" Hiring {} from SAGE hub...", name);
-    println!("   Downloading from: {}", url);
+    // Check if already hired under either name
+    for filename in &filenames {
+        let path = templates_dir.join(filename);
+        if path.exists() {
+            let display_name = filename.trim_end_matches(".template");
+            println!("✅ {} is already hired (template exists at {})", display_name, path.display());
+            println!();
+            println!("Ask a question: sage specialist ask {} \"your question\"", display_name);
+            return;
+        }
+    }
 
     // Create templates dir if needed
     if let Err(e) = std::fs::create_dir_all(&templates_dir) {
@@ -3968,34 +3978,49 @@ fn run_specialist_hire(name: &str) {
         std::process::exit(1);
     }
 
-    // Download with curl
-    let result = std::process::Command::new("curl")
-        .args(&["-fSL", "-o", template_path.to_str().unwrap(), &url])
-        .status();
+    println!(" Hiring {} from SAGE hub...", name);
 
-    match result {
-        Ok(status) if status.success() => {
-            let size = std::fs::metadata(&template_path).map(|m| m.len()).unwrap_or(0);
-            println!();
-            println!("✅ {} hired! ({}MB)", name, size / (1024 * 1024));
-            println!();
-            println!("Ask a question: sage specialist ask {} \"your question\"", name);
+    let mut downloaded = false;
+    let mut last_url = String::new();
+
+    for filename in &filenames {
+        let template_path = templates_dir.join(filename);
+        let url = format!("https://github.com/{}/releases/download/{}/{}", repo, version, filename);
+        last_url = url.clone();
+
+        println!("   Downloading from: {}", url);
+
+        let result = std::process::Command::new("curl")
+            .args(&["-fSL", "-o", template_path.to_str().unwrap(), &url])
+            .status();
+
+        if let Ok(status) = result {
+            if status.success() {
+                let size = std::fs::metadata(&template_path).map(|m| m.len()).unwrap_or(0);
+                let display_name = filename.trim_end_matches(".template");
+                println!("✅ {} hired! ({}MB)", display_name, size / (1024 * 1024));
+                println!();
+                println!("Ask a question: sage specialist ask {} \"your question\"", display_name);
+                downloaded = true;
+                break;
+            }
         }
-        _ => {
-            // Clean up partial download
-            let _ = std::fs::remove_file(&template_path);
-            eprintln!("❌ Could not download {} from {}", name, url);
-            eprintln!();
-            eprintln!("Available specialists:");
-            eprintln!("  accounting-specialist");
-            eprintln!("  customer-support-specialist");
-            eprintln!("  data-analyst-specialist");
-            eprintln!("  high-school-graduate");
-            eprintln!("  marketing-specialist");
-            eprintln!("  paralegal-specialist");
-            eprintln!("  software-engineer-specialist");
-            std::process::exit(1);
-        }
+        // Clean up partial download
+        let _ = std::fs::remove_file(&template_path);
+    }
+
+    if !downloaded {
+        eprintln!("❌ Could not download {} from {}", name, last_url);
+        eprintln!();
+        eprintln!("Available specialists:");
+        eprintln!("  accounting-specialist");
+        eprintln!("  customer-support-specialist");
+        eprintln!("  data-analyst-specialist");
+        eprintln!("  high-school-graduate");
+        eprintln!("  marketing-specialist");
+        eprintln!("  paralegal-specialist");
+        eprintln!("  software-engineer-specialist");
+        std::process::exit(1);
     }
 }
 
@@ -4005,12 +4030,13 @@ fn run_specialist_info(name: &str) {
     use sage::specialist::{default_specialists_dir, find_specialist};
 
     let templates_dir = default_templates_dir();
-    let template_path = templates_dir.join(format!("{}.template", name));
+    let template_path = resolve_specialist_path(&templates_dir, name)
+        .unwrap_or_else(|| {
+            eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
+            std::process::exit(1);
+        });
 
-    if !template_path.exists() {
-        eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
-        std::process::exit(1);
-    }
+    let display_name = template_path.file_stem().unwrap().to_str().unwrap();
 
     // Load template
     let data = match std::fs::read(&template_path) {
@@ -4040,7 +4066,7 @@ fn run_specialist_info(name: &str) {
 
     // Check for specialist profile
     let specialists_dir = default_specialists_dir();
-    if let Ok(profile) = find_specialist(name, &specialists_dir) {
+    if let Ok(profile) = find_specialist(display_name, &specialists_dir) {
         println!();
         println!("   Role: {} {}", profile.role.level.label(), profile.role.title);
         println!("   Capabilities: {}", profile.capabilities.len());
@@ -4063,14 +4089,15 @@ fn run_specialist_ask(name: &str, query: &str, no_llm: bool, model: &str) {
     use std::sync::Arc;
 
     let templates_dir = default_templates_dir();
-    let template_path = templates_dir.join(format!("{}.template", name));
+    let template_path = resolve_specialist_path(&templates_dir, name)
+        .unwrap_or_else(|| {
+            eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
+            std::process::exit(1);
+        });
 
-    if !template_path.exists() {
-        eprintln!("❌ {} is not hired. Run: sage specialist hire {}", name, name);
-        std::process::exit(1);
-    }
+    let display_name = template_path.file_stem().unwrap().to_str().unwrap();
 
-    println!("🧠 Loading specialist: {}...", name);
+    println!("🧠 Loading specialist: {}...", display_name);
     let data = match std::fs::read(&template_path) {
         Ok(d) => d,
         Err(e) => {
@@ -4101,7 +4128,7 @@ fn run_specialist_ask(name: &str, query: &str, no_llm: bool, model: &str) {
     if passages.is_empty() {
         // No results — fall back to LLM if available
         if no_llm {
-            println!("❓ No relevant knowledge found in {}'s brain.", name);
+            println!("❓ No relevant knowledge found in {}'s brain.", display_name);
             println!("   This specialist may not have been trained on this topic.");
             return;
         }
