@@ -164,7 +164,7 @@ cargo build --release --features local-llm
 
 SAGE is in active development. The core RAG pipeline (HDC retrieval + LLM synthesis) is stable and working. The NCA grid is experimental research. See [docs/v0.6.0-the-actual-plan.md](docs/v0.6.0-the-actual-plan.md) for the roadmap.
 
-**Current version:** v0.6.0
+**Current version:** v0.6.1
 
 ## License
 
