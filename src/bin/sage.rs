@@ -3014,51 +3014,131 @@ fn run_import(file: &str, weight: f64) {
 
 /// Search knowledge base non-interactively
 fn run_search(query: &str, max_results: usize, json_output: bool) {
+    use sage::hdc::{HdcStore, default_hdc_path};
+    use sage::distributed_knowledge::embedder;
+
     let brain_path = default_brain_path();
-    let mut knowledge = NCAKnowledge::new();
 
-    if !std::path::Path::new(&brain_path).exists() {
-        if json_output {
-            println!("{{\"error\": \"No brain found\", \"results\": []}}");
+    // Collect results from both stores: NCA brain + HDC store
+    // NCA brain: pattern-based retrieval (from chat history, dreams)
+    // HDC store: document-based retrieval (from `sage learn`)
+    let mut nca_results: Vec<_> = Vec::new();
+    let mut hdc_results: Vec<(f32, String)> = Vec::new();
+
+    // --- NCA Brain ---
+    if std::path::Path::new(&brain_path).exists() {
+        let mut knowledge = NCAKnowledge::new();
+        if let Ok(()) = knowledge.load(&brain_path) {
+            nca_results = knowledge.query(query, max_results);
+        }
+    }
+
+    // --- HDC Store ---
+    let hdc_path = default_hdc_path();
+    if std::path::Path::new(&hdc_path).exists() {
+        if let Ok(hdc) = HdcStore::load(std::path::Path::new(&hdc_path)) {
+            // Try to get an embedding for the query
+            
+            if let Some(query_emb) = embedder::embed_text(query) {
+                if hdc.dim == query_emb.len() {
+                    let results = hdc.query(&query_emb, max_results);
+                    for (rel, text) in results {
+                        if rel > 0.15 {
+                            hdc_results.push((rel, text.to_string()));
+                        }
+                    }
+                } else if hdc.dim == 768 {
+                    // HDC store uses Ollama embeddings (768-dim)
+                    if let Some(ollama_emb) = sage::distributed_knowledge::encoder::get_ollama_embedding_f32(query, &sage::distributed_knowledge::encoder::EncoderConfig::default()) {
+                        let results = hdc.query(&ollama_emb, max_results);
+                        for (rel, text) in results {
+                            if rel > 0.15 {
+                                hdc_results.push((rel, text.to_string()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if we have any results
+    if nca_results.iter().all(|r| r.text.is_none()) && hdc_results.is_empty() {
+        if !std::path::Path::new(&brain_path).exists() && !std::path::Path::new(&hdc_path).exists() {
+            if json_output {
+                println!("{{\"error\": \"No brain found\", \"results\": []}}");
+            } else {
+                eprintln!("No brain found. Run `sage learn <file>` to feed it documents, or `sage chat` to talk.");
+            }
+        } else if json_output {
+            println!("{{\"query\": \"{}\", \"results\": [], \"total\": 0}}", query);
         } else {
-            eprintln!(
-                "No brain found at {}. Run `sage chat` first to learn some facts.",
-                brain_path
-            );
+            println!("No results found for: {}", query);
         }
         std::process::exit(1);
     }
 
-    if let Err(e) = knowledge.load(&brain_path) {
+    // Merge results: combine NCA + HDC, sort by relevance
+    struct SearchResult {
+        text: String,
+        relevance: f32,
+        source: String,
+    }
+
+    let mut merged: Vec<SearchResult> = Vec::new();
+
+    // NCA results
+    for r in &nca_results {
+        if let Some(ref text) = r.text {
+            merged.push(SearchResult {
+                text: text.clone(),
+                relevance: r.relevance as f32,
+                source: "brain".to_string(),
+            });
+        }
+    }
+
+    // HDC results
+    for (rel, text) in &hdc_results {
+        // Avoid duplicates: skip if text already in merged
+        if !merged.iter().any(|m| m.text == *text) {
+            merged.push(SearchResult {
+                text: text.clone(),
+                relevance: *rel,
+                source: "learned".to_string(),
+            });
+        }
+    }
+
+    // Sort by relevance descending
+    merged.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+    // Show results from both sources. Guarantee HDC (learned) results visibility
+    // even when NCA (brain) results have higher relevance, since the user
+    // explicitly fed documents via `sage learn`.
+    if !hdc_results.is_empty() {
+        // Keep at least as many HDC results as NCA results, up to max_results each
+        merged.truncate(max_results * 2);
+    } else {
+        merged.truncate(max_results);
+    }
+
+    if merged.is_empty() {
         if json_output {
-            println!(
-                "{{\"error\": \"Failed to load brain: {}\", \"results\": []}}",
-                e
-            );
+            println!("{{\"query\": \"{}\", \"results\": [], \"total\": 0}}", query);
         } else {
-            eprintln!("Failed to load brain: {}", e);
+            println!("No results found for: {}", query);
         }
         std::process::exit(1);
     }
-
-    // Run query
-    let results = knowledge.query(query, max_results);
 
     if json_output {
-        // JSON output
-        let json_results: Vec<serde_json::Value> = results
-            .iter()
-            .filter(|r| r.text.is_some())
-            .map(|r| {
-                serde_json::json!({
-                    "text": r.text.as_ref().unwrap(),
-                    "relevance": r.relevance,
-                    "position": [r.position.0, r.position.1],
-                    "activation": r.activation,
-                    "confidence": r.confidence
-                })
+        let json_results: Vec<serde_json::Value> = merged.iter().map(|r| {
+            serde_json::json!({
+                "text": r.text,
+                "relevance": r.relevance,
+                "source": r.source,
             })
-            .collect();
+        }).collect();
 
         let output = serde_json::json!({
             "query": query,
@@ -3071,27 +3151,13 @@ fn run_search(query: &str, max_results: usize, json_output: bool) {
             serde_json::to_string_pretty(&output).unwrap_or_else(|_| "{}".to_string())
         );
     } else {
-        // Human-readable output
-        let relevant: Vec<_> = results.iter().filter(|r| r.text.is_some()).collect();
-
-        if relevant.is_empty() {
-            println!("No results found for: {}", query);
-            std::process::exit(1);
-        }
-
         println!("Query: {}", query);
-        println!("Found {} result(s):\n", relevant.len());
+        println!("Found {} result(s):\n", merged.len());
 
-        for (i, r) in relevant.iter().enumerate() {
-            let text = r.text.as_ref().unwrap();
-            println!("{}. [relevance: {:.3}] {}", i + 1, r.relevance, text);
+        for (i, r) in merged.iter().enumerate() {
+            let preview: String = r.text.chars().take(200).collect();
+            println!("{}. [relevance: {:.3}] ({}) {}", i + 1, r.relevance, r.source, preview);
         }
-    }
-
-    // Exit 0 if results found, 1 if not
-    let has_results = results.iter().any(|r| r.text.is_some());
-    if !has_results {
-        std::process::exit(1);
     }
 }
 
@@ -3741,9 +3807,11 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
         // Use fastembed (384-dim) — no Ollama needed
         // If the existing store is 768-dim, we can't mix dimensions
         if hdc.dim == 768 && !hdc.entries.is_empty() {
-            eprintln!("❌ Existing brain uses 768-dim embeddings (Ollama).");
+            eprintln!("❌ Existing HDC store uses 768-dim embeddings (Ollama).");
             eprintln!("   Cannot mix with 384-dim fastembed embeddings.");
-            eprintln!("   Delete the existing brain at {} to start fresh with fastembed.", hdc_path.display());
+            eprintln!("   Options:");
+            eprintln!("     1. Use Ollama (default): sage learn {}", file);
+            eprintln!("     2. Delete the store and start fresh: rm ~/.sage/hdc_store.bin");
             std::process::exit(1);
         }
         // Use the embedded fastembed encoder
@@ -3758,6 +3826,9 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
                     if hdc.insert_dedup(&emb, chunk, 0.8, 0.95) {
                         inserted += 1;
                     } else {
+                        if let Some((cos, existing)) = hdc.find_most_similar(&emb) {
+                            eprintln!("   ⚠️  Skipped (similarity {:.3} to existing entry): {:.60}...", cos, existing);
+                        }
                         skipped += 1;
                     }
                 }
@@ -3794,6 +3865,16 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
             hdc = HdcStore::new(768);
         }
 
+        // Check dimension compatibility
+        if !hdc.entries.is_empty() && hdc.dim != 768 {
+            eprintln!("❌ Existing HDC store uses {}-dim embeddings, but Ollama produces 768-dim.", hdc.dim);
+            eprintln!("   The store was created with --fastembed (384-dim).");
+            eprintln!("   Options:");
+            eprintln!("     1. Use --fastembed: sage learn {} --fastembed", file);
+            eprintln!("     2. Delete the store and start fresh: rm ~/.sage/hdc_store.bin");
+            std::process::exit(1);
+        }
+
         for (i, chunk) in chunks.iter().enumerate() {
             // Call Ollama embeddings API
             let payload = serde_json::json!({
@@ -3811,16 +3892,24 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
                             if hdc.insert_dedup(&embedding, chunk, 0.8, 0.95) {
                                 inserted += 1;
                             } else {
+                                if let Some((cos, existing)) = hdc.find_most_similar(&embedding) {
+                                    eprintln!("   ⚠️  Skipped (similarity {:.3}): {:.60}...", cos, existing);
+                                } else {
+                                    eprintln!("   ⚠️  Skipped (dimension mismatch or unknown reason)");
+                                }
                                 skipped += 1;
                             }
                         } else {
+                            eprintln!("   ⚠️  No embedding in Ollama response");
                             skipped += 1;
                         }
                     } else {
+                        eprintln!("   ⚠️  Could not parse Ollama response");
                         skipped += 1;
                     }
                 }
-                Err(_) => {
+                Err(e) => {
+                    eprintln!("   ⚠️  Ollama request failed: {}", e);
                     skipped += 1;
                 }
             }

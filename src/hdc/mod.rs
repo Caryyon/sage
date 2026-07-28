@@ -93,6 +93,24 @@ impl HdcStore {
         self.insert(embedding, text, confidence)
     }
 
+    /// Find the most similar existing entry. Returns (cosine_similarity, text) or None.
+    pub fn find_most_similar(&self, embedding: &[f32]) -> Option<(f32, &str)> {
+        if self.entries.is_empty() || embedding.len() != self.dim {
+            return None;
+        }
+        let query_mag = magnitude(embedding);
+        let mut best_cos = -1.0f32;
+        let mut best_idx = 0;
+        for (i, entry) in self.entries.iter().enumerate() {
+            let cos = cosine_similarity(embedding, query_mag, &entry.embedding, self.magnitudes[i]);
+            if cos > best_cos {
+                best_cos = cos;
+                best_idx = i;
+            }
+        }
+        Some((best_cos, self.entries[best_idx].text.as_str()))
+    }
+
     /// Query the store for the top-K most similar entries.
     /// Returns (cosine_similarity, text) pairs sorted by similarity descending.
     pub fn query(&self, embedding: &[f32], k: usize) -> Vec<(f32, &str)> {
