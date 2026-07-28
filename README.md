@@ -74,6 +74,39 @@ SAGE has three layers:
 - **Full mode:** 2GB RAM, Ollama installed (for larger models and 768-dim embeddings)
 - **Disk:** ~250MB for SAGE + ~1GB for SmolLM2 model (auto-downloaded on first chat)
 
+## Trained AI Specialists (New in v0.6.0)
+
+SAGE comes with 8 pre-trained specialist brains. Each one is a ~40MB trained brain that downloads on demand and answers questions locally — no API keys, no cloud, no training required.
+
+```bash
+# See available specialists
+sage specialist list
+
+# Hire one (downloads the trained brain)
+sage specialist hire accounting
+
+# Ask it a question
+sage specialist ask accounting "What is a balance sheet?"
+
+# See brain details
+sage specialist info accounting
+```
+
+Available specialists:
+
+| Specialist | Trained On |
+|------------|------------|
+| accounting | Financial statements, bookkeeping, GAAP |
+| customer-support | Support best practices, escalation, CSAT |
+| data-analyst | SQL, statistics, data visualization |
+| high-school-graduate | General knowledge across subjects |
+| marketing | Marketing strategy, channels, branding |
+| paralegal | Legal research, contracts, civil procedure |
+| software-engineer | Data structures, algorithms, system design |
+| cs-fundamentals | CS theory, complexity, automata |
+
+Each specialist works with local synthesis (no Ollama needed) or falls back to Ollama for complex queries.
+
 ## Commands
 
 | Command | Description |
@@ -81,6 +114,10 @@ SAGE has three layers:
 | `sage chat` | Interactive chat with brain visualization |
 | `sage learn <file>` | Feed a text file into the knowledge base |
 | `sage search "query"` | Search the knowledge base (non-interactive) |
+| `sage specialist list` | List available trained specialists |
+| `sage specialist hire <name>` | Download a trained specialist brain |
+| `sage specialist info <name>` | Show specialist brain details |
+| `sage specialist ask <name> "query"` | Ask a specialist a question |
 | `sage status` | Show brain stats (entries, memory usage, grid state) |
 | `sage node start` | Start P2P networking and sync with other nodes |
 | `sage export <file>` | Export knowledge to a .sage file (for sneakernet sharing) |
@@ -127,7 +164,7 @@ cargo build --release --features local-llm
 
 SAGE is in active development. The core RAG pipeline (HDC retrieval + LLM synthesis) is stable and working. The NCA grid is experimental research. See [docs/v0.6.0-the-actual-plan.md](docs/v0.6.0-the-actual-plan.md) for the roadmap.
 
-**Current version:** v0.5.11
+**Current version:** v0.6.0
 
 ## License
 
