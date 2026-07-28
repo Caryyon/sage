@@ -1,289 +1,86 @@
 {
   "name": "data-analyst",
-  "domain": "data-analysis",
+  "domain": "data-analytics",
+  "description": "Data analyst fundamentals: statistics, data visualization, SQL basics, spreadsheet skills, data cleaning, reporting, and basic ML concepts. Built on top of high-school-graduate base.",
   "topics": [
     {
-      "name": "python-data",
-      "region": [
-        0,
-        0,
-        64,
-        64
-      ],
+      "name": "statistics-for-analysis",
+      "region": null,
       "facts": [
-        {
-          "fact": "Pandas is the primary Python library for data manipulation and analysis"
-        },
-        {
-          "fact": "A DataFrame is a 2D labeled data structure with columns of potentially different types"
-        },
-        {
-          "fact": "df.head() shows the first 5 rows, df.tail() shows the last 5 rows"
-        },
-        {
-          "fact": "df.describe() generates descriptive statistics for numeric columns"
-        },
-        {
-          "fact": "df.info() shows column types, non-null counts, and memory usage"
-        },
-        {
-          "fact": "df.groupby() splits data into groups for aggregation and transformation"
-        },
-        {
-          "fact": "df.merge() combines DataFrames like SQL JOINs on specified columns"
-        },
-        {
-          "fact": "df.pivot_table() creates spreadsheet-style pivot tables with aggregation"
-        },
-        {
-          "fact": "df.fillna() replaces missing values with a specified value or method"
-        },
-        {
-          "fact": "df.dropna() removes rows or columns containing missing values"
-        },
-        {
-          "fact": "df.sort_values() sorts by one or more columns in ascending or descending order"
-        },
-        {
-          "fact": "df.apply() applies a function along an axis of the DataFrame"
-        },
-        {
-          "fact": "pd.read_csv() reads CSV files into DataFrames with automatic type inference"
-        },
-        {
-          "fact": "pd.to_datetime() converts strings or numbers to datetime objects"
-        },
-        {
-          "fact": "df.resample() groups time series data by time frequency for aggregation"
-        },
-        {
-          "fact": "NumPy provides the ndarray \u2014 a fast multidimensional array object"
-        },
-        {
-          "fact": "np.mean(), np.median(), np.std() compute basic statistics on arrays"
-        },
-        {
-          "fact": "np.where() returns elements chosen from arrays based on a condition"
-        },
-        {
-          "fact": "Matplotlib is the foundational Python plotting library"
-        },
-        {
-          "fact": "Seaborn builds on Matplotlib with higher-level statistical visualizations"
-        }
+        { "fact": "Descriptive statistics summarize a dataset, including measures of central tendency (mean, median, mode) and spread (range, variance, standard deviation)", "query": "descriptive statistics mean median mode variance" },
+        { "fact": "Inferential statistics use sample data to make predictions or generalizations about a larger population", "query": "inferential statistics sample predictions population" },
+        { "fact": "A normal distribution (bell curve) is symmetric around the mean, with 68% of data within one standard deviation and 95% within two", "query": "normal distribution bell curve 68 95 standard deviation" },
+        { "fact": "A p-value measures the probability that an observed result occurred by chance, with values below 0.05 typically considered statistically significant", "query": "p-value probability chance significance 0.05" },
+        { "fact": "A hypothesis test evaluates whether there is enough evidence to reject a null hypothesis in favor of an alternative hypothesis", "query": "hypothesis test null alternative reject" },
+        { "fact": "Correlation coefficients range from -1 (perfect negative) to 1 (perfect positive), with 0 meaning no linear relationship", "query": "correlation coefficient -1 1 0 no relationship" },
+        { "fact": "Correlation does not imply causation: two variables may be related without one causing the other", "query": "correlation not causation related not causing" },
+        { "fact": "Sampling bias occurs when the sample is not representative of the population, leading to skewed conclusions", "query": "sampling bias not representative skewed" },
+        { "fact": "An outlier is a data point significantly different from other observations, which can be caused by errors or genuine anomalies", "query": "outlier significantly different anomaly error" },
+        { "fact": "Confidence intervals provide a range of values likely to contain the true population parameter, with a stated confidence level like 95%", "query": "confidence interval range population parameter 95" }
       ]
     },
     {
-      "name": "sql",
-      "region": [
-        64,
-        0,
-        128,
-        64
-      ],
+      "name": "sql-basics",
+      "region": null,
       "facts": [
-        {
-          "fact": "SELECT retrieves data from one or more tables"
-        },
-        {
-          "fact": "WHERE filters rows based on conditions before grouping"
-        },
-        {
-          "fact": "GROUP BY groups rows sharing a value so aggregate functions can be applied"
-        },
-        {
-          "fact": "HAVING filters groups after aggregation \u2014 like WHERE but for grouped data"
-        },
-        {
-          "fact": "JOIN combines rows from two or more tables based on a related column"
-        },
-        {
-          "fact": "INNER JOIN returns rows when there is a match in both tables"
-        },
-        {
-          "fact": "LEFT JOIN returns all rows from the left table and matched rows from the right"
-        },
-        {
-          "fact": "RIGHT JOIN returns all rows from the right table and matched rows from the left"
-        },
-        {
-          "fact": "FULL OUTER JOIN returns rows when there is a match in either table"
-        },
-        {
-          "fact": "UNION combines result sets of two or more SELECT statements (removes duplicates)"
-        },
-        {
-          "fact": "UNION ALL combines result sets without removing duplicates"
-        },
-        {
-          "fact": "Subqueries are queries nested inside another query \u2014 in SELECT, FROM, or WHERE"
-        },
-        {
-          "fact": "CTEs (Common Table Expressions) with WITH clause create temporary named result sets"
-        },
-        {
-          "fact": "Window functions (ROW_NUMBER, RANK, LAG, LEAD) operate on a set of rows related to the current row"
-        },
-        {
-          "fact": "OVER clause defines the window for window functions with PARTITION BY and ORDER BY"
-        },
-        {
-          "fact": "Indexes speed up data retrieval \u2014 CREATE INDEX on frequently queried columns"
-        },
-        {
-          "fact": "Primary keys uniquely identify each row in a table"
-        },
-        {
-          "fact": "Foreign keys establish relationships between tables and enforce referential integrity"
-        },
-        {
-          "fact": "Normalization reduces data redundancy by organizing into related tables"
-        },
-        {
-          "fact": "EXPLAIN shows the query execution plan for performance analysis"
-        }
+        { "fact": "SQL (Structured Query Language) is the standard language for querying and manipulating relational databases", "query": "SQL structured query language relational database" },
+        { "fact": "The SELECT statement retrieves data from a database, specifying which columns to return and from which table", "query": "SELECT statement retrieve columns table" },
+        { "fact": "The WHERE clause filters rows based on conditions, such as WHERE age > 18", "query": "WHERE clause filter rows condition" },
+        { "fact": "JOIN combines rows from two or more tables based on a related column, with types including INNER JOIN, LEFT JOIN, and RIGHT JOIN", "query": "JOIN combine tables related column inner left right" },
+        { "fact": "GROUP BY groups rows that share values in specified columns, often used with aggregate functions like COUNT, SUM, AVG, MAX, and MIN", "query": "GROUP BY aggregate COUNT SUM AVG MAX MIN" },
+        { "fact": "ORDER BY sorts results by one or more columns, either ascending (ASC, default) or descending (DESC)", "query": "ORDER BY sort ascending descending ASC DESC" },
+        { "fact": "A primary key uniquely identifies each row in a table and cannot contain NULL values", "query": "primary key unique row NULL not" },
+        { "fact": "A foreign key references the primary key of another table, establishing a relationship between the two tables", "query": "foreign key references primary key relationship" },
+        { "fact": "Aggregate functions perform calculations on multiple rows and return a single value, such as SUM, COUNT, AVG, MIN, MAX", "query": "aggregate function multiple rows single value SUM COUNT" },
+        { "fact": "A subquery is a query nested inside another query, used to filter or provide data for the outer query", "query": "subquery nested inside outer query filter" }
       ]
     },
     {
-      "name": "statistics",
-      "region": [
-        128,
-        0,
-        192,
-        64
-      ],
+      "name": "data-visualization",
+      "region": null,
       "facts": [
-        {
-          "fact": "Mean is the average \u2014 sum of values divided by count"
-        },
-        {
-          "fact": "Median is the middle value when data is sorted \u2014 robust to outliers"
-        },
-        {
-          "fact": "Mode is the most frequently occurring value"
-        },
-        {
-          "fact": "Standard deviation measures the spread of data around the mean"
-        },
-        {
-          "fact": "Variance is the average squared deviation from the mean"
-        },
-        {
-          "fact": "Correlation measures the strength and direction of a linear relationship between two variables"
-        },
-        {
-          "fact": "Pearson correlation ranges from -1 (perfect negative) to +1 (perfect positive)"
-        },
-        {
-          "fact": "P-value is the probability of observing results at least as extreme given the null hypothesis is true"
-        },
-        {
-          "fact": "Null hypothesis (H0) assumes no effect or no difference"
-        },
-        {
-          "fact": "Alternative hypothesis (H1) is what you want to prove"
-        },
-        {
-          "fact": "Type I error rejects a true null hypothesis (false positive)"
-        },
-        {
-          "fact": "Type II error fails to reject a false null hypothesis (false negative)"
-        },
-        {
-          "fact": "Confidence interval gives a range likely to contain the true population parameter"
-        },
-        {
-          "fact": "T-test compares means between two groups"
-        },
-        {
-          "fact": "ANOVA compares means across three or more groups"
-        },
-        {
-          "fact": "Chi-square test assesses relationships between categorical variables"
-        },
-        {
-          "fact": "Linear regression models the relationship between a dependent variable and one or more independent variables"
-        },
-        {
-          "fact": "R-squared measures how well the regression model explains the variance in the data"
-        },
-        {
-          "fact": "Normal distribution is symmetric bell-shaped \u2014 68% within 1 SD, 95% within 2 SD"
-        },
-        {
-          "fact": "Central Limit Theorem: sample means approach normal distribution as sample size increases"
-        }
+        { "fact": "A bar chart compares categorical data using rectangular bars, with bar height representing the value", "query": "bar chart categorical comparison bars height" },
+        { "fact": "A line chart shows trends over time by connecting data points with lines, useful for time series data", "query": "line chart trends time series points" },
+        { "fact": "A scatter plot displays individual data points on two axes to show relationships between two variables", "query": "scatter plot two axes relationship variables" },
+        { "fact": "A pie chart shows proportions of a whole as slices of a circle, effective for a small number of categories", "query": "pie chart proportions whole slices" },
+        { "fact": "A histogram shows the distribution of a continuous variable by grouping values into bins, unlike a bar chart which shows categories", "query": "histogram distribution continuous bins variable" },
+        { "fact": "A heatmap uses color intensity to represent values in a matrix, making patterns easy to spot", "query": "heatmap color intensity matrix patterns" },
+        { "fact": "Tableau and Power BI are popular data visualization tools that create interactive dashboards from data sources", "query": "Tableau Power BI interactive dashboards" },
+        { "fact": "Choosing the right chart type depends on the data and the message: comparisons use bar charts, trends use line charts, distributions use histograms, and relationships use scatter plots", "query": "chart type comparison trend distribution relationship" },
+        { "fact": "A dashboard combines multiple visualizations and metrics in a single view for monitoring key indicators", "query": "dashboard visualizations metrics monitoring view" },
+        { "fact": "Color in data visualization should be used purposefully to highlight important information, not decoratively, and should be accessible to colorblind users", "query": "color visualization purposeful accessible colorblind" }
       ]
     },
     {
-      "name": "visualization",
-      "region": [
-        192,
-        0,
-        256,
-        64
-      ],
+      "name": "spreadsheet-skills",
+      "region": null,
       "facts": [
-        {
-          "fact": "Bar charts compare quantities across categories"
-        },
-        {
-          "fact": "Line charts show trends over time or continuous data"
-        },
-        {
-          "fact": "Scatter plots show relationships between two numeric variables"
-        },
-        {
-          "fact": "Histograms show the distribution of a single numeric variable"
-        },
-        {
-          "fact": "Box plots show median, quartiles, and outliers of a distribution"
-        },
-        {
-          "fact": "Heatmaps display matrix data with color intensity"
-        },
-        {
-          "fact": "Pie charts show proportions of a whole \u2014 use sparingly, bar charts are often better"
-        },
-        {
-          "fact": "Stacked bar charts show both total and composition across categories"
-        },
-        {
-          "fact": "Area charts are line charts with the area below filled \u2014 good for volume over time"
-        },
-        {
-          "fact": "Dual-axis charts combine two different scales on the same plot"
-        },
-        {
-          "fact": "Color should be meaningful and accessible \u2014 use colorblind-friendly palettes"
-        },
-        {
-          "fact": "Chart titles should describe what the viewer should take away"
-        },
-        {
-          "fact": "Axis labels must include units of measurement"
-        },
-        {
-          "fact": "Legends should be positioned where they don't obscure data"
-        },
-        {
-          "fact": "Gridlines should be subtle \u2014 they support reading, not dominate"
-        },
-        {
-          "fact": "Annotations call out specific data points or events"
-        },
-        {
-          "fact": "Dashboards combine multiple visualizations to tell a complete story"
-        },
-        {
-          "fact": "Interactivity (filters, drill-downs, tooltips) lets users explore data themselves"
-        },
-        {
-          "fact": "Tableau is a leading drag-and-drop visualization platform"
-        },
-        {
-          "fact": "Data storytelling combines visualization with narrative to drive decisions"
-        }
+        { "fact": "A spreadsheet organizes data into rows and columns, with cells identified by column letter and row number like A1 or B5", "query": "spreadsheet rows columns cells A1 B5" },
+        { "fact": "A formula performs calculations on cell values, starting with an equals sign, such as =SUM(A1:A10)", "query": "formula calculation equals SUM cells" },
+        { "fact": "VLOOKUP searches for a value in the first column of a range and returns a value from a specified column in the same row", "query": "VLOOKUP search first column return value" },
+        { "fact": "Pivot tables summarize large datasets by grouping and aggregating data across multiple dimensions", "query": "pivot table summarize group aggregate large data" },
+        { "fact": "Conditional formatting automatically formats cells based on their values, such as highlighting cells above a threshold", "query": "conditional formatting highlight values threshold" },
+        { "fact": "Absolute references (with dollar signs like $A$1) do not change when copied, while relative references adjust based on their new position", "query": "absolute reference $A$1 relative copied" },
+        { "fact": "IF functions return one value if a condition is true and another if false, such as =IF(A1>10, High, Low)", "query": "IF function condition true false High Low" },
+        { "fact": "Data validation restricts what can be entered in a cell, such as only allowing numbers between 1 and 100", "query": "data validation restrict entered cell numbers" },
+        { "fact": "Filtering shows only rows that meet specified criteria, while sorting rearranges rows by one or more columns", "query": "filtering sorting rows criteria columns" },
+        { "fact": "Freezing panes keeps header rows or columns visible while scrolling through large spreadsheets", "query": "freeze panes header visible scrolling large" }
+      ]
+    },
+    {
+      "name": "data-cleaning-and-reporting",
+      "region": null,
+      "facts": [
+        { "fact": "Data cleaning is the process of fixing or removing incorrect, corrupted, duplicate, or incomplete data from a dataset", "query": "data cleaning fixing removing incorrect duplicate incomplete" },
+        { "fact": "Missing data can be handled by removing rows with gaps, imputing values (filling with mean/median), or flagging as unknown", "query": "missing data remove impute mean median unknown" },
+        { "fact": "Duplicate records should be identified and removed to avoid counting the same observation multiple times", "query": "duplicate records identify remove multiple count" },
+        { "fact": "Data normalization scales values to a standard range (like 0-1) so different features contribute equally to analysis", "query": "data normalization scale standard range features" },
+        { "fact": "ETL (Extract, Transform, Load) is the process of pulling data from sources, converting it to the right format, and loading it into a destination", "query": "ETL extract transform load data sources" },
+        { "fact": "A data dictionary documents each field's name, type, description, allowed values, and relationships to other fields", "query": "data dictionary field name type description values" },
+        { "fact": "A report summarizes findings for stakeholders, with a clear narrative connecting the data to business decisions", "query": "report summarizes findings stakeholders narrative decisions" },
+        { "fact": "Key Performance Indicators (KPIs) are metrics that measure progress toward specific business goals", "query": "KPI key performance indicators metrics goals" },
+        { "fact": "Cohort analysis groups users by a shared characteristic (like signup month) and tracks their behavior over time", "query": "cohort analysis groups shared characteristic behavior time" },
+        { "fact": "A data pipeline automates the flow of data from source to destination, including extraction, transformation, and loading steps", "query": "data pipeline automate flow extraction transformation loading" }
       ]
     }
   ]

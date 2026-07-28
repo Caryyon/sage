@@ -1,0 +1,119 @@
+{
+  "name": "software-engineer",
+  "domain": "software-engineering",
+  "description": "Software engineering fundamentals: programming concepts, data structures, algorithms, version control, testing, debugging, and software development lifecycle. Built on top of high-school-graduate base.",
+  "topics": [
+    {
+      "name": "programming-fundamentals",
+      "region": null,
+      "facts": [
+        { "fact": "A variable is a named storage location in memory that holds a value which can change during program execution", "query": "variable memory storage value" },
+        { "fact": "A data type defines what kind of value a variable can hold, such as integer, floating-point, string, or boolean", "query": "data type integer string boolean" },
+        { "fact": "A function is a reusable block of code that performs a specific task and can take inputs (parameters) and return outputs", "query": "function parameters return reusable" },
+        { "fact": "A conditional statement (if/else) executes different code paths depending on whether a condition is true or false", "query": "conditional if else true false" },
+        { "fact": "A loop repeats a block of code multiple times, with common types including for loops, while loops, and do-while loops", "query": "loop for while repeat" },
+        { "fact": "An array is a collection of elements stored at contiguous memory locations, accessible by index starting at 0", "query": "array index contiguous collection" },
+        { "fact": "A string is a sequence of characters, and string manipulation includes concatenation, slicing, and searching", "query": "string characters concatenation slicing" },
+        { "fact": "A boolean expression evaluates to true or false and uses operators like AND, OR, and NOT", "query": "boolean expression AND OR NOT" },
+        { "fact": "Scope determines where a variable is accessible in a program, with local variables only visible within their function and global variables visible everywhere", "query": "scope local global variable" },
+        { "fact": "Recursion is when a function calls itself to solve a smaller instance of the same problem, requiring a base case to stop", "query": "recursion function calls itself base case" }
+      ]
+    },
+    {
+      "name": "data-structures",
+      "region": null,
+      "facts": [
+        { "fact": "A linked list is a linear data structure where each element (node) points to the next, allowing dynamic size but O(n) access", "query": "linked list node points next" },
+        { "fact": "A stack is a LIFO (last in first out) structure with push and pop operations", "query": "stack LIFO push pop" },
+        { "fact": "A queue is a FIFO (first in first out) structure with enqueue and dequeue operations", "query": "queue FIFO enqueue dequeue" },
+        { "fact": "A hash table (hash map) stores key-value pairs and provides average O(1) lookup, insertion, and deletion", "query": "hash table key value O(1)" },
+        { "fact": "A binary tree is a hierarchical structure where each node has at most two children called left and right", "query": "binary tree children left right" },
+        { "fact": "A binary search tree maintains the property that left children are smaller and right children are larger than the parent", "query": "binary search tree BST ordering" },
+        { "fact": "A graph is a data structure consisting of vertices (nodes) connected by edges, which can be directed or undirected", "query": "graph vertices edges directed" },
+        { "fact": "A heap is a tree-based structure that satisfies the heap property, used for priority queues", "query": "heap priority queue tree" },
+        { "fact": "Big O notation describes the time complexity of an algorithm as input size grows, such as O(1), O(log n), O(n), O(n log n), O(n squared)", "query": "Big O notation time complexity" },
+        { "fact": "Space complexity measures the amount of memory an algorithm uses relative to input size", "query": "space complexity memory" }
+      ]
+    },
+    {
+      "name": "algorithms",
+      "region": null,
+      "facts": [
+        { "fact": "Binary search finds an element in a sorted array in O(log n) time by repeatedly dividing the search range in half", "query": "binary search sorted log n" },
+        { "fact": "Bubble sort compares adjacent elements and swaps them, running in O(n squared) time in the worst case", "query": "bubble sort adjacent swap O(n^2)" },
+        { "fact": "Merge sort divides the array in half, sorts each half recursively, then merges them, running in O(n log n) time", "query": "merge sort divide merge O(n log n)" },
+        { "fact": "Quicksort picks a pivot, partitions elements around it, and recurses, with average O(n log n) time but worst case O(n squared)", "query": "quicksort pivot partition O(n log n)" },
+        { "fact": "Depth-first search (DFS) explores as far as possible along each branch before backtracking, using a stack or recursion", "query": "depth first search DFS backtrack stack" },
+        { "fact": "Breadth-first search (BFS) explores all neighbors at the current level before moving deeper, using a queue", "query": "breadth first search BFS queue neighbors" },
+        { "fact": "Dynamic programming solves problems by breaking them into overlapping subproblems and storing results to avoid recomputation", "query": "dynamic programming subproblems memoization" },
+        { "fact": "Greedy algorithms make locally optimal choices at each step, hoping to find a global optimum", "query": "greedy algorithm local optimum" },
+        { "fact": "A hash function maps data of arbitrary size to fixed-size values, used in hash tables and cryptographic applications", "query": "hash function fixed size mapping" },
+        { "fact": "Time-space tradeoff means using more memory can reduce computation time, and vice versa", "query": "time space tradeoff memory computation" }
+      ]
+    },
+    {
+      "name": "version-control-git",
+      "region": null,
+      "facts": [
+        { "fact": "Git is a distributed version control system that tracks changes to files and enables collaboration among developers", "query": "Git version control distributed" },
+        { "fact": "A repository (repo) is a directory that Git tracks, containing project files and the full revision history", "query": "repository git tracks history" },
+        { "fact": "A commit is a snapshot of changes saved to the repository history, with a message describing what changed", "query": "commit snapshot changes message" },
+        { "fact": "A branch is a parallel line of development that diverges from the main branch, allowing isolated work", "query": "branch parallel development main" },
+        { "fact": "A merge combines changes from one branch into another, resolving any conflicts that arise", "query": "merge combine branches conflict" },
+        { "fact": "A pull request (PR) is a proposal to merge changes from one branch into another, enabling code review before merging", "query": "pull request merge review" },
+        { "fact": "Git clone creates a local copy of a remote repository", "query": "git clone local copy remote" },
+        { "fact": "Git push sends local commits to a remote repository, and git pull fetches and merges remote changes", "query": "git push pull remote commits" },
+        { "fact": "A merge conflict occurs when two branches modify the same lines and must be resolved manually before merging", "query": "merge conflict resolve manually" },
+        { "fact": "A .gitignore file tells Git which files and directories to exclude from version control", "query": "gitignore exclude files" }
+      ]
+    },
+    {
+      "name": "software-development-lifecycle",
+      "region": null,
+      "facts": [
+        { "fact": "The Software Development Life Cycle (SDLC) is the process of designing, developing, testing, and deploying software", "query": "SDLC software development life cycle" },
+        { "fact": "Agile methodology breaks work into short iterations called sprints, typically 1-4 weeks, with continuous feedback", "query": "Agile sprint iteration feedback" },
+        { "fact": "Waterfall methodology follows a linear sequence of phases: requirements, design, implementation, testing, deployment, maintenance", "query": "Waterfall linear phases sequential" },
+        { "fact": "Scrum is an Agile framework with defined roles (Scrum Master, Product Owner, Developer), ceremonies (standup, sprint planning, retrospective), and artifacts (backlog, sprint)", "query": "Scrum roles ceremonies artifacts" },
+        { "fact": "Continuous Integration (CI) automatically builds and tests code changes when they are committed to version control", "query": "continuous integration CI build test" },
+        { "fact": "Continuous Deployment (CD) automatically deploys code changes to production after passing CI tests", "query": "continuous deployment CD production" },
+        { "fact": "Code review is the practice of having other developers review code changes before they are merged, improving quality and sharing knowledge", "query": "code review quality knowledge sharing" },
+        { "fact": "Technical debt is the implied cost of future rework caused by choosing an easy solution now instead of a better approach", "query": "technical debt rework easy solution" },
+        { "fact": "A user story describes a feature from the user's perspective, typically in the format: As a [role], I want [feature], so that [benefit]", "query": "user story role feature benefit" },
+        { "fact": "Refactoring is the process of restructuring existing code to improve its readability and maintainability without changing its behavior", "query": "refactoring restructure maintainability" }
+      ]
+    },
+    {
+      "name": "testing-and-debugging",
+      "region": null,
+      "facts": [
+        { "fact": "Unit testing verifies that individual functions or components work correctly in isolation", "query": "unit testing function isolated" },
+        { "fact": "Integration testing verifies that multiple components work correctly together", "query": "integration testing components together" },
+        { "fact": "End-to-end (E2E) testing verifies the entire application flow from start to finish, simulating real user behavior", "query": "end to end testing application flow" },
+        { "fact": "Test-driven development (TDD) writes tests before writing the code, following the red-green-refactor cycle", "query": "TDD test driven red green refactor" },
+        { "fact": "A bug is an error, flaw, or fault in a program that causes it to produce incorrect or unexpected results", "query": "bug error flaw program" },
+        { "fact": "A debugger is a tool that allows developers to pause execution, inspect variables, and step through code line by line", "query": " debugger pause inspect step" },
+        { "fact": "A stack trace shows the sequence of function calls leading to an error, helping identify where the problem occurred", "query": "stack trace function calls error" },
+        { "fact": "Logging records events and errors during program execution, which is essential for diagnosing issues in production", "query": "logging events errors production" },
+        { "fact": "A test fixture sets up the initial conditions and data needed for tests to run consistently", "query": "test fixture setup conditions data" },
+        { "fact": "Code coverage measures the percentage of code that is exercised by tests, helping identify untested paths", "query": "code coverage percentage tested" }
+      ]
+    },
+    {
+      "name": "web-and-api-fundamentals",
+      "region": null,
+      "facts": [
+        { "fact": "HTTP (HyperText Transfer Protocol) is the protocol for transferring web data, with methods like GET (retrieve), POST (create), PUT (update), and DELETE (remove)", "query": "HTTP GET POST PUT DELETE methods" },
+        { "fact": "REST (Representational State Transfer) is an architectural style for APIs that uses HTTP methods and resource URLs", "query": "REST API HTTP resources" },
+        { "fact": "JSON (JavaScript Object Notation) is a lightweight data format using key-value pairs, commonly used for API data exchange", "query": "JSON data format key value API" },
+        { "fact": "An API (Application Programming Interface) defines how software components communicate, specifying endpoints, methods, and data formats", "query": "API endpoints methods communicate" },
+        { "fact": "The frontend is the user-facing part of an application (HTML, CSS, JavaScript), and the backend is the server-side logic and data handling", "query": "frontend backend user server" },
+        { "fact": "A database stores application data, with relational databases using tables (SQL) and NoSQL databases using documents or key-value pairs", "query": "database relational SQL NoSQL" },
+        { "fact": "CSS (Cascading Style Sheets) controls the visual presentation and layout of web pages", "query": "CSS style layout presentation" },
+        { "fact": "Authentication verifies who a user is (login), while authorization determines what they are allowed to do (permissions)", "query": "authentication authorization login permissions" },
+        { "fact": "A web framework provides reusable code and patterns for building web applications, such as React for frontend and Express or Django for backend", "query": "web framework React Express Django" },
+        { "fact": "Responsive design ensures web pages adapt to different screen sizes using flexible layouts and media queries", "query": "responsive design screen size media query" }
+      ]
+    }
+  ]
+}

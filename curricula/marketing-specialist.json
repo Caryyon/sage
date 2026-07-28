@@ -1,0 +1,87 @@
+{
+  "name": "marketing-specialist",
+  "domain": "marketing",
+  "description": "Marketing and social media fundamentals: marketing principles, content strategy, social media platforms, SEO basics, analytics, copywriting, and brand management. Built on top of high-school-graduate base.",
+  "topics": [
+    {
+      "name": "marketing-principles",
+      "region": null,
+      "facts": [
+        { "fact": "The marketing mix (4 Ps) consists of Product, Price, Place, and Promotion, which are the core elements of a marketing strategy", "query": "marketing mix 4 Ps product price place promotion" },
+        { "fact": "A target audience is the specific group of consumers a marketing campaign aims to reach, defined by demographics, interests, and behavior", "query": "target audience demographics interests behavior" },
+        { "fact": "Brand awareness is the degree to which consumers recognize and recall a brand and its products", "query": "brand awareness recognition recall" },
+        { "fact": "A value proposition is a statement explaining what a product does, who it serves, and why it is better than alternatives", "query": "value proposition product better alternatives" },
+        { "fact": "Customer acquisition cost (CAC) is the total cost of marketing and sales divided by the number of new customers acquired", "query": "customer acquisition cost CAC marketing sales" },
+        { "fact": "Return on investment (ROI) measures the profitability of marketing spend, calculated as (revenue minus cost) divided by cost times 100", "query": "ROI return on investment marketing profitability" },
+        { "fact": "A call to action (CTA) is a prompt that tells the audience what to do next, such as Buy Now, Sign Up, or Learn More", "query": "call to action CTA buy sign up" },
+        { "fact": "A conversion occurs when a user completes a desired action, such as making a purchase or signing up for a newsletter", "query": "conversion desired action purchase signup" },
+        { "fact": "A/B testing compares two versions of a marketing asset to determine which performs better based on a measured metric", "query": "A/B testing compare versions performance metric" },
+        { "fact": "The marketing funnel represents the customer journey from awareness through interest, consideration, purchase, and loyalty", "query": "marketing funnel awareness consideration purchase loyalty" }
+      ]
+    },
+    {
+      "name": "content-strategy",
+      "region": null,
+      "facts": [
+        { "fact": "Content marketing creates and distributes valuable, relevant content to attract and retain a defined audience, ultimately driving profitable action", "query": "content marketing valuable relevant audience" },
+        { "fact": "An editorial calendar schedules content publication across platforms and dates to maintain consistency", "query": "editorial calendar schedule content publication" },
+        { "fact": "A blog post is an article published on a website that provides information, opinion, or storytelling to engage readers", "query": "blog post article information engage" },
+        { "fact": "A content pillar is a core topic that branches into multiple related pieces of content across formats", "query": "content pillar core topic related pieces" },
+        { "fact": "Evergreen content remains relevant over time and continues to attract traffic long after publication, unlike news or trend-based content", "query": "evergreen content relevant traffic time" },
+        { "fact": "A lead magnet is a free resource offered in exchange for contact information, such as an ebook, checklist, or webinar", "query": "lead magnet free resource contact information" },
+        { "fact": "Repurposing content means adapting one piece into multiple formats, such as turning a blog post into a video, infographic, and social posts", "query": "repurposing content formats blog video" },
+        { "fact": "User-generated content (UGC) is content created by customers or fans, such as reviews, photos, or testimonials, which builds trust and authenticity", "query": "user generated content UGC reviews testimonials" },
+        { "fact": "A content management system (CMS) like WordPress or Shopify is software for creating, editing, and publishing digital content", "query": "CMS content management system WordPress Shopify" },
+        { "fact": "Storytelling in marketing uses narrative techniques to create emotional connections with the audience", "query": "storytelling narrative emotional connection marketing" }
+      ]
+    },
+    {
+      "name": "social-media-platforms",
+      "region": null,
+      "facts": [
+        { "fact": "Facebook is the largest social media platform by users, suited for community building, targeted ads, and event promotion", "query": "Facebook largest social media community ads" },
+        { "fact": "Instagram focuses on visual content (photos, reels, stories) and is effective for brand aesthetics and product showcases", "query": "Instagram visual content reels stories aesthetics" },
+        { "fact": "LinkedIn is the professional networking platform, ideal for B2B marketing, recruiting, and thought leadership content", "query": "LinkedIn professional networking B2B recruiting" },
+        { "fact": "TikTok features short-form video content driven by trends and algorithms, effective for reaching younger demographics", "query": "TikTok short video trends younger demographics" },
+        { "fact": "X (formerly Twitter) is a real-time platform for news, customer service, and short-form commentary in 280 characters", "query": "X Twitter real-time news customer service 280" },
+        { "fact": "YouTube is the second largest search engine and the primary platform for long-form video content and tutorials", "query": "YouTube video search engine tutorials" },
+        { "fact": "Pinterest is a visual discovery platform where users save pins, effective for lifestyle, DIY, and e-commerce marketing", "query": "Pinterest visual discovery pins lifestyle" },
+        { "fact": "An engagement rate measures how actively audiences interact with content, calculated as total interactions divided by followers times 100", "query": "engagement rate interactions followers" },
+        { "fact": "A hashtag is a keyword prefixed with a pound sign that categorizes content and makes it discoverable on social platforms", "query": "hashtag categorize discoverable social" },
+        { "fact": "Social media scheduling tools like Buffer and Hootsuite allow marketers to plan and automate posts across multiple platforms", "query": "scheduling tools Buffer Hootsuite automate posts" }
+      ]
+    },
+    {
+      "name": "seo-and-analytics",
+      "region": null,
+      "facts": [
+        { "fact": "SEO (Search Engine Optimization) improves a website's visibility in organic search results to increase traffic", "query": "SEO search engine optimization organic traffic" },
+        { "fact": "Keywords are the search terms people use in search engines, and keyword research identifies high-value terms to target", "query": "keywords search terms research high-value" },
+        { "fact": "On-page SEO includes optimizing title tags, meta descriptions, headings, content, and internal links on a webpage", "query": "on-page SEO title tag meta description headings" },
+        { "fact": "Off-page SEO includes building backlinks from other websites, which signals authority and trust to search engines", "query": "off-page SEO backlinks authority trust" },
+        { "fact": "Google Analytics tracks website traffic, user behavior, conversions, and other metrics to measure marketing performance", "query": "Google Analytics traffic behavior conversions" },
+        { "fact": "Bounce rate is the percentage of visitors who leave a website after viewing only one page without further interaction", "query": "bounce rate leave one page visitors" },
+        { "fact": "Page load speed affects both user experience and search rankings, with Google preferring sites that load in under 3 seconds", "query": "page load speed experience rankings" },
+        { "fact": "A conversion rate is the percentage of visitors who complete a desired action, calculated as conversions divided by total visitors times 100", "query": "conversion rate visitors action percentage" },
+        { "fact": "Domain authority is a score (1-100) predicting how well a website ranks on search engines, based on backlinks and quality", "query": "domain authority score ranking backlinks" },
+        { "fact": "SEM (Search Engine Marketing) uses paid advertising on search engines, such as Google Ads, to appear at the top of results", "query": "SEM search engine marketing paid Google Ads" }
+      ]
+    },
+    {
+      "name": "copywriting-and-brand",
+      "region": null,
+      "facts": [
+        { "fact": "Copywriting is writing persuasive text (copy) for marketing materials, advertisements, and digital content to drive action", "query": "copywriting persuasive text marketing action" },
+        { "fact": "A headline is the most important element of any copy, as it determines whether people read the rest", "query": "headline most important copy read" },
+        { "fact": "The AIDA model describes the stages of marketing communication: Attention, Interest, Desire, Action", "query": "AIDA attention interest desire action" },
+        { "fact": "Brand voice is the consistent personality and tone a brand uses across all communications", "query": "brand voice personality tone consistent" },
+        { "fact": "A tagline is a short, memorable phrase that captures a brand's essence, such as Nike's Just Do It", "query": "tagline short memorable brand essence" },
+        { "fact": "Social proof uses testimonials, reviews, and user numbers to build trust and influence purchasing decisions", "query": "social proof testimonials reviews trust" },
+        { "fact": "FOMO (Fear of Missing Out) is a marketing technique that creates urgency by highlighting limited availability or time-sensitive offers", "query": "FOMO fear missing out urgency limited" },
+        { "fact": "An elevator pitch is a concise, compelling summary of a product or business that can be delivered in 30 seconds or less", "query": "elevator pitch concise summary product" },
+        { "fact": "Emotional appeal in copywriting connects with the audience's feelings and desires, which is often more persuasive than logical arguments alone", "query": "emotional appeal feelings desires persuasive" },
+        { "fact": "A brand guideline document specifies logo usage, color palette, typography, and tone of voice to ensure consistent branding", "query": "brand guidelines logo colors typography consistent" }
+      ]
+    }
+  ]
+}

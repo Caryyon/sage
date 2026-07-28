@@ -1,218 +1,84 @@
 {
   "name": "customer-support",
   "domain": "customer-support",
+  "description": "Customer support and sales fundamentals: communication skills, CRM tools, sales techniques, conflict resolution, product knowledge, and support workflows. Built on top of high-school-graduate base.",
   "topics": [
     {
-      "name": "support-fundamentals",
-      "region": [
-        0,
-        0,
-        64,
-        64
-      ],
-      "facts": [
-        {
-          "fact": "Customer support helps users resolve issues and achieve their goals with a product"
-        },
-        {
-          "fact": "First response time (FRT) measures how quickly a customer gets an initial reply"
-        },
-        {
-          "fact": "Mean time to resolution (MTTR) measures how long it takes to fully resolve an issue"
-        },
-        {
-          "fact": "Customer satisfaction (CSAT) surveys measure happiness after each interaction"
-        },
-        {
-          "fact": "Net Promoter Score (NPS) measures how likely customers are to recommend the product"
-        },
-        {
-          "fact": "Tickets are individual support requests tracked from creation to resolution"
-        },
-        {
-          "fact": "Triage categorizes and prioritizes incoming tickets by urgency and impact"
-        },
-        {
-          "fact": "SLAs (Service Level Agreements) define response and resolution time commitments"
-        },
-        {
-          "fact": "Escalation routes complex issues to specialized teams when frontline can't resolve"
-        },
-        {
-          "fact": "Knowledge bases provide self-service answers to common questions"
-        },
-        {
-          "fact": "Canned responses save time on frequent questions but must be personalized"
-        },
-        {
-          "fact": "Active listening means understanding the customer's actual problem, not just their words"
-        },
-        {
-          "fact": "Empathy statements acknowledge the customer's frustration before jumping to solutions"
-        },
-        {
-          "fact": "Root cause analysis finds the underlying issue, not just the symptom"
-        },
-        {
-          "fact": "Reproducing the issue is the fastest path to understanding and fixing it"
-        },
-        {
-          "fact": "Clear communication: explain what you're doing, why, and what to expect next"
-        },
-        {
-          "fact": "Follow-up after resolution confirms the fix worked and the customer is satisfied"
-        },
-        {
-          "fact": "Bug reports from support must include steps to reproduce, expected vs actual behavior, and environment"
-        },
-        {
-          "fact": "Feature requests should capture the use case, not just the requested feature"
-        },
-        {
-          "fact": "Support metrics inform product improvements \u2014 track common issues and pain points"
-        }
-      ]
-    },
-    {
-      "name": "tools-and-workflows",
-      "region": [
-        64,
-        0,
-        128,
-        64
-      ],
-      "facts": [
-        {
-          "fact": "Zendesk is a leading customer service platform with ticketing, chat, and knowledge base"
-        },
-        {
-          "fact": "Intercom provides in-app messaging, bots, and customer data platform"
-        },
-        {
-          "fact": "Freshdesk offers ticketing, automation, and multi-channel support"
-        },
-        {
-          "fact": "Help Scout provides email-based support with a focus on personal conversation"
-        },
-        {
-          "fact": "Slack Connect enables shared channels with customers for real-time support"
-        },
-        {
-          "fact": "Discord communities provide peer support and direct company interaction"
-        },
-        {
-          "fact": "Jira Service Management integrates support with development workflows"
-        },
-        {
-          "fact": "Automation rules trigger actions based on ticket conditions (routing, tagging, responses)"
-        },
-        {
-          "fact": "Macros apply pre-defined sets of actions to tickets with one click"
-        },
-        {
-          "fact": "Triggers fire automatically when tickets are created or updated"
-        },
-        {
-          "fact": "Views organize tickets into work queues by status, assignee, or condition"
-        },
-        {
-          "fact": "Tags label tickets for reporting, routing, and automation"
-        },
-        {
-          "fact": "Custom fields capture product-specific information on tickets"
-        },
-        {
-          "fact": "Satisfaction surveys automatically send after ticket resolution"
-        },
-        {
-          "fact": "Reporting dashboards track volume, response time, resolution time, and satisfaction"
-        },
-        {
-          "fact": "Chatbots handle common questions and route complex issues to humans"
-        },
-        {
-          "fact": "Screen sharing tools (Loom, CloudApp) help demonstrate solutions visually"
-        },
-        {
-          "fact": "Internal notes communicate between agents without the customer seeing"
-        },
-        {
-          "fact": "Side conversations loop in other teams without creating new tickets"
-        },
-        {
-          "fact": "API integrations connect support tools with CRM, analytics, and engineering systems"
-        }
-      ]
-    },
-    {
       "name": "communication-skills",
-      "region": [
-        128,
-        0,
-        192,
-        64
-      ],
+      "region": null,
       "facts": [
-        {
-          "fact": "Greet the customer warmly and thank them for reaching out"
-        },
-        {
-          "fact": "Restate the problem in your own words to confirm understanding"
-        },
-        {
-          "fact": "Set expectations: tell them what you'll do and how long it might take"
-        },
-        {
-          "fact": "Use plain language \u2014 avoid jargon unless you know the customer is technical"
-        },
-        {
-          "fact": "Be specific: 'I've updated your account settings' not 'The issue has been resolved'"
-        },
-        {
-          "fact": "Provide step-by-step instructions with screenshots when possible"
-        },
-        {
-          "fact": "Offer alternatives: if the ideal solution isn't available, suggest workarounds"
-        },
-        {
-          "fact": "Admit when you don't know \u2014 'Let me check with the engineering team and get back to you'"
-        },
-        {
-          "fact": "Never blame the customer \u2014 even if they made an error, focus on the solution"
-        },
-        {
-          "fact": "De-escalation: stay calm, acknowledge feelings, focus on what you can do"
-        },
-        {
-          "fact": "Positive language: 'The feature will be available next month' not 'We don't have that yet'"
-        },
-        {
-          "fact": "Close with a summary of what was done and an invitation to reach out again"
-        },
-        {
-          "fact": "Tone matching: mirror the customer's formality level while staying professional"
-        },
-        {
-          "fact": "Cultural awareness: communication norms vary across regions and languages"
-        },
-        {
-          "fact": "Written communication lacks tone of voice \u2014 use emoji and formatting carefully to convey warmth"
-        },
-        {
-          "fact": "Handle multiple customers simultaneously without making any feel neglected"
-        },
-        {
-          "fact": "Document solutions as you discover them \u2014 your future self and teammates will thank you"
-        },
-        {
-          "fact": "Ask clarifying questions: open-ended to explore, closed-ended to confirm"
-        },
-        {
-          "fact": "The 'five whys' technique traces a problem to its root cause"
-        },
-        {
-          "fact": "Celebrate wins: share positive feedback with the team to maintain morale"
-        }
+        { "fact": "Active listening means fully focusing on the speaker, understanding their message, and responding thoughtfully rather than just waiting to speak", "query": "active listening focus understand respond" },
+        { "fact": "Empathy in customer service means understanding and acknowledging the customer's feelings and perspective without necessarily agreeing with them", "query": "empathy customer feelings perspective acknowledge" },
+        { "fact": "Positive language focuses on what can be done rather than what cannot, such as saying Let me find that for you instead of I don't know", "query": "positive language can do cannot customer" },
+        { "fact": "Open-ended questions encourage detailed responses and start with what, how, why, or tell me about, while closed questions get yes/no answers", "query": "open-ended questions detailed responses what how why" },
+        { "fact": "Paraphrasing means restating the customer's concern in your own words to confirm understanding before addressing it", "query": "paraphrasing restate confirm understanding concern" },
+        { "fact": "Tone of voice in written communication is conveyed through word choice, punctuation, and formatting, since the reader cannot hear your voice", "query": "tone of voice written communication word choice" },
+        { "fact": "De-escalation techniques include staying calm, using a low steady voice, acknowledging the person's frustration, and focusing on solutions", "query": "de-escalation calm steady voice acknowledge frustration" },
+        { "fact": "The LAER model (Listen, Acknowledge, Explore, Respond) is a framework for handling customer objections and concerns", "query": "LAER listen acknowledge explore respond objections" },
+        { "fact": "Professional communication in customer support means being courteous, clear, concise, and free of jargon the customer may not understand", "query": "professional communication courteous clear concise jargon" },
+        { "fact": "A follow-up after resolving an issue shows the customer you care about their satisfaction and helps prevent future problems", "query": "follow-up after resolve satisfaction prevent" }
+      ]
+    },
+    {
+      "name": "crm-and-tools",
+      "region": null,
+      "facts": [
+        { "fact": "A CRM (Customer Relationship Management) system tracks all customer interactions, data, and history in one place, with popular platforms including Salesforce, HubSpot, and Zendesk", "query": "CRM customer relationship management Salesforce HubSpot Zendesk" },
+        { "fact": "A ticketing system organizes customer support requests into trackable tickets with status, priority, and assignment", "query": "ticketing system support requests priority assignment" },
+        { "fact": "First contact resolution (FCR) measures the percentage of issues resolved on the first interaction without escalation or follow-up", "query": "first contact resolution FCR percentage first interaction" },
+        { "fact": "An SLA (Service Level Agreement) defines the expected response and resolution times that support commits to for different priority levels", "query": "SLA service level agreement response resolution time" },
+        { "fact": "A knowledge base is a searchable library of articles, FAQs, and guides that customers and agents use to find answers", "query": "knowledge base articles FAQs guides searchable" },
+        { "fact": "An omnichannel support approach provides consistent service across all channels: email, phone, chat, social media, and self-service", "query": "omnichannel support consistent email phone chat social" },
+        { "fact": "Customer satisfaction score (CSAT) measures how happy customers are with a support interaction, typically via a post-interaction survey", "query": "CSAT customer satisfaction score survey" },
+        { "fact": "Net Promoter Score (NPS) asks customers how likely they are to recommend the company on a scale of 0-10 and categorizes them as promoters, passives, or detractors", "query": "NPS net promoter score recommend 0-10" },
+        { "fact": "Average handle time (AHT) measures the average duration of a customer interaction from start to finish", "query": "average handle time AHT duration interaction" },
+        { "fact": "A chatbot can handle common, repetitive questions automatically, freeing human agents for complex issues", "query": "chatbot common questions automatic human agents" }
+      ]
+    },
+    {
+      "name": "sales-techniques",
+      "region": null,
+      "facts": [
+        { "fact": "The sales funnel has stages: prospecting (finding leads), qualifying (assessing fit), presenting (showing value), handling objections, closing (getting commitment), and follow-up", "query": "sales funnel prospecting qualifying presenting closing" },
+        { "fact": "SPIN selling uses Situation, Problem, Implication, and Need-payoff questions to guide the customer toward recognizing their need", "query": "SPIN selling situation problem implication need payoff" },
+        { "fact": "An upsell encourages the customer to buy a higher-end version of the product, while a cross-sell suggests complementary products", "query": "upsell cross-sell higher end complementary" },
+        { "fact": "Value-based selling focuses on the benefits and outcomes the customer will experience, not just the features of the product", "query": "value-based selling benefits outcomes not features" },
+        { "fact": "Handling objections involves listening to the concern, validating it, and providing a specific response that addresses the root worry", "query": "handling objections listening validating response concern" },
+        { "fact": "A qualified lead is a prospect who has the budget, authority, need, and timeline (BANT) to make a purchase decision", "query": "qualified lead BANT budget authority need timeline" },
+        { "fact": "Consultative selling positions the salesperson as a trusted advisor who diagnoses the customer's needs before recommending a solution", "query": "consultative selling trusted advisor diagnose needs" },
+        { "fact": "A closing technique is a method for getting the customer to commit, such as the assumptive close (When would you like delivery?) or the summary close (recapping benefits)", "query": "closing technique commit assumptive summary" },
+        { "fact": "Building rapport means establishing a genuine connection with the customer through shared interests, friendly conversation, and authentic interest", "query": "building rapport connection shared interests friendly" },
+        { "fact": "The lifetime value of a customer (LTV) is the total revenue a customer is expected to generate over their entire relationship with the company", "query": "lifetime value LTV customer revenue relationship" }
+      ]
+    },
+    {
+      "name": "conflict-resolution",
+      "region": null,
+      "facts": [
+        { "fact": "The HEARD model for difficult interactions is: Hear, Empathize, Apologize, Resolve, and Diagnose to prevent recurrence", "query": "HEARD hear empathize apologize resolve diagnose" },
+        { "fact": "When a customer is angry, the first step is to let them vent completely before attempting to solve the problem", "query": "angry customer vent first step before solving" },
+        { "fact": "Acknowledging the customer's frustration without placing blame validates their feelings and reduces tension", "query": "acknowledge frustration validate feelings tension" },
+        { "fact": "Taking ownership of a problem means accepting responsibility to fix it, even if you did not cause it", "query": "ownership responsibility fix not caused" },
+        { "fact": "Escalation to a supervisor should be offered when the customer requests it, when policy limits are reached, or when the issue is beyond the agent's authority", "query": "escalation supervisor policy limits authority" },
+        { "fact": "Compromise means finding a middle ground where both the company and customer give up something to reach agreement", "query": "compromise middle ground agreement company customer" },
+        { "fact": "Setting clear expectations about timelines and next steps prevents frustration caused by uncertainty", "query": "setting expectations timelines next steps uncertainty" },
+        { "fact": "Following company policies while remaining flexible enough to find creative solutions within those policies is key to effective resolution", "query": "company policies flexible creative solutions" }
+      ]
+    },
+    {
+      "name": "product-knowledge-and-support-workflow",
+      "region": null,
+      "facts": [
+        { "fact": "Deep product knowledge enables support agents to answer questions confidently, identify the root cause of issues, and suggest relevant features", "query": "product knowledge root cause features confident" },
+        { "fact": "Reproducing a customer's issue means following the same steps they took to confirm the problem before attempting a fix", "query": "reproducing issue same steps confirm fix" },
+        { "fact": "A workaround is a temporary solution that allows the customer to proceed while a permanent fix is being developed", "query": "workaround temporary solution permanent fix" },
+        { "fact": "Tiered support has levels: Tier 1 handles common questions, Tier 2 handles complex issues, and Tier 3 handles advanced or engineering-level problems", "query": "tiered support Tier 1 2 3 common complex engineering" },
+        { "fact": "Root cause analysis identifies the underlying reason for an issue rather than just treating the symptoms", "query": "root cause analysis underlying reason symptoms" },
+        { "fact": "Bug reports should include steps to reproduce, expected behavior, actual behavior, environment, and screenshots", "query": "bug report steps reproduce expected actual environment" },
+        { "fact": "Onboarding new customers includes guiding them through setup, explaining key features, and setting expectations for the product experience", "query": "onboarding setup features expectations new customer" },
+        { "fact": "Customer feedback collected through surveys, reviews, and direct conversations should be shared with product teams to drive improvements", "query": "customer feedback surveys reviews product improvements" },
+        { "fact": "Self-service resources like FAQs, video tutorials, and community forums reduce support volume by helping customers solve problems independently", "query": "self-service FAQs tutorials forums reduce volume" },
+        { "fact": "A support workflow defines the steps from ticket creation through triage, assignment, investigation, resolution, and closure", "query": "support workflow triage assignment investigation resolution" }
       ]
     }
   ]

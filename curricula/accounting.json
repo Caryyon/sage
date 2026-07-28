@@ -1,0 +1,83 @@
+{
+  "name": "accounting",
+  "domain": "accounting",
+  "description": "Accounting and bookkeeping fundamentals: double-entry bookkeeping, financial statements, tax basics, payroll, and auditing. Built on top of high-school-graduate base.",
+  "topics": [
+    {
+      "name": "bookkeeping-fundamentals",
+      "region": null,
+      "facts": [
+        { "fact": "Double-entry bookkeeping requires every transaction to affect at least two accounts, with total debits always equaling total credits", "query": "double entry bookkeeping debits credits equal" },
+        { "fact": "A debit increases assets and expenses but decreases liabilities, equity, and revenue", "query": "debit increases assets expenses" },
+        { "fact": "A credit increases liabilities, equity, and revenue but decreases assets and expenses", "query": "credit increases liabilities equity revenue" },
+        { "fact": "The accounting equation states that Assets equal Liabilities plus Equity (A = L + E)", "query": "accounting equation assets liabilities equity" },
+        { "fact": "A general ledger is the master record of all accounts and their transactions in a business", "query": "general ledger master record accounts" },
+        { "fact": "A trial balance lists all accounts and their balances to verify that total debits equal total credits", "query": "trial balance debits credits verify" },
+        { "fact": "A journal entry records a transaction with date, accounts debited, accounts credited, and amounts", "query": "journal entry date debit credit amount" },
+        { "fact": "Accounts payable is money the business owes to suppliers, and accounts receivable is money owed to the business by customers", "query": "accounts payable receivable owed" },
+        { "fact": "Accrual accounting records revenue when earned and expenses when incurred, regardless of when cash changes hands", "query": "accrual accounting revenue earned expense incurred" },
+        { "fact": "Cash basis accounting records revenue and expenses only when cash is actually received or paid", "query": "cash basis accounting received paid" }
+      ]
+    },
+    {
+      "name": "financial-statements",
+      "region": null,
+      "facts": [
+        { "fact": "The balance sheet shows a company's assets, liabilities, and equity at a specific point in time, following the equation Assets = Liabilities + Equity", "query": "balance sheet assets liabilities equity point in time" },
+        { "fact": "The income statement (profit and loss) shows revenues and expenses over a period, resulting in net profit or loss", "query": "income statement revenue expenses profit loss" },
+        { "fact": "The cash flow statement shows how cash moves through a business in three categories: operating, investing, and financing activities", "query": "cash flow statement operating investing financing" },
+        { "fact": "Revenue is the total income from sales before expenses are deducted, also called the top line", "query": "revenue income sales top line" },
+        { "fact": "Net income (profit) is revenue minus all expenses, taxes, and costs, also called the bottom line", "query": "net income profit revenue minus expenses" },
+        { "fact": "Gross profit is revenue minus the cost of goods sold (COGS)", "query": "gross profit revenue cost goods sold COGS" },
+        { "fact": "Operating expenses include items like rent, utilities, salaries, and marketing that are not directly tied to production", "query": "operating expenses rent salaries marketing" },
+        { "fact": "Retained earnings are profits that a company keeps rather than distributing as dividends to shareholders", "query": "retained earnings profits dividends" },
+        { "fact": "Depreciation spreads the cost of a fixed asset over its useful life, reducing its book value over time", "query": "depreciation fixed asset useful life" },
+        { "fact": "Working capital is current assets minus current liabilities, measuring short-term liquidity", "query": "working capital current assets liabilities" }
+      ]
+    },
+    {
+      "name": "tax-fundamentals",
+      "region": null,
+      "facts": [
+        { "fact": "Income tax is a tax on an individual's or corporation's earnings, collected by the federal government via the IRS in the US", "query": "income tax earnings IRS federal" },
+        { "fact": "A tax deduction reduces taxable income, lowering the amount of income that is subject to tax", "query": "tax deduction reduces taxable income" },
+        { "fact": "A tax credit directly reduces the amount of tax owed, dollar for dollar, which is more valuable than a deduction", "query": "tax credit reduces tax owed dollar" },
+        { "fact": "Payroll tax includes Social Security and Medicare taxes withheld from employee wages, plus employer matching contributions", "query": "payroll tax Social Security Medicare withholding" },
+        { "fact": "Sales tax is a consumption tax on goods and services, collected by the seller at the point of sale", "query": "sales tax consumption goods services" },
+        { "fact": "A W-2 form reports annual wages and taxes withheld for an employee, while a 1099 form reports income for independent contractors", "query": "W-2 1099 wages contractor income" },
+        { "fact": "Estimated taxes are quarterly payments made by self-employed individuals and businesses to cover their expected tax liability", "query": "estimated taxes quarterly self-employed" },
+        { "fact": "A tax return is the annual filing that reports income and calculates the final tax owed or refund due", "query": "tax return annual filing refund" },
+        { "fact": "Capital gains tax applies to profits from selling assets like stocks or real estate, with short-term and long-term rates", "query": "capital gains tax assets stocks real estate" },
+        { "fact": "An audit by the IRS is a review of financial records to verify tax return accuracy", "query": "IRS audit financial records tax return" }
+      ]
+    },
+    {
+      "name": "payroll-basics",
+      "region": null,
+      "facts": [
+        { "fact": "Gross pay is the total amount earned by an employee before any deductions", "query": "gross pay total earned before deductions" },
+        { "fact": "Net pay (take-home pay) is gross pay minus all deductions including taxes, insurance, and retirement contributions", "query": "net pay take home gross minus deductions" },
+        { "fact": "FICA tax includes Social Security tax at 6.2% and Medicare tax at 1.45%, withheld from employee pay and matched by the employer", "query": "FICA Social Security Medicare tax withheld matched" },
+        { "fact": "Overtime pay is time and a half (1.5x regular rate) for hours worked beyond 40 in a week for non-exempt employees", "query": "overtime time and a half 40 hours non-exempt" },
+        { "fact": "A pay stub details earnings, deductions, and net pay for a specific pay period", "query": "pay stub earnings deductions net pay" },
+        { "fact": "Direct deposit electronically transfers an employee's net pay to their bank account", "query": "direct deposit electronic transfer bank" },
+        { "fact": "Workers compensation insurance provides benefits to employees injured on the job and is paid by the employer", "query": "workers compensation insurance injured job" },
+        { "fact": "A W-4 form determines how much federal income tax to withhold from an employee's paycheck based on allowances and filing status", "query": "W-4 form withhold federal income tax allowances" }
+      ]
+    },
+    {
+      "name": "auditing-and-controls",
+      "region": null,
+      "facts": [
+        { "fact": "An audit is an independent examination of financial records to verify accuracy and compliance with accounting standards", "query": "audit independent examination financial records" },
+        { "fact": "Internal controls are policies and procedures designed to prevent fraud, ensure accuracy, and protect assets", "query": "internal controls fraud accuracy assets" },
+        { "fact": "Segregation of duties means splitting financial responsibilities among multiple people so no single person controls an entire transaction", "query": "segregation of duties split responsibilities" },
+        { "fact": "GAAP (Generally Accepted Accounting Principles) is the standard set of accounting rules used in the United States", "query": "GAAP accounting principles standards US" },
+        { "fact": "An external auditor is an independent professional who examines financial statements and issues an opinion on their fairness", "query": "external auditor independent opinion fairness" },
+        { "fact": "A material misstatement is an error significant enough to affect a reader's decision based on the financial statements", "query": "material misstatement error significant" },
+        { "fact": "Reconciliation is the process of comparing two sets of records to ensure they match, such as bank statements to ledgers", "query": "reconciliation comparing records bank ledger" },
+        { "fact": "The Sarbanes-Oxley Act (SOX) requires public companies to establish and maintain internal controls over financial reporting", "query": "Sarbanes Oxley SOX internal controls public companies" }
+      ]
+    }
+  ]
+}

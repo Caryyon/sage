@@ -1,0 +1,278 @@
+{
+  "name": "high-school-graduate",
+  "domain": "general-education",
+  "description": "Core knowledge a high school graduate should have across math, science, English, social studies, civics, economics, health, and technology literacy. This is the base layer for all specialist training.",
+  "topics": [
+    {
+      "name": "mathematics-arithmetic",
+      "region": null,
+      "facts": [
+        { "fact": "The order of operations (PEMDAS) is: Parentheses, Exponents, Multiplication and Division (left to right), Addition and Subtraction (left to right)", "query": "order of operations PEMDAS" },
+        { "fact": "A prime number is a natural number greater than 1 that has exactly two factors: 1 and itself", "query": "prime number definition" },
+        { "fact": "The least common multiple (LCM) of two numbers is the smallest number that is a multiple of both", "query": "least common multiple LCM" },
+        { "fact": "The greatest common factor (GCF) of two numbers is the largest number that divides both without remainder", "query": "greatest common factor GCF" },
+        { "fact": "A fraction represents a part of a whole, with a numerator on top and denominator on bottom", "query": "fraction numerator denominator" },
+        { "fact": "To add fractions with different denominators, find a common denominator first, then add the numerators", "query": "add fractions common denominator" },
+        { "fact": "To convert a fraction to a percentage, divide the numerator by the denominator and multiply by 100", "query": "convert fraction to percentage" },
+        { "fact": "A decimal is another way to represent a fraction, using a decimal point to separate whole numbers from fractional parts", "query": "decimal representation fraction" },
+        { "fact": "Ratios compare two quantities, while proportions state that two ratios are equal", "query": "ratio proportion comparison" },
+        { "fact": "Percent change is calculated as (new value - original value) / original value times 100", "query": "percent change formula" }
+      ]
+    },
+    {
+      "name": "mathematics-algebra",
+      "region": null,
+      "facts": [
+        { "fact": "A variable is a symbol, usually a letter, that represents an unknown number in an equation", "query": "variable algebra unknown" },
+        { "fact": "A linear equation forms a straight line when graphed and has the form y = mx + b where m is slope and b is y-intercept", "query": "linear equation slope intercept" },
+        { "fact": "The slope of a line is the change in y divided by the change in x (rise over run)", "query": "slope rise over run" },
+        { "fact": "A quadratic equation has the form ax squared plus bx plus c equals zero, and its graph is a parabola", "query": "quadratic equation parabola" },
+        { "fact": "The quadratic formula is x equals negative b plus or minus the square root of b squared minus 4ac, all divided by 2a", "query": "quadratic formula" },
+        { "fact": "The distributive property states that a times (b plus c) equals ab plus ac", "query": "distributive property" },
+        { "fact": "Like terms are terms with the same variables raised to the same powers, and they can be combined by adding or subtracting coefficients", "query": "like terms combine" },
+        { "fact": "An inequality uses symbols like less than, greater than, less than or equal to, or greater than or equal to instead of an equals sign", "query": "inequality symbols" },
+        { "fact": "A function is a relationship where each input has exactly one output", "query": "function input output" },
+        { "fact": "The domain of a function is the set of all possible input values, and the range is the set of all possible output values", "query": "domain range function" },
+        { "fact": "Factoring is the process of breaking down an expression into simpler parts (factors) that multiply together to give the original expression", "query": "factoring algebra" },
+        { "fact": "A system of linear equations can be solved by substitution, elimination, or graphing to find where the lines intersect", "query": "system of equations substitution elimination" }
+      ]
+    },
+    {
+      "name": "mathematics-geometry",
+      "region": null,
+      "facts": [
+        { "fact": "The sum of angles in any triangle is 180 degrees", "query": "triangle angles sum 180" },
+        { "fact": "The Pythagorean theorem states that in a right triangle, a squared plus b squared equals c squared, where c is the hypotenuse", "query": "Pythagorean theorem right triangle" },
+        { "fact": "The area of a rectangle is length times width", "query": "area rectangle formula" },
+        { "fact": "The area of a circle is pi times radius squared", "query": "area circle pi r squared" },
+        { "fact": "The circumference of a circle is 2 times pi times radius, or pi times diameter", "query": "circumference circle formula" },
+        { "fact": "The volume of a rectangular prism is length times width times height", "query": "volume rectangular prism" },
+        { "fact": "Parallel lines never intersect and are always the same distance apart", "query": "parallel lines" },
+        { "fact": "Perpendicular lines intersect at a 90 degree angle", "query": "perpendicular lines right angle" },
+        { "fact": "Similar triangles have the same shape but possibly different sizes, with corresponding angles equal and sides proportional", "query": "similar triangles proportional" },
+        { "fact": "A polygon is a closed shape with straight sides, and a regular polygon has all sides and angles equal", "query": "polygon regular" },
+        { "fact": "The angles on a straight line sum to 180 degrees", "query": "straight line angles 180" },
+        { "fact": "The sum of interior angles of an n-sided polygon is (n minus 2) times 180 degrees", "query": "polygon interior angles sum" }
+      ]
+    },
+    {
+      "name": "mathematics-statistics",
+      "region": null,
+      "facts": [
+        { "fact": "The mean (average) of a data set is the sum of all values divided by the number of values", "query": "mean average calculation" },
+        { "fact": "The median is the middle value when data is arranged in order", "query": "median middle value" },
+        { "fact": "The mode is the value that appears most frequently in a data set", "query": "mode most frequent" },
+        { "fact": "Range is the difference between the maximum and minimum values in a data set", "query": "range max min data" },
+        { "fact": "Probability of an event is the number of favorable outcomes divided by the total number of possible outcomes", "query": "probability favorable outcomes" },
+        { "fact": "A bar graph uses rectangular bars to compare quantities, while a line graph shows trends over time", "query": "bar graph line graph" },
+        { "fact": "A pie chart shows parts of a whole as slices of a circle, with each slice proportional to its percentage", "query": "pie chart proportional" },
+        { "fact": "Standard deviation measures how spread out the data values are from the mean", "query": "standard deviation spread" },
+        { "fact": "Correlation measures the relationship between two variables, ranging from -1 to 1", "query": "correlation relationship variables" },
+        { "fact": "A sample is a subset of a population used to make inferences about the whole population", "query": "sample population inference" }
+      ]
+    },
+    {
+      "name": "science-biology",
+      "region": null,
+      "facts": [
+        { "fact": "The cell is the basic unit of life, and all living organisms are made of one or more cells", "query": "cell basic unit of life" },
+        { "fact": "DNA (deoxyribonucleic acid) carries the genetic instructions for the development and functioning of living organisms", "query": "DNA genetic instructions" },
+        { "fact": "Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to produce glucose and oxygen", "query": "photosynthesis plants sunlight" },
+        { "fact": "Mitosis is the process of cell division that produces two identical daughter cells", "query": "mitosis cell division" },
+        { "fact": "Meiosis is the process of cell division that produces gametes (sperm and egg cells) with half the number of chromosomes", "query": "meiosis gametes chromosomes" },
+        { "fact": "Natural selection is the process where organisms with favorable traits are more likely to survive and reproduce, as proposed by Charles Darwin", "query": "natural selection Darwin evolution" },
+        { "fact": "An ecosystem is a community of living organisms interacting with each other and their physical environment", "query": "ecosystem community environment" },
+        { "fact": "The food chain shows how energy flows through an ecosystem from producers to consumers to decomposers", "query": "food chain energy flow" },
+        { "fact": "Producers (plants) make their own food through photosynthesis, consumers eat other organisms, and decomposers break down dead matter", "query": "producers consumers decomposers" },
+        { "fact": "The kingdoms of life are: Bacteria, Archaea, Protista, Fungi, Plantae, and Animalia", "query": "kingdoms of life classification" },
+        { "fact": "Genes are segments of DNA that code for specific proteins and determine inherited traits", "query": "genes DNA proteins traits" },
+        { "fact": "A habitat is the natural environment where an organism lives and obtains what it needs to survive", "query": " habitat natural environment" }
+      ]
+    },
+    {
+      "name": "science-chemistry",
+      "region": null,
+      "facts": [
+        { "fact": "An atom is the smallest unit of matter that retains the properties of an element, consisting of protons, neutrons, and electrons", "query": "atom protons neutrons electrons" },
+        { "fact": "The periodic table organizes all known elements by their atomic number and chemical properties", "query": "periodic table elements" },
+        { "fact": "A chemical bond is a force that holds atoms together in a molecule, including ionic bonds and covalent bonds", "query": "chemical bond ionic covalent" },
+        { "fact": "In an ionic bond, one atom transfers electrons to another, creating charged ions that attract each other", "query": "ionic bond electron transfer" },
+        { "fact": "In a covalent bond, atoms share electrons to achieve a stable electron configuration", "query": "covalent bond shared electrons" },
+        { "fact": "A chemical reaction involves the rearrangement of atoms to form new substances, and must be balanced (same atoms on both sides)", "query": "chemical reaction balanced" },
+        { "fact": "pH measures how acidic or basic a solution is, on a scale from 0 (most acidic) to 14 (most basic), with 7 being neutral", "query": "pH scale acid base neutral" },
+        { "fact": "Water has the chemical formula H2O, meaning two hydrogen atoms bonded to one oxygen atom", "query": "water chemical formula H2O" },
+        { "fact": "The states of matter are solid, liquid, gas, and plasma, determined by the arrangement and energy of particles", "query": "states of matter solid liquid gas" },
+        { "fact": "Density is mass divided by volume, and determines whether an object sinks or floats in a fluid", "query": "density mass volume" },
+        { "fact": "An acid donates hydrogen ions (protons) and a base accepts them, according to the Bronsted-Lowry definition", "query": "acid base hydrogen ions" }
+      ]
+    },
+    {
+      "name": "science-physics",
+      "region": null,
+      "facts": [
+        { "fact": "Newton's first law of motion states that an object at rest stays at rest and an object in motion stays in motion unless acted on by a net external force (inertia)", "query": "Newton first law inertia" },
+        { "fact": "Newton's second law states that force equals mass times acceleration (F = ma)", "query": "Newton second law force mass acceleration" },
+        { "fact": "Newton's third law states that for every action there is an equal and opposite reaction", "query": "Newton third law action reaction" },
+        { "fact": "Energy is the capacity to do work, and it cannot be created or destroyed, only transformed (conservation of energy)", "query": "energy conservation work" },
+        { "fact": "Kinetic energy is the energy of motion, calculated as one half times mass times velocity squared", "query": "kinetic energy motion formula" },
+        { "fact": "Potential energy is stored energy due to position or condition, such as gravitational potential energy", "query": "potential energy stored position" },
+        { "fact": "Speed is distance traveled divided by time, while velocity includes both speed and direction", "query": "speed velocity difference" },
+        { "fact": "Acceleration is the rate of change of velocity over time", "query": "acceleration rate of change velocity" },
+        { "fact": "Gravity is the force of attraction between objects with mass, and on Earth accelerates objects at 9.8 meters per second squared", "query": "gravity acceleration 9.8" },
+        { "fact": "Waves transfer energy without transferring matter, and can be transverse or longitudinal", "query": "waves energy transfer" },
+        { "fact": "Ohm's law states that voltage equals current times resistance (V = IR)", "query": "Ohms law voltage current resistance" },
+        { "fact": "The law of conservation of mass states that mass is neither created nor destroyed in a chemical reaction", "query": "conservation of mass" }
+      ]
+    },
+    {
+      "name": "english-grammar-writing",
+      "region": null,
+      "facts": [
+        { "fact": "A noun is a word that names a person, place, thing, or idea", "query": "noun definition" },
+        { "fact": "A verb expresses action or a state of being", "query": "verb action state of being" },
+        { "fact": "An adjective modifies or describes a noun", "query": "adjective modifies noun" },
+        { "fact": "An adverb modifies a verb, adjective, or other adverb, often answering how, when, where, or to what degree", "query": "adverb modifies verb" },
+        { "fact": "A complete sentence requires at minimum a subject and a predicate (verb)", "query": "complete sentence subject predicate" },
+        { "fact": "A thesis statement is a single sentence that expresses the main argument or claim of an essay", "query": "thesis statement main argument" },
+        { "fact": "A paragraph should have a topic sentence, supporting sentences, and a concluding sentence", "query": "paragraph structure topic sentence" },
+        { "fact": "Active voice is when the subject performs the action, while passive voice is when the subject receives the action", "query": "active passive voice" },
+        { "fact": "A metaphor is a direct comparison stating one thing is another, while a simile uses like or as to compare", "query": "metaphor simile comparison" },
+        { "fact": "Plagiarism is presenting someone else's work or ideas as your own without proper citation", "query": "plagiarism definition citation" },
+        { "fact": "A comma separates items in a list, joins independent clauses with a conjunction, or sets off introductory phrases", "query": "comma usage list clauses" },
+        { "fact": "A semicolon joins two closely related independent clauses without a coordinating conjunction", "query": "semicolon independent clauses" }
+      ]
+    },
+    {
+      "name": "english-literature",
+      "region": null,
+      "facts": [
+        { "fact": "The three main types of literature are prose (fiction and nonfiction), poetry, and drama", "query": "types of literature prose poetry drama" },
+        { "fact": "A protagonist is the main character of a story, and an antagonist is the character or force that opposes them", "query": "protagonist antagonist character" },
+        { "fact": "Setting in literature refers to the time and place where a story occurs", "query": "setting literature time place" },
+        { "fact": "Theme is the central message or insight about life that a literary work conveys", "query": "theme central message literature" },
+        { "fact": "Foreshadowing is a literary device that hints at events that will happen later in the story", "query": "foreshadowing hints future events" },
+        { "fact": "Symbolism is the use of objects, characters, or actions to represent deeper meanings or ideas", "query": "symbolism deeper meaning" },
+        { "fact": "Irony is a contrast between what is expected and what actually happens, including verbal, situational, and dramatic irony", "query": "irony contrast expected" },
+        { "fact": "Shakespeare wrote 39 plays and 154 sonnets, including Romeo and Juliet, Hamlet, and Macbeth", "query": "Shakespeare plays sonnets" },
+        { "fact": "The American literary movement of Transcendentalism emphasized individualism, nature, and self-reliance, led by Emerson and Thoreau", "query": "transcendentalism Emerson Thoreau" },
+        { "fact": "The Great Gatsby by F. Scott Fitzgerald critiques the American Dream during the Jazz Age of the 1920s", "query": "Great Gatsby Fitzgerald American Dream" }
+      ]
+    },
+    {
+      "name": "social-studies-world-history",
+      "region": null,
+      "facts": [
+        { "fact": "The agricultural revolution (around 10,000 BCE) was when humans transitioned from hunting and gathering to farming and settling in permanent communities", "query": "agricultural revolution farming" },
+        { "fact": "Ancient Mesopotamia, located between the Tigris and Euphrates rivers, is often called the cradle of civilization", "query": "Mesopotamia cradle civilization" },
+        { "fact": "Ancient Egypt developed along the Nile River and was known for pyramids, pharaohs, and hieroglyphic writing", "query": "ancient Egypt Nile pyramids" },
+        { "fact": "Ancient Greece is considered the birthplace of democracy, originating in Athens around 500 BCE", "query": "ancient Greece democracy Athens" },
+        { "fact": "The Roman Empire fell in 476 CE when the western empire collapsed, though the eastern Byzantine Empire continued until 1453", "query": "Roman Empire fall 476" },
+        { "fact": "The Black Death was a bubonic plague pandemic in the 14th century that killed an estimated 25 to 50 million people in Europe", "query": "Black Death plague 14th century" },
+        { "fact": "The Renaissance was a period of cultural rebirth in Europe from the 14th to 17th centuries, marked by advances in art, science, and learning", "query": "Renaissance cultural rebirth" },
+        { "fact": "The Industrial Revolution began in Britain in the late 1700s and transformed economies from agriculture to manufacturing", "query": "Industrial Revolution Britain manufacturing" },
+        { "fact": "World War I lasted from 1914 to 1918 and involved the Allied Powers (Britain, France, Russia, later USA) against the Central Powers (Germany, Austria-Hungary, Ottoman Empire)", "query": "World War 1 1914 1918" },
+        { "fact": "World War II lasted from 1939 to 1945 and was fought between the Allies and Axis Powers, ending with Japan's surrender after atomic bombs on Hiroshima and Nagasaki", "query": "World War 2 1939 1945" },
+        { "fact": "The Cold War was a period of geopolitical tension between the United States and Soviet Union from 1947 to 1991, without direct military conflict between the two", "query": "Cold War US Soviet Union" }
+      ]
+    },
+    {
+      "name": "social-studies-us-history",
+      "region": null,
+      "facts": [
+        { "fact": "The Declaration of Independence was adopted on July 4, 1776, announcing the 13 American colonies' separation from Great Britain", "query": "Declaration of Independence 1776" },
+        { "fact": "The US Constitution was signed in 1787 and established the framework of the federal government with three branches", "query": "US Constitution 1787 three branches" },
+        { "fact": "The Bill of Rights is the first 10 amendments to the Constitution, protecting individual liberties like freedom of speech, religion, and press", "query": "Bill of Rights amendments freedoms" },
+        { "fact": "The American Civil War lasted from 1861 to 1865 and was fought over slavery and states' rights, ending with the abolition of slavery", "query": "Civil War 1861 1865 slavery" },
+        { "fact": "The Emancipation Proclamation, issued by Abraham Lincoln in 1863, declared freedom for enslaved people in Confederate states", "query": "Emancipation Proclamation Lincoln 1863" },
+        { "fact": "The Louisiana Purchase in 1803 doubled the size of the United States by acquiring territory from France", "query": "Louisiana Purchase 1803" },
+        { "fact": "The Great Depression began with the stock market crash of 1929 and lasted through the 1930s, causing massive unemployment and economic hardship", "query": "Great Depression 1929 stock market" },
+        { "fact": "The Civil Rights Movement of the 1950s and 1960s fought against racial segregation and discrimination, led by figures like Martin Luther King Jr.", "query": "Civil Rights Movement segregation King" },
+        { "fact": "The 19th Amendment, ratified in 1920, granted women the right to vote in the United States", "query": "19th Amendment women vote" },
+        { "fact": "Pearl Harbor was attacked by Japan on December 7, 1941, leading the United States to enter World War II", "query": "Pearl Harbor 1941 Japan attack" }
+      ]
+    },
+    {
+      "name": "civics-government",
+      "region": null,
+      "facts": [
+        { "fact": "The US federal government has three branches: the Legislative (Congress), Executive (President), and Judicial (Supreme Court), with checks and balances between them", "query": "three branches government checks balances" },
+        { "fact": "Congress is the legislative branch and is divided into the Senate (100 members, 2 per state) and the House of Representatives (435 members, based on state population)", "query": "Congress Senate House representatives" },
+        { "fact": "The President serves as head of the executive branch, serves 4-year terms, and can serve a maximum of 2 terms (10 years total)", "query": "President executive branch term limits" },
+        { "fact": "The Supreme Court is the highest court in the US and has 9 justices appointed for life", "query": "Supreme Court justices nine" },
+        { "fact": "The First Amendment protects freedom of speech, religion, press, assembly, and petition", "query": "First Amendment freedoms speech religion" },
+        { "fact": "Federalism is a system where power is divided between a central (federal) government and regional (state) governments", "query": "federalism power division federal state" },
+        { "fact": "A bill becomes law by passing both houses of Congress and being signed by the President, or by a two-thirds vote overriding a presidential veto", "query": "bill becomes law Congress President veto" },
+        { "fact": "The Electoral College elects the President, with each state having electors equal to its number of representatives plus senators", "query": "Electoral College president electors" },
+        { "fact": "Due process, guaranteed by the 5th and 14th Amendments, means the government must follow fair legal procedures before depriving someone of life, liberty, or property", "query": "due process 5th 14th amendment" },
+        { "fact": "Voting in elections is both a right and a civic responsibility in a democracy", "query": "voting right civic responsibility" }
+      ]
+    },
+    {
+      "name": "economics",
+      "region": null,
+      "facts": [
+        { "fact": "Supply and demand determine prices in a market economy: higher demand raises prices, higher supply lowers them", "query": "supply demand prices market" },
+        { "fact": "Scarcity is the fundamental economic problem that resources are limited but human wants are unlimited", "query": "scarcity resources limited wants" },
+        { "fact": "Opportunity cost is the value of the next best alternative that is given up when making a choice", "query": "opportunity cost alternative choice" },
+        { "fact": "Gross Domestic Product (GDP) is the total value of all goods and services produced in a country in a year", "query": "GDP gross domestic product" },
+        { "fact": "Inflation is the general increase in prices over time, which decreases the purchasing power of money", "query": "inflation prices purchasing power" },
+        { "fact": "A recession is a period of economic decline, typically defined as two consecutive quarters of negative GDP growth", "query": "recession economic decline GDP" },
+        { "fact": "A budget is a plan for how to spend and save income, balancing expenses against revenue", "query": "budget income expenses plan" },
+        { "fact": "Interest is the cost of borrowing money or the return on saving money, expressed as a percentage rate", "query": "interest borrowing saving rate" },
+        { "fact": "Compound interest is interest earned on both the principal amount and previously accumulated interest", "query": "compound interest principal" },
+        { "fact": "The Federal Reserve is the central bank of the United States and controls monetary policy by influencing interest rates and the money supply", "query": "Federal Reserve central bank monetary policy" },
+        { "fact": "A stock represents partial ownership in a company, and a bond is a loan to a company or government that pays interest", "query": "stock bond ownership loan" }
+      ]
+    },
+    {
+      "name": "technology-literacy",
+      "region": null,
+      "facts": [
+        { "fact": "A computer consists of hardware (physical components) and software (programs and data)", "query": "computer hardware software" },
+        { "fact": "The CPU (Central Processing Unit) is the brain of the computer that executes instructions and performs calculations", "query": "CPU central processing unit" },
+        { "fact": "RAM (Random Access Memory) is temporary working memory that stores data while the computer is running, and is lost when power is off", "query": "RAM random access memory temporary" },
+        { "fact": "A hard drive or SSD is permanent storage that retains data even when the computer is turned off", "query": "hard drive SSD permanent storage" },
+        { "fact": "An operating system manages computer hardware and software resources and provides services for programs, examples include Windows, macOS, and Linux", "query": "operating system Windows macOS Linux" },
+        { "fact": "The internet is a global network of interconnected computers that communicate using standardized protocols like TCP/IP", "query": "internet network TCP IP" },
+        { "fact": "A web browser is software that retrieves and displays web pages from the internet, examples include Chrome, Firefox, and Safari", "query": "web browser Chrome Firefox" },
+        { "fact": "A file format determines how data is stored, such as .txt for text, .jpg for images, .mp3 for audio, and .pdf for documents", "query": "file format txt jpg mp3 pdf" },
+        { "fact": "An algorithm is a step-by-step set of instructions to solve a problem or complete a task", "query": "algorithm step by step instructions" },
+        { "fact": "Cybersecurity involves protecting computer systems and data from theft, damage, or unauthorized access using practices like strong passwords and antivirus software", "query": "cybersecurity protection passwords antivirus" },
+        { "fact": "Cloud computing means storing and accessing data and programs over the internet instead of on a local computer", "query": "cloud computing internet storage" },
+        { "fact": "Phishing is a type of cyber attack where scammers impersonate legitimate organizations to trick people into revealing personal information", "query": "phishing scam personal information" }
+      ]
+    },
+    {
+      "name": "geography",
+      "region": null,
+      "facts": [
+        { "fact": "There are seven continents: Africa, Antarctica, Asia, Australia, Europe, North America, and South America", "query": "seven continents" },
+        { "fact": "The five oceans are the Pacific, Atlantic, Indian, Southern, and Arctic", "query": "five oceans Pacific Atlantic" },
+        { "fact": "Latitude measures north-south position on Earth, with the equator at 0 degrees, and longitude measures east-west position, with the prime meridian at 0 degrees", "query": "latitude longitude equator prime meridian" },
+        { "fact": "A map scale shows the relationship between distances on a map and actual distances on Earth", "query": "map scale distances" },
+        { "fact": "Climate is the long-term average weather pattern of a region, while weather is the day-to-day condition of the atmosphere", "query": "climate weather difference" },
+        { "fact": "The Amazon Rainforest in South America is the largest tropical rainforest in the world", "query": "Amazon Rainforest largest" },
+        { "fact": "The Sahara Desert in northern Africa is the largest hot desert in the world", "query": "Sahara Desert largest hot desert" },
+        { "fact": "Mount Everest in the Himalayas is the highest mountain above sea level at 8,849 meters (29,032 feet)", "query": "Mount Everest highest mountain" },
+        { "fact": "The Nile River in Africa is one of the longest rivers in the world at about 6,650 kilometers", "query": "Nile River longest" },
+        { "fact": "A peninsula is a piece of land surrounded by water on three sides, like the state of Florida", "query": " peninsula water three sides" }
+      ]
+    },
+    {
+      "name": "critical-thinking-study-skills",
+      "region": null,
+      "facts": [
+        { "fact": "Critical thinking involves analyzing information, questioning assumptions, evaluating evidence, and drawing reasoned conclusions", "query": "critical thinking analyzing evidence" },
+        { "fact": "A primary source is a first-hand account or original document, while a secondary source interprets or analyzes primary sources", "query": "primary source secondary source" },
+        { "fact": "Fact-checking means verifying claims against reliable, independent sources before accepting them as true", "query": "fact checking verifying claims" },
+        { "fact": "Logical fallacies are errors in reasoning, such as ad hominem (attacking the person instead of the argument) or false cause (assuming correlation means causation)", "query": "logical fallacy ad hominem false cause" },
+        { "fact": "Effective note-taking involves summarizing key points in your own words rather than copying verbatim", "query": "note taking summarizing key points" },
+        { "fact": "Time management skills include setting priorities, breaking large tasks into smaller steps, and avoiding procrastination", "query": "time management priorities procrastination" },
+        { "fact": "The scientific method involves asking a question, forming a hypothesis, testing it with an experiment, analyzing results, and drawing conclusions", "query": "scientific method hypothesis experiment" },
+        { "fact": "An objective statement is based on facts and observable evidence, while a subjective statement is based on personal opinions or feelings", "query": "objective subjective fact opinion" },
+        { "fact": "Effective communication involves clearly expressing ideas, actively listening to others, and providing constructive feedback", "query": "effective communication listening feedback" },
+        { "fact": "Citing sources gives credit to original authors and allows readers to verify your information", "query": "citing sources credit verification" }
+      ]
+    }
+  ]
+}

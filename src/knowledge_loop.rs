@@ -685,10 +685,18 @@ impl KnowledgeLoop {
         // This avoids an Ollama round-trip for factual questions the brain already knows.
         let mut used_local = false;
         let response: String = if backend == crate::query_router_intelligent::Backend::Nca {
-            // Attempt local extractive QA from retrieved passages
-            let synth = LocalSynthesizer::new();
-            match synth.chat(&messages, 500) {
-                Ok(local_answer) => {
+            // Use direct brain query for local synthesis — more reliable than
+            // parsing the system prompt (which uses AttentionDecoder results).
+            // The direct query() method uses cosine similarity which ranks
+            // curriculum facts more accurately for specialist brains.
+            let query_results = self.knowledge.query(user_input, self.max_results);
+            let passages: Vec<String> = query_results
+                .iter()
+                .filter_map(|r| r.text.clone())
+                .collect();
+
+            match LocalSynthesizer::synthesize(user_input, &passages) {
+                Some(local_answer) => {
                     used_local = true;
                     tracing::info!(
                         "Local synthesis answered query (pattern={:?}, confidence={:.3}) — no LLM call needed",
@@ -697,7 +705,7 @@ impl KnowledgeLoop {
                     );
                     local_answer
                 }
-                Err(_) => {
+                None => {
                     // Local synthesis couldn't answer — fall back to LLM
                     tracing::debug!(
                         "Local synthesis failed for pattern {:?} — falling back to LLM",

@@ -1,0 +1,83 @@
+{
+  "name": "paralegal",
+  "domain": "legal-assistance",
+  "description": "Legal assistant / paralegal fundamentals: legal terminology, court procedures, contract law, legal research, document preparation, and ethics. Built on top of high-school-graduate base.",
+  "topics": [
+    {
+      "name": "legal-system-basics",
+      "region": null,
+      "facts": [
+        { "fact": "Civil law deals with disputes between individuals or organizations, while criminal law deals with offenses against the state or society", "query": "civil law criminal law disputes offenses" },
+        { "fact": "A plaintiff is the party who brings a lawsuit, and the defendant is the party being sued", "query": "plaintiff defendant lawsuit party" },
+        { "fact": "The burden of proof in a civil case is preponderance of the evidence, meaning more likely than not", "query": "burden of proof civil preponderance evidence" },
+        { "fact": "The burden of proof in a criminal case is beyond a reasonable doubt, which is a higher standard than civil cases", "query": "burden of proof criminal beyond reasonable doubt" },
+        { "fact": "The US court system includes federal courts (district, circuit appellate, Supreme Court) and state courts (trial, appellate, supreme)", "query": "court system federal state appellate supreme" },
+        { "fact": "Jurisdiction is the authority of a court to hear and decide a case, based on subject matter and geographic location", "query": "jurisdiction court authority subject matter" },
+        { "fact": "A statute is a law passed by a legislature, while common law is based on judicial precedent from prior court decisions", "query": "statute legislature common law precedent" },
+        { "fact": "Stare decisis is the principle that courts follow prior decisions (precedent) to ensure consistency in the law", "query": "stare decisis precedent consistency" },
+        { "fact": "A tort is a civil wrong that causes harm, for which the injured party can seek compensation, such as negligence or defamation", "query": "tort civil wrong negligence defamation compensation" },
+        { "fact": "A felony is a serious crime punishable by more than one year in prison, while a misdemeanor is a less serious offense", "query": "felony misdemeanor prison serious crime" }
+      ]
+    },
+    {
+      "name": "contract-law-basics",
+      "region": null,
+      "facts": [
+        { "fact": "A contract is a legally binding agreement between two or more parties that creates enforceable obligations", "query": "contract legally binding agreement obligations" },
+        { "fact": "The four elements of a valid contract are: offer, acceptance, consideration, and mutual assent (meeting of the minds)", "query": "contract elements offer acceptance consideration" },
+        { "fact": "Consideration is something of value exchanged by the parties, such as money, goods, or services, and is required for a contract to be enforceable", "query": "consideration value exchange enforceable contract" },
+        { "fact": "A breach of contract occurs when one party fails to fulfill their obligations under the agreement", "query": "breach of contract fail obligations" },
+        { "fact": "Damages are the monetary compensation awarded to the injured party for a breach of contract", "query": "damages monetary compensation breach" },
+        { "fact": "An offer can be revoked by the offeror any time before it is accepted, unless it is supported by consideration or an option contract", "query": "offer revoked before acceptance consideration" },
+        { "fact": "A void contract has no legal effect from the beginning, while a voidable contract is valid but can be canceled by one party", "query": "void voidable contract legal effect cancel" },
+        { "fact": "The statute of frauds requires certain contracts (like real estate sales over one year) to be in writing to be enforceable", "query": "statute of frauds writing real estate" },
+        { "fact": "An indemnity clause shifts risk from one party to another, requiring one party to compensate the other for certain losses", "query": "indemnity clause risk shift compensate" },
+        { "fact": "A force majeure clause excuses performance when unforeseeable events beyond a party's control prevent fulfillment of the contract", "query": "force majeure clause unforeseeable events excuse" }
+      ]
+    },
+    {
+      "name": "legal-research",
+      "region": null,
+      "facts": [
+        { "fact": "Case law is the body of legal decisions from prior court cases that serve as precedent for future cases", "query": "case law precedent legal decisions" },
+        { "fact": "A legal citation identifies a case or statute, typically including the case name, volume, reporter, page number, and year", "query": "legal citation case volume reporter page" },
+        { "fact": "Westlaw and LexisNexis are major commercial legal research databases for searching cases, statutes, and secondary sources", "query": "Westlaw LexisNexis legal research database" },
+        { "fact": "A brief is a written summary of a court case, including the facts, issues, holding, and reasoning", "query": "brief case summary facts issues holding" },
+        { "fact": "IRAC stands for Issue, Rule, Analysis, Conclusion, which is a method for organizing legal analysis", "query": "IRAC issue rule analysis conclusion" },
+        { "fact": "Secondary sources like legal encyclopedias, treatises, and law review articles explain and interpret primary law but are not binding", "query": "secondary sources encyclopedia treatise law review" },
+        { "fact": "Shepardizing (or Shepardizing) is the process of checking whether a case has been overruled, affirmed, or criticized by later decisions", "query": "Shepardizing case overruled affirmed checking" },
+        { "fact": "A statute is organized into titles, chapters, and sections, and must be read in the context of the entire code", "query": "statute title chapter section code" }
+      ]
+    },
+    {
+      "name": "document-preparation",
+      "region": null,
+      "facts": [
+        { "fact": "A complaint is the initial pleading filed by a plaintiff that starts a lawsuit, stating the claims and requesting relief", "query": "complaint initial pleading plaintiff claims" },
+        { "fact": "An answer is the defendant's response to the complaint, admitting or denying each allegation and raising defenses", "query": "answer defendant response complaint defenses" },
+        { "fact": "A motion is a formal request to the court asking for a specific ruling or order", "query": "motion request court ruling order" },
+        { "fact": "Discovery is the pre-trial process where parties exchange information, including interrogatories, depositions, and document requests", "query": "discovery interrogatories depositions document requests" },
+        { "fact": "An affidavit is a written statement made under oath, signed in front of a notary public", "query": "affidavit sworn statement notary oath" },
+        { "fact": "A power of attorney is a legal document authorizing one person to act on behalf of another in legal or financial matters", "query": "power of attorney authorize act behalf" },
+        { "fact": "A will (last will and testament) directs how a person's property is distributed after death and names an executor", "query": "will testament property distribution executor" },
+        { "fact": "A retainer agreement is a contract between a lawyer and client that establishes the scope of representation and fee arrangement", "query": "retainer agreement lawyer client fee scope" },
+        { "fact": "A bill of sale is a document that transfers ownership of personal property from a seller to a buyer", "query": "bill of sale transfer ownership personal property" },
+        { "fact": "A notary public is an official authorized to witness signatures, administer oaths, and verify document authenticity", "query": "notary public witness signatures oaths verify" }
+      ]
+    },
+    {
+      "name": "legal-ethics",
+      "region": null,
+      "facts": [
+        { "fact": "Attorney-client privilege protects confidential communications between a lawyer and client from being disclosed in court", "query": "attorney client privilege confidential communications" },
+        { "fact": "The duty of confidentiality requires lawyers and paralegals to keep client information private, even after the representation ends", "query": "duty of confidentiality client information private" },
+        { "fact": "A conflict of interest occurs when a lawyer's duty to one client conflicts with duties to another client or their own interests", "query": "conflict of interest lawyer client duty" },
+        { "fact": "The duty of loyalty requires legal professionals to put the client's interests first, within the bounds of the law", "query": "duty of loyalty client interests first" },
+        { "fact": "Unauthorized practice of law (UPL) occurs when a non-lawyer provides legal advice or services, which is prohibited", "query": "unauthorized practice of law non-lawyer advice prohibited" },
+        { "fact": "A paralegal must work under the supervision of a licensed attorney and cannot give legal advice independently", "query": "paralegal supervision attorney no legal advice" },
+        { "fact": "Model Rules of Professional Conduct are ethical guidelines for lawyers, adopted with variations by state bar associations", "query": "model rules professional conduct ethics bar" },
+        { "fact": "The duty of competence requires legal professionals to have the necessary skill and knowledge to handle a client's matter", "query": "duty of competence skill knowledge client" }
+      ]
+    }
+  ]
+}
