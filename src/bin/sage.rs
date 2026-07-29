@@ -148,6 +148,15 @@ enum Commands {
         #[command(subcommand)]
         command: SpecialistCommands,
     },
+    /// Start the OpenAI-compatible API server
+    Api {
+        /// HTTP API port (default 19176)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// SAGE node TCP port (default 19175)
+        #[arg(long)]
+        node_port: Option<u16>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -378,6 +387,39 @@ fn main() {
         },
         Some(Commands::Version) => {
             println!("sage {VERSION}");
+        }
+        Some(Commands::Api { port, node_port }) => {
+            let api_port = port.unwrap_or(19176);
+            let node_p = node_port.unwrap_or(19175);
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let api_bin = exe_dir.join("sage-api");
+            if api_bin.exists() {
+                eprintln!("🌐 Starting SAGE API server on port {}...", api_port);
+                let result = std::process::Command::new(&api_bin)
+                    .args(&["--api-port", &api_port.to_string(), "--port", &node_p.to_string()])
+                    .status();
+                match result {
+                    Ok(status) if !status.success() => {
+                        eprintln!("❌ API server exited with error");
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Could not start API server: {}", e);
+                        eprintln!("   Make sure sage-api is installed alongside sage");
+                        std::process::exit(1);
+                    }
+                    Ok(_) => {}
+                }
+            } else {
+                eprintln!("❌ sage-api binary not found at {}", api_bin.display());
+                eprintln!("   The API server is a separate binary. Install it with:");
+                eprintln!("   cargo install --path . --bin sage-api");
+                eprintln!("   Or run directly: sage-api --api-port {}", api_port);
+                std::process::exit(1);
+            }
         }
         Some(Commands::Config { path }) => {
             let config_path = sage_home().join("config.toml");
@@ -3920,6 +3962,9 @@ fn run_learn(file: &str, chunk_size: usize, use_fastembed: bool) {
     }
 
     // Save the HDC store
+    if let Some(parent) = hdc_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     if let Err(e) = hdc.save(hdc_path) {
         eprintln!("❌ Failed to save brain: {}", e);
         std::process::exit(1);

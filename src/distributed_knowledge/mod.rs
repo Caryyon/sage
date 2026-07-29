@@ -847,8 +847,10 @@ pub fn brain_info(path: &str) -> Result<BrainHeader, String> {
 
 /// Get the default brain persistence path
 pub fn default_brain_path() -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    format!("{}/.sage/brain.bin", home)
+    let base = std::env::var("SAGE_HOME")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    format!("{}/.sage/brain.bin", base)
 }
 
 /// Update daily stats counter in ~/.sage/stats.json.

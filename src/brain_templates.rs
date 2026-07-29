@@ -296,6 +296,9 @@ fn crate_version() -> String {
 
 /// Default templates directory: ~/.sage/templates
 pub fn default_templates_dir() -> PathBuf {
+    if let Ok(sage_home) = std::env::var("SAGE_HOME") {
+        return std::path::PathBuf::from(sage_home).join(".sage").join("templates");
+    }
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".sage").join("templates")
 }

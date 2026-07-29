@@ -362,6 +362,9 @@ fn cosine_similarity(a: &[f32], a_mag: f32, b: &[f32], b_mag: f32) -> f32 {
 
 /// Default HDC store path
 pub fn default_hdc_path() -> String {
+    if let Ok(sage_home) = std::env::var("SAGE_HOME") {
+        return format!("{}/.sage/hdc_store.bin", sage_home);
+    }
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("~"))
         .join(".sage/hdc_store.bin")
