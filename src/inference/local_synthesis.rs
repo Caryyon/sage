@@ -235,16 +235,31 @@ impl LocalSynthesizer {
 
     /// Split a passage into sentences.
     fn split_sentences(text: &str) -> Vec<String> {
-        // Simple sentence splitter: split on . ! ? followed by space or end
+        // Sentence splitter: split on . ! ? followed by space + capital letter or end.
+        // Avoids splitting on decimal numbers (e.g. "0.05" stays together).
+        let chars: Vec<char> = text.chars().collect();
         let mut sentences = Vec::new();
         let mut current = String::new();
 
-        for ch in text.chars() {
+        for (i, &ch) in chars.iter().enumerate() {
             current.push(ch);
-            if (ch == '.' || ch == '!' || ch == '?') {
-                // Look ahead — if next char is space or end, we have a sentence
-                sentences.push(current.trim().to_string());
-                current.clear();
+            if ch == '.' || ch == '!' || ch == '?' {
+                // Check if this is a real sentence boundary:
+                // - end of string, OR
+                // - followed by space + uppercase letter, OR
+                // - followed by newline
+                let next = chars.get(i + 1);
+                let after_next = chars.get(i + 2);
+                let is_boundary = match (next, after_next) {
+                    (None, _) => true, // end of string
+                    (Some(' '), Some(c2)) => c2.is_uppercase() || *c2 == '\n',
+                    (Some('\n'), _) => true,
+                    _ => false,
+                };
+                if is_boundary {
+                    sentences.push(current.trim().to_string());
+                    current.clear();
+                }
             }
         }
         if !current.trim().is_empty() {

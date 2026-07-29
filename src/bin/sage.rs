@@ -3994,6 +3994,7 @@ fn run_specialist_list() {
         println!("  marketing-specialist");
         println!("  paralegal-specialist");
         println!("  software-engineer-specialist");
+        println!("  cs-fundamentals");
         println!();
         println!("Hire one with: sage specialist hire <name>");
         return;
@@ -4047,7 +4048,7 @@ fn run_specialist_hire(name: &str) {
         })
         .unwrap_or_else(|| "v0.6.0".to_string());
     // Try both {name}.template and {name}-specialist.template
-    let filenames = [format!("{}.template", name), format!("{}-specialist.template", name)];
+    let filenames = [format!("{}-specialist.template", name), format!("{}.template", name)];
 
     // Check if already hired under either name
     for filename in &filenames {
@@ -4109,6 +4110,7 @@ fn run_specialist_hire(name: &str) {
         eprintln!("  marketing-specialist");
         eprintln!("  paralegal-specialist");
         eprintln!("  software-engineer-specialist");
+        println!("  cs-fundamentals");
         std::process::exit(1);
     }
 }
@@ -4169,6 +4171,42 @@ fn run_specialist_info(name: &str) {
     }
 }
 
+
+/// Extract meaningful keywords from a query (excluding stop words).
+fn extract_query_keywords(query: &str) -> Vec<String> {
+    let stop_words: &[&str] = &[
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "shall",
+        "should", "can", "could", "may", "might", "must",
+        "who", "what", "when", "where", "why", "how",
+        "many", "much", "long", "old", "about", "into", "from", "that", "this",
+        "tell", "me", "know", "explain", "describe", "difference", "between",
+        "in", "on", "at", "by", "for", "with", "of", "and", "or", "but", "not",
+        "to", "if", "then", "than", "s", "t",
+    ];
+    query
+        .to_lowercase()
+        .trim_end_matches('?')
+        .split(|c: char| !c.is_alphanumeric() && c != '\'' && c != '-')
+        .filter(|w| !w.is_empty() && w.len() > 2 && !stop_words.contains(w))
+        .map(|w| w.to_string())
+        .collect()
+}
+
+/// Score a text entry by keyword overlap with the query terms.
+fn keyword_score(text: &str, query_terms: &[String]) -> usize {
+    let text_lower = text.to_lowercase();
+    let mut score = 0;
+    for term in query_terms {
+        // Count occurrences of the term in the text
+        let count = text_lower.split_whitespace()
+            .filter(|w| w.trim_matches(|c: char| !c.is_alphanumeric()) == *term)
+            .count();
+        score += count;
+    }
+    score
+}
+
 /// `sage specialist ask <name> "query"` — ask a trained specialist a question
 fn run_specialist_ask(name: &str, query: &str, no_llm: bool, model: &str) {
     use sage::brain_templates::{default_templates_dir, BrainTemplateBundle};
@@ -4208,11 +4246,38 @@ fn run_specialist_ask(name: &str, query: &str, no_llm: bool, model: &str) {
     println!("   {} active cells, {} text entries", active, knowledge.text_store.len());
     println!();
 
-    // Query the specialist's brain
+    // Query the specialist's brain via NCA grid
     let results = knowledge.query(query, 5);
-    let passages: Vec<String> = results.iter()
+    let mut passages: Vec<String> = results.iter()
         .filter_map(|r| r.text.clone())
         .collect();
+
+    // Also do keyword-based retrieval over ALL text entries in the brain.
+    // The NCA grid's 96-dim feature space can miss relevant entries that
+    // keyword matching catches easily. For 221 entries, a linear scan is instant.
+    let key_terms = extract_query_keywords(query);
+    if !key_terms.is_empty() {
+        let mut keyword_hits: Vec<(usize, String)> = Vec::new();
+        for y in 0..bundle.grid.height {
+            for x in 0..bundle.grid.width {
+                if let Some(text) = knowledge.text_store.peek(x, y) {
+                    // Skip if already in passages from NCA
+                    if passages.iter().any(|p| p == text) {
+                        continue;
+                    }
+                    let score = keyword_score(text, &key_terms);
+                    if score > 0 {
+                        keyword_hits.push((score, text.to_string()));
+                    }
+                }
+            }
+        }
+        // Sort by score, take top results
+        keyword_hits.sort_by(|a, b| b.0.cmp(&a.0));
+        for (_, text) in keyword_hits.iter().take(5) {
+            passages.push(text.clone());
+        }
+    }
 
     if passages.is_empty() {
         // No results — fall back to LLM if available
